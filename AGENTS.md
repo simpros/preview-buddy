@@ -36,4 +36,8 @@ Default label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `read
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+Single-context: one `CONTEXT.md` + `docs/SPEC.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Spec-first work
+
+`docs/SPEC.md` v0.1 is normative. Implementation issues reference spec sections (`Spec: §N`) and ADRs; work that contradicts the spec or an ADR must surface the conflict, not resolve it silently.
