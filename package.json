@@ -1,0 +1,20 @@
+{
+  "name": "preview-buddy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "seed": "echo demo-seed"
+  },
+  "dependencies": {
+    "elysia": "^1.2.25",
+    "pg": "^8.14.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/pg": "^8.11.11",
+    "typescript": "^5.8.2"
+  }
+}
