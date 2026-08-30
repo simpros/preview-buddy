@@ -1,7 +1,9 @@
 import { randomBytes } from "node:crypto";
-import pg from "pg";
+import { SQL } from "bun";
 
 const APP_ROLE = "preview_buddy_app";
+
+export type AdminDb = SQL;
 
 export function databaseName(prefix: string, prId: number): string {
   const id = String(prId);
@@ -19,74 +21,71 @@ function quoteIdent(name: string): string {
   return `"${name.replace(/"/g, '""')}"`;
 }
 
-export async function ensureStateTable(client: pg.Client): Promise<void> {
-  await client.query(`
+export function connectAdmin(databaseUrl: string): AdminDb {
+  return new SQL(databaseUrl);
+}
+
+export async function ensureStateTable(sql: AdminDb): Promise<void> {
+  await sql`
     CREATE TABLE IF NOT EXISTS pb_state (
       pr_id INTEGER NOT NULL,
       repo TEXT NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (pr_id, repo)
     )
-  `);
+  `;
 }
 
 export async function recordPreviewState(
-  client: pg.Client,
+  sql: AdminDb,
   prId: number,
   repo: string,
 ): Promise<void> {
-  await ensureStateTable(client);
-  await client.query(
-    `INSERT INTO pb_state (pr_id, repo) VALUES ($1, $2)
-     ON CONFLICT (pr_id, repo) DO NOTHING`,
-    [prId, repo],
-  );
+  await ensureStateTable(sql);
+  await sql`
+    INSERT INTO pb_state (pr_id, repo) VALUES (${prId}, ${repo})
+    ON CONFLICT (pr_id, repo) DO NOTHING
+  `;
 }
 
 export async function clearPreviewState(
-  client: pg.Client,
+  sql: AdminDb,
   prId: number,
   repo: string,
 ): Promise<void> {
-  await client.query("DELETE FROM pb_state WHERE pr_id = $1 AND repo = $2", [
-    prId,
-    repo,
-  ]);
+  await sql`DELETE FROM pb_state WHERE pr_id = ${prId} AND repo = ${repo}`;
 }
 
 export async function createDatabase(
-  client: pg.Client,
+  sql: AdminDb,
   prefix: string,
   prId: number,
 ): Promise<string> {
   const name = databaseName(prefix, prId);
-  await client.query(`CREATE DATABASE ${quoteIdent(name)}`);
+  await sql.unsafe(`CREATE DATABASE ${quoteIdent(name)}`);
   return name;
 }
 
 export async function dropDatabase(
-  client: pg.Client,
+  sql: AdminDb,
   prefix: string,
   prId: number,
 ): Promise<void> {
   const name = databaseName(prefix, prId);
-  await client.query(`DROP DATABASE IF EXISTS ${quoteIdent(name)}`);
+  await sql.unsafe(`DROP DATABASE IF EXISTS ${quoteIdent(name)}`);
 }
 
 export async function ensureRole(
-  client: pg.Client,
+  sql: AdminDb,
 ): Promise<{ role: string; password: string; created: boolean }> {
-  const { rows } = await client.query(
-    "SELECT 1 FROM pg_roles WHERE rolname = $1",
-    [APP_ROLE],
-  );
+  const rows = await sql`SELECT 1 FROM pg_roles WHERE rolname = ${APP_ROLE}`;
 
   if (rows.length > 0) {
     return { role: APP_ROLE, password: "", created: false };
   }
 
   const password = randomBytes(24).toString("base64url");
-  await client.query(
+  await sql.unsafe(
     `CREATE ROLE ${quoteIdent(APP_ROLE)} LOGIN PASSWORD $1`,
     [password],
   );
@@ -94,22 +93,22 @@ export async function ensureRole(
 }
 
 export async function grantDatabaseAccess(
-  client: pg.Client,
+  sql: AdminDb,
   dbName: string,
 ): Promise<void> {
-  await client.query(
+  await sql.unsafe(
     `GRANT ALL PRIVILEGES ON DATABASE ${quoteIdent(dbName)} TO ${quoteIdent(APP_ROLE)}`,
   );
 }
 
 export async function listDatabases(
-  client: pg.Client,
+  sql: AdminDb,
   prefix: string,
 ): Promise<string[]> {
-  const { rows } = await client.query<{ datname: string }>(
-    "SELECT datname FROM pg_database WHERE datname LIKE $1",
-    [`${prefix}%`],
-  );
+  const pattern = `${prefix}%`;
+  const rows = await sql<{ datname: string }[]>`
+    SELECT datname FROM pg_database WHERE datname LIKE ${pattern}
+  `;
   return rows.map((row) => row.datname);
 }
 
@@ -121,10 +120,4 @@ export function prIdFromDatabaseName(
   const suffix = datname.slice(prefix.length);
   if (!/^\d+$/.test(suffix)) return null;
   return Number(suffix);
-}
-
-export async function connectAdmin(databaseUrl: string): Promise<pg.Client> {
-  const client = new pg.Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
 }

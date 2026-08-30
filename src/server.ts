@@ -84,21 +84,21 @@ async function handleEvent(
   config: Config,
   event: { action: "opened" | "closed"; prId: number; repo: string },
 ) {
-  const client = await connect(config.pbDatabaseUrl);
+  const sql = connect(config.pbDatabaseUrl);
   try {
     if (event.action === "opened") {
-      const dbName = await createDatabase(client, config.pbDbPrefix, event.prId);
-      await ensureRole(client);
-      await grantDatabaseAccess(client, dbName);
-      await recordPreviewState(client, event.prId, event.repo);
+      const dbName = await createDatabase(sql, config.pbDbPrefix, event.prId);
+      await ensureRole(sql);
+      await grantDatabaseAccess(sql, dbName);
+      await recordPreviewState(sql, event.prId, event.repo);
       return { action: "opened", prId: event.prId, database: dbName };
     }
 
-    await dropDatabase(client, config.pbDbPrefix, event.prId);
-    await clearPreviewState(client, event.prId, event.repo);
+    await dropDatabase(sql, config.pbDbPrefix, event.prId);
+    await clearPreviewState(sql, event.prId, event.repo);
     return { action: "closed", prId: event.prId };
   } finally {
-    await client.end();
+    await sql.close();
   }
 }
 

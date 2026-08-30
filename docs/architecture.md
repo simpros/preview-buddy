@@ -1,6 +1,6 @@
 # Architecture
 
-preview-buddy provisions **per-PR logical databases** on a shared Postgres instance for self-hosted PaaS preview deployments (Coolify first).
+preview-buddy provisions **per-PR logical databases** on a shared Postgres instance for self-hosted PaaS preview deployments.
 
 ## Flow
 
@@ -42,18 +42,18 @@ Run on a cron schedule in production.
 
 `.previewdb.yml` will declare migrate/seed commands and repo wiring. **Not implemented in MVP.**
 
-## Coolify wiring (sketch)
+## PaaS wiring (sketch)
 
 Static preview-scoped env on the preview service:
 
-- `PB_DATABASE_URL` — points at shared Postgres (host/port), database derived at runtime
-- `COOLIFY_PULL_REQUEST_ID` — app builds DB name: `prev_pr${COOLIFY_PULL_REQUEST_ID}`
+- Postgres host/port credentials — app derives database name from PR context at runtime
+- PR id env var — app builds DB name: `prev_pr<id>`
 - Entrypoint: run migrate + seed (`bun run seed`) before `exec` the app process
 
 preview-buddy sidecar receives forge webhooks; the preview app never needs per-PR env injection from the PaaS.
 
 ## Roadmap
 
-- **Dedicated-container backend** — preview-buddy as its own Coolify service
+- **Dedicated-container backend** — preview-buddy as its own sidecar service
 - **CLI** — manual provision/sweep, local dev helpers
 - **Forge API provider** — real open-PR listing for sweep (replacing MVP stub)
