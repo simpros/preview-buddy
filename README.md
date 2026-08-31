@@ -36,12 +36,12 @@ data isolation per PR.
 6. **Sweep** reconciles drift if CI teardown is missed.
 
 Auth: deploy tokens for CI, admin tokens for operators. Gateway state in
-SQLite. The normative v0.1 spec lives in [issue #12](https://github.com/simpros/preview-buddy/issues/12).
+SQLite. The normative v0.1 specification is tracked in the GitHub issue tracker.
 
 ## Docs
 
 - `CONTEXT.md` — domain vocabulary
-- Spec: [issue #12](https://github.com/simpros/preview-buddy/issues/12) — normative v0.1 specification
+- Spec — normative v0.1 specification (tracked in the GitHub issue tracker)
 - `docs/adr/` — architecture decisions
 
 ## Status

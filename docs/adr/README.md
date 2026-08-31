@@ -1,7 +1,7 @@
 # Architecture decision records
 
 Flat numbering. All three ADR criteria (hard to reverse, surprising, real
-trade-off) were applied — most v0.1 choices are documented in [spec issue #12](https://github.com/simpros/preview-buddy/issues/12)
+trade-off) were applied — most v0.1 choices are documented in the normative spec issue
 only.
 
 | ADR | Decision |
