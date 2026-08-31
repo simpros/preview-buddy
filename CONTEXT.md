@@ -98,6 +98,6 @@ _Avoid_: Root token, master key
 
 ## See also
 
-- `docs/SPEC.md` — normative specification (v0.1)
+- Spec: [GH issue #12](https://github.com/simpros/preview-buddy/issues/12) (normative, v0.1)
 - `docs/adr/` — architecture decision records
 - `docs/agents/` — how agents consume this documentation
