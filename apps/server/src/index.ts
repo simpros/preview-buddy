@@ -6,6 +6,6 @@ import { runMigrations } from "./scripts/migrate.ts";
 const config = loadConfig();
 console.log("preview-buddy starting", configSummary(config));
 
-const { db, sql } = connectState();
+const { sql } = connectState();
 await runMigrations(sql);
-startServer({ config, db });
+startServer({ config });
