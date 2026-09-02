@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import type { Config } from "../src/config.ts";
-import { connectState } from "../src/db.ts";
-import { createServer } from "../src/server.ts";
+import type { Config } from "../config.ts";
+import { createApp } from "../http/app.ts";
+import { connectState } from "../infrastructure/db/client.ts";
 
 const testConfig: Config = {
   previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
@@ -17,18 +17,18 @@ const testConfig: Config = {
   port: 7331,
 };
 
-let stateDb = connectState(":memory:");
+let state = connectState(":memory:");
 
 afterEach(async () => {
-  await stateDb.close();
-  stateDb = connectState(":memory:");
+  await state.sql.close();
+  state = connectState(":memory:");
 });
 
 function app() {
-  return createServer({ config: testConfig, state: stateDb });
+  return createApp({ config: testConfig, db: state.db });
 }
 
-describe("createServer", () => {
+describe("createApp", () => {
   test("GET /healthz returns ok without auth", async () => {
     const res = await app().handle(new Request("http://localhost/healthz"));
     expect(res.status).toBe(200);

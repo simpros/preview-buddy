@@ -3,26 +3,38 @@
 ## Stack
 
 - **Runtime:** Bun
+- **Monorepo:** Turborepo workspaces (`apps/*`, `packages/*`)
 - **Language:** TypeScript (strict, ESM)
-- **HTTP:** Elysia
+- **HTTP:** Elysia (`apps/server`)
+- **CLI:** `pbuddy` (`apps/cli`)
+- **API client:** `@preview-buddy/api-client` (Elysia Eden)
+- **Control-plane DB:** SQLite via Drizzle ORM (`drizzle-orm` RC) + `drizzle-kit` migrations
+- **Preview Postgres:** `Bun.sql` admin connection for CREATE/DROP DATABASE (later slices)
 - **Tests:** `bun test`
-- **Postgres:** `Bun.sql` (admin connection for CREATE/DROP DATABASE)
 
 ## Commands
 
 ```bash
 bun install
-bun run dev          # watch src/main.ts
+bun run dev          # turbo dev (server watch)
 bun test
-bun run typecheck
-bun run seed         # demo seed fixture (echo demo-seed)
+bun run typecheck    # turbo build (tsc per package)
+bun run db:generate  # drizzle-kit generate (apps/server)
+bun run db:migrate   # drizzle-kit migrate (apps/server)
 ```
+
+## Layout
+
+- `apps/server` — gateway process, Drizzle schema/migrations, Elysia HTTP app
+- `apps/cli` — `pbuddy` CLI (uses api-client)
+- `packages/api-client` — typed Eden client against `apps/server` `PreviewBuddyApi`
 
 ## Style
 
 - Plain functions, no classes.
-- Keep modules small and focused (`config`, `db`, `server`).
+- Keep modules small and focused.
 - Fail fast at config load for required env vars.
+- DB schema lives in `apps/server/src/infrastructure/db/`; migrations in `apps/server/drizzle/`.
 
 ## Agent skills
 

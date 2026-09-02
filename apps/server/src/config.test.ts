@@ -4,7 +4,7 @@ import {
   loadConfig,
   OPTIONAL_ENV_DEFAULTS,
   REQUIRED_ENV,
-} from "../src/config.ts";
+} from "./config.ts";
 
 const TEST_REQUIRED_VALUES: Record<(typeof REQUIRED_ENV)[number], string> = {
   PB_PREVIEW_POSTGRES_URL: "postgres://admin:sekrit@localhost:5432/postgres",

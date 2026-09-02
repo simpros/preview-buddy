@@ -1,10 +1,10 @@
 import { Elysia } from "elysia";
-import type { Config } from "./config.ts";
-import type { StateDb } from "./db.ts";
+import type { Config } from "../config.ts";
+import type { StateDb } from "../infrastructure/db/client.ts";
 
 export type ServerDeps = {
   config: Config;
-  state: StateDb;
+  db: StateDb;
 };
 
 function stubNotImplemented({
@@ -16,14 +16,15 @@ function stubNotImplemented({
   return { error: "not implemented" };
 }
 
-export function createServer(_deps: ServerDeps) {
-  return new Elysia()
+export const createApp = (_deps: ServerDeps) =>
+  new Elysia()
     .get("/healthz", () => ({ ok: true }))
     .group("/v1", (app) =>
       app.all("/", stubNotImplemented).all("/*", stubNotImplemented),
     );
-}
+
+export type PreviewBuddyApi = ReturnType<typeof createApp>;
 
 export function startServer(deps: ServerDeps) {
-  return createServer(deps).listen(deps.config.port);
+  return createApp(deps).listen(deps.config.port);
 }

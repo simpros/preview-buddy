@@ -1,18 +1,22 @@
 {
   "name": "preview-buddy",
   "private": true,
-  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "bun --watch src/main.ts",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit",
-    "seed": "echo demo-seed"
-  },
-  "dependencies": {
-    "elysia": "^1.2.25"
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo build",
+    "db:generate": "bun run --cwd apps/server db:generate",
+    "db:migrate": "bun run --cwd apps/server db:migrate",
+    "db:studio": "bun run --cwd apps/server db:studio"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.8.2"
-  }
+    "turbo": "^2.5.4",
+    "typescript": "^5.9.3"
+  },
+  "packageManager": "bun@1.4.0"
 }

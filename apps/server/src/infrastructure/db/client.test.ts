@@ -2,7 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { connectState, initSchema } from "../src/db.ts";
+import { connectState } from "./client.ts";
+import { runMigrations } from "../../scripts/migrate.ts";
 
 let tmpDir: string;
 
@@ -15,7 +16,7 @@ function sqlitePath(): string {
   return join(tmpDir, "state.db");
 }
 
-async function tableNames(sql: ReturnType<typeof connectState>): Promise<string[]> {
+async function tableNames(sql: ReturnType<typeof connectState>["sql"]) {
   const rows = await sql<{ name: string }[]>`
     SELECT name FROM sqlite_master
     WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
@@ -24,12 +25,13 @@ async function tableNames(sql: ReturnType<typeof connectState>): Promise<string[
   return rows.map((row) => row.name);
 }
 
-describe("initSchema", () => {
+describe("runMigrations", () => {
   test("creates previews, repos, and api_tokens tables", async () => {
-    const sql = connectState(sqlitePath());
+    const { sql } = connectState(sqlitePath());
     try {
-      await initSchema(sql);
+      await runMigrations(sql);
       expect(await tableNames(sql)).toEqual([
+        "__drizzle_migrations",
         "api_tokens",
         "previews",
         "repos",
@@ -39,12 +41,13 @@ describe("initSchema", () => {
     }
   });
 
-  test("is idempotent on re-init", async () => {
-    const sql = connectState(sqlitePath());
+  test("is idempotent on re-run", async () => {
+    const { sql } = connectState(sqlitePath());
     try {
-      await initSchema(sql);
-      await initSchema(sql);
+      await runMigrations(sql);
+      await runMigrations(sql);
       expect(await tableNames(sql)).toEqual([
+        "__drizzle_migrations",
         "api_tokens",
         "previews",
         "repos",

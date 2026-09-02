@@ -1,0 +1,23 @@
+{
+  "name": "@preview-buddy/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "drizzle-orm": "1.0.0-rc.5-ab785fc",
+    "elysia": "1.4.30"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.0",
+    "drizzle-kit": "1.0.0-rc.5-ab785fc",
+    "typescript": "^5.9.3"
+  }
+}
