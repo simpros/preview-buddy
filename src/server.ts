@@ -7,20 +7,20 @@ export type ServerDeps = {
   state: StateDb;
 };
 
-export function createServer(deps: ServerDeps) {
+function stubNotImplemented({
+  set,
+}: {
+  set: { status?: number | string };
+}) {
+  set.status = 501;
+  return { error: "not implemented" };
+}
+
+export function createServer(_deps: ServerDeps) {
   return new Elysia()
-    .derive(() => ({ stateDb: deps.state }))
     .get("/healthz", () => ({ ok: true }))
     .group("/v1", (app) =>
-      app
-        .all("/", ({ set }) => {
-          set.status = 501;
-          return { error: "not implemented" };
-        })
-        .all("/*", ({ set }) => {
-          set.status = 501;
-          return { error: "not implemented" };
-        }),
+      app.all("/", stubNotImplemented).all("/*", stubNotImplemented),
     );
 }
 

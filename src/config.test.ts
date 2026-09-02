@@ -62,6 +62,14 @@ describe("loadConfig", () => {
     );
   });
 
+  test("rejects whitespace-only required env vars", () => {
+    setRequiredEnv();
+    process.env.PB_PREVIEW_POSTGRES_URL = "   ";
+    expect(() => loadConfig()).toThrow(
+      "Missing required environment variables: PB_PREVIEW_POSTGRES_URL",
+    );
+  });
+
   test("configSummary redacts secrets", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin:sekrit@localhost:5432/postgres",

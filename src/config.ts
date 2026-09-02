@@ -42,8 +42,19 @@ function parsePositiveInt(
   return value;
 }
 
+function requiredEnv(key: (typeof REQUIRED_ENV)[number]): string {
+  const raw = process.env[key];
+  if (raw === undefined || raw.trim() === "") {
+    throw new Error(`Missing required environment variable: ${key}`);
+  }
+  return raw.trim();
+}
+
 export function loadConfig(): Config {
-  const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
+  const missing = REQUIRED_ENV.filter((key) => {
+    const raw = process.env[key];
+    return raw === undefined || raw.trim() === "";
+  });
   if (missing.length > 0) {
     throw new Error(
       `Missing required environment variables: ${missing.join(", ")}`,
@@ -51,12 +62,12 @@ export function loadConfig(): Config {
   }
 
   return {
-    previewPostgresUrl: process.env.PB_PREVIEW_POSTGRES_URL!,
-    traefikNetwork: process.env.PB_TRAEFIK_NETWORK!,
-    postgresNetwork: process.env.PB_POSTGRES_NETWORK!,
-    registryUrl: process.env.PB_REGISTRY_URL!,
-    registryUser: process.env.PB_REGISTRY_USER!,
-    registryPassword: process.env.PB_REGISTRY_PASSWORD!,
+    previewPostgresUrl: requiredEnv("PB_PREVIEW_POSTGRES_URL"),
+    traefikNetwork: requiredEnv("PB_TRAEFIK_NETWORK"),
+    postgresNetwork: requiredEnv("PB_POSTGRES_NETWORK"),
+    registryUrl: requiredEnv("PB_REGISTRY_URL"),
+    registryUser: requiredEnv("PB_REGISTRY_USER"),
+    registryPassword: requiredEnv("PB_REGISTRY_PASSWORD"),
     ttlHours: parsePositiveInt(
       "PB_TTL_HOURS",
       process.env.PB_TTL_HOURS,
@@ -92,7 +103,7 @@ export function configSummary(config: Config): Record<string, string | number> {
     postgresNetwork: config.postgresNetwork,
     registryUrl: config.registryUrl,
     registryUser: config.registryUser,
-    registryPassword: config.registryPassword ? "[set]" : "[unset]",
+    registryPassword: "[set]",
     ttlHours: config.ttlHours,
     sweepMinutes: config.sweepMinutes,
     previewPortDefault: config.previewPortDefault,
