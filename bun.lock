@@ -38,6 +38,7 @@
       "name": "@preview-buddy/api-client",
       "dependencies": {
         "@elysia/eden": "1.4.10",
+        "@preview-buddy/server": "workspace:*",
         "elysia": "1.4.30",
       },
       "devDependencies": {

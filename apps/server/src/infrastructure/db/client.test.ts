@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { connectState } from "./client.ts";
+import { repos } from "./schema.ts";
 import { runMigrations } from "../../scripts/migrate.ts";
 
 let tmpDir: string;
@@ -24,6 +25,18 @@ async function tableNames(sql: ReturnType<typeof connectState>["sql"]) {
   `;
   return rows.map((row) => row.name);
 }
+
+describe("connectState", () => {
+  test("db handle is schema-aware", async () => {
+    const { sql, db } = connectState(sqlitePath());
+    try {
+      await runMigrations(sql);
+      expect(await db.select().from(repos)).toEqual([]);
+    } finally {
+      await sql.close();
+    }
+  });
+});
 
 describe("runMigrations", () => {
   test("creates previews, repos, and api_tokens tables", async () => {

@@ -6,7 +6,7 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo dev",
+    "dev": "turbo dev --filter=@preview-buddy/server",
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo build",

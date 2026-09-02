@@ -2,13 +2,17 @@
   "name": "@preview-buddy/server",
   "private": true,
   "type": "module",
+  "exports": {
+    "./api-type": "./src/http/api-type.ts"
+  },
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "bun run src/index.ts",
     "test": "bun test",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "bun run src/scripts/migrate.ts",
+    "db:migrate:kit": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {

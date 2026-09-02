@@ -16,18 +16,18 @@
 
 ```bash
 bun install
-bun run dev          # turbo dev (server watch)
+bun run dev          # turbo dev, server watch only
 bun test
 bun run typecheck    # turbo build (tsc per package)
 bun run db:generate  # drizzle-kit generate (apps/server)
-bun run db:migrate   # drizzle-kit migrate (apps/server)
+bun run db:migrate   # runtime migrator (apps/server; same as boot)
 ```
 
 ## Layout
 
 - `apps/server` — gateway process, Drizzle schema/migrations, Elysia HTTP app
 - `apps/cli` — `pbuddy` CLI (uses api-client)
-- `packages/api-client` — typed Eden client against `apps/server` `PreviewBuddyApi`
+- `packages/api-client` — typed Eden client against `@preview-buddy/server/api-type`
 
 ## Style
 

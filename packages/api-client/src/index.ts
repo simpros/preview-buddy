@@ -1,7 +1,7 @@
 import { treaty } from "@elysia/eden";
-import type { PreviewBuddyApi } from "../../../apps/server/src/http/app.ts";
+import type { PreviewBuddyApi } from "@preview-buddy/server/api-type";
 
-export type { PreviewBuddyApi } from "../../../apps/server/src/http/app.ts";
+export type { PreviewBuddyApi } from "@preview-buddy/server/api-type";
 
 export type ApiClient = ReturnType<typeof treaty<PreviewBuddyApi>>;
 
