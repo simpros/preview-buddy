@@ -21,7 +21,7 @@ bun run seed         # demo seed fixture (echo demo-seed)
 ## Style
 
 - Plain functions, no classes.
-- Keep modules small and focused (`config`, `db`, `events`, `verify`, `server`, `sweep`).
+- Keep modules small and focused (`config`, `db`, `server`).
 - Fail fast at config load for required env vars.
 
 ## Agent skills

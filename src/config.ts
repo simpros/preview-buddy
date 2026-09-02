@@ -1,4 +1,4 @@
-const REQUIRED_ENV = [
+export const REQUIRED_ENV = [
   "PB_PREVIEW_POSTGRES_URL",
   "PB_TRAEFIK_NETWORK",
   "PB_POSTGRES_NETWORK",
@@ -6,6 +6,14 @@ const REQUIRED_ENV = [
   "PB_REGISTRY_USER",
   "PB_REGISTRY_PASSWORD",
 ] as const;
+
+export const OPTIONAL_ENV_DEFAULTS = {
+  PB_TTL_HOURS: 72,
+  PB_SWEEP_MINUTES: 30,
+  PB_PREVIEW_PORT_DEFAULT: 8080,
+  PB_SEED_TIMEOUT: 180,
+  PB_PORT: 7331,
+} as const;
 
 export type Config = {
   previewPostgresUrl: string;
@@ -20,6 +28,19 @@ export type Config = {
   seedTimeout: number;
   port: number;
 };
+
+function parsePositiveInt(
+  name: string,
+  raw: string | undefined,
+  defaultValue: number,
+): number {
+  if (raw === undefined || raw === "") return defaultValue;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Invalid ${name}: must be a positive integer`);
+  }
+  return value;
+}
 
 export function loadConfig(): Config {
   const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
@@ -36,11 +57,31 @@ export function loadConfig(): Config {
     registryUrl: process.env.PB_REGISTRY_URL!,
     registryUser: process.env.PB_REGISTRY_USER!,
     registryPassword: process.env.PB_REGISTRY_PASSWORD!,
-    ttlHours: Number(process.env.PB_TTL_HOURS ?? "72"),
-    sweepMinutes: Number(process.env.PB_SWEEP_MINUTES ?? "30"),
-    previewPortDefault: Number(process.env.PB_PREVIEW_PORT_DEFAULT ?? "8080"),
-    seedTimeout: Number(process.env.PB_SEED_TIMEOUT ?? "180"),
-    port: Number(process.env.PB_PORT ?? "7331"),
+    ttlHours: parsePositiveInt(
+      "PB_TTL_HOURS",
+      process.env.PB_TTL_HOURS,
+      OPTIONAL_ENV_DEFAULTS.PB_TTL_HOURS,
+    ),
+    sweepMinutes: parsePositiveInt(
+      "PB_SWEEP_MINUTES",
+      process.env.PB_SWEEP_MINUTES,
+      OPTIONAL_ENV_DEFAULTS.PB_SWEEP_MINUTES,
+    ),
+    previewPortDefault: parsePositiveInt(
+      "PB_PREVIEW_PORT_DEFAULT",
+      process.env.PB_PREVIEW_PORT_DEFAULT,
+      OPTIONAL_ENV_DEFAULTS.PB_PREVIEW_PORT_DEFAULT,
+    ),
+    seedTimeout: parsePositiveInt(
+      "PB_SEED_TIMEOUT",
+      process.env.PB_SEED_TIMEOUT,
+      OPTIONAL_ENV_DEFAULTS.PB_SEED_TIMEOUT,
+    ),
+    port: parsePositiveInt(
+      "PB_PORT",
+      process.env.PB_PORT,
+      OPTIONAL_ENV_DEFAULTS.PB_PORT,
+    ),
   };
 }
 

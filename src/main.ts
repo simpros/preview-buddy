@@ -7,4 +7,4 @@ console.log("preview-buddy starting", configSummary(config));
 
 const stateDb = connectState();
 await initSchema(stateDb);
-startServer({ config });
+startServer({ config, state: stateDb });
