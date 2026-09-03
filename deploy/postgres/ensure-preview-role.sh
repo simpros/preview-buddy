@@ -1,6 +1,7 @@
 #!/bin/bash
 # Create or sync the static preview login. Safe for passwords with quotes/special chars.
-# Runs on every container start (not only empty datadir).
+# Invoked by the ensure-preview-role one-shot service (TCP via PGHOST/PGPORT/PGPASSWORD),
+# or run manually against an external Postgres instance with the same env.
 set -euo pipefail
 
 preview_user="${PB_PG_USER:-pb_preview}"

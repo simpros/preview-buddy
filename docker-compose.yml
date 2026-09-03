@@ -32,13 +32,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-pb_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
-      PB_PG_USER: ${PB_PG_USER:-pb_preview}
-      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./deploy/postgres/ensure-preview-role.sh:/ensure-preview-role.sh:ro
-      - ./deploy/postgres/docker-entrypoint-wrapper.sh:/docker-entrypoint-wrapper.sh:ro
-    entrypoint: ["/bin/bash", "/docker-entrypoint-wrapper.sh"]
     healthcheck:
       test:
         [
@@ -48,6 +43,28 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+
+  # One-shot: create/sync PB_PG_USER over TCP after Postgres is healthy.
+  # Stock postgres entrypoint stays PID 1 — no custom supervisor.
+  ensure-preview-role:
+    image: postgres:16-alpine
+    restart: "no"
+    networks:
+      - postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pb_admin}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
+      PGHOST: ${PB_PG_HOST:-postgres}
+      PGPORT: ${PB_PG_PORT:-5432}
+      PB_PG_USER: ${PB_PG_USER:-pb_preview}
+      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
+    volumes:
+      - ./deploy/postgres/ensure-preview-role.sh:/ensure-preview-role.sh:ro
+    entrypoint: ["/bin/bash", "/ensure-preview-role.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   traefik:
     image: traefik:v3.6
@@ -78,14 +95,12 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    # Passes optional vars (e.g. PB_ADMIN_TOKEN) only when set in compose.env —
-    # unlike `environment: PB_ADMIN_TOKEN: ${PB_ADMIN_TOKEN:-}` which always injects "".
-    env_file:
-      - compose.env
+      ensure-preview-role:
+        condition: service_completed_successfully
     environment:
       PB_PREVIEW_POSTGRES_URL: ${PB_PREVIEW_POSTGRES_URL:?set PB_PREVIEW_POSTGRES_URL in compose.env}
-      PB_PG_HOST: postgres
-      PB_PG_PORT: "5432"
+      PB_PG_HOST: ${PB_PG_HOST:-postgres}
+      PB_PG_PORT: ${PB_PG_PORT:-5432}
       PB_PG_USER: ${PB_PG_USER:-pb_preview}
       PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
       PB_TRAEFIK_NETWORK: ${PB_TRAEFIK_NETWORK:-preview-buddy-traefik}
