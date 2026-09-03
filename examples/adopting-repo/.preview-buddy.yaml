@@ -1,0 +1,8 @@
+slug: demoapp
+preview:
+  hostname: "pr-{pr_id}.demoapp.preview.example.com"
+health:
+  path: /health
+  interval: 2s
+  timeout: 120s
+  expect: 200

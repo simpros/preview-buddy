@@ -1,0 +1,19 @@
+#!/bin/sh
+# Copy into your app repo root. Gateway sets PGHOST PGPORT PGUSER PGPASSWORD PGDATABASE.
+set -eu
+
+: "${PGHOST:?PGHOST required}"
+: "${PGPORT:?PGPORT required}"
+: "${PGUSER:?PGUSER required}"
+: "${PGDATABASE:?PGDATABASE required}"
+
+echo "waiting for postgres at ${PGHOST}:${PGPORT}/${PGDATABASE}"
+until pg_isready -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE"; do
+  sleep 1
+done
+
+echo "running migrations"
+bun run db:migrate
+
+echo "starting app"
+exec "$@"

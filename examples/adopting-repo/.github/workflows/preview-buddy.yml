@@ -1,0 +1,73 @@
+name: preview-buddy
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+
+env:
+  PBUDDY_URL: ${{ secrets.PBUDDY_URL }}
+  PBUDDY_TOKEN: ${{ secrets.PBUDDY_TOKEN }}
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install pbuddy
+        run: |
+          git clone --depth 1 https://github.com/simpros/preview-buddy.git "$RUNNER_TEMP/preview-buddy"
+          cd "$RUNNER_TEMP/preview-buddy" && bun install
+          install -m 755 "$RUNNER_TEMP/preview-buddy/apps/cli/src/index.ts" /usr/local/bin/pbuddy
+
+      - name: Log in to container registry
+        if: github.event.action != 'closed'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push images
+        if: github.event.action != 'closed'
+        run: |
+          APP_IMAGE="${{ vars.REGISTRY }}/demoapp:${{ github.sha }}"
+          SEED_IMAGE="${{ vars.REGISTRY }}/demoapp-seed:${{ github.sha }}"
+          docker build -t "$APP_IMAGE" .
+          docker build -f Dockerfile.seed -t "$SEED_IMAGE" .
+          docker push "$APP_IMAGE"
+          docker push "$SEED_IMAGE"
+          echo "APP_IMAGE=$APP_IMAGE" >> "$GITHUB_ENV"
+          echo "SEED_IMAGE=$SEED_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy preview
+        if: github.event.action != 'closed'
+        id: deploy
+        run: |
+          pbuddy deploy -i "$APP_IMAGE" -s "$SEED_IMAGE" | tee deploy.log
+          if grep -q '^preview_url=' deploy.log; then
+            echo "preview_url=$(grep '^preview_url=' deploy.log | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment preview URL
+        if: github.event.action != 'closed' && steps.deploy.outputs.preview_url != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Preview: ${process.env.PREVIEW_URL}`,
+            });
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
+
+      - name: Teardown preview
+        if: github.event.action == 'closed'
+        run: pbuddy teardown
