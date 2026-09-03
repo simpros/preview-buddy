@@ -22,6 +22,7 @@ export type Config = {
   registryUrl: string;
   registryUser: string;
   registryPassword: string;
+  adminToken?: string;
   ttlHours: number;
   sweepMinutes: number;
   previewPortDefault: number;
@@ -61,6 +62,8 @@ export function loadConfig(): Config {
     );
   }
 
+  const adminTokenRaw = process.env.PB_ADMIN_TOKEN?.trim();
+
   return {
     previewPostgresUrl: requiredEnv("PB_PREVIEW_POSTGRES_URL"),
     traefikNetwork: requiredEnv("PB_TRAEFIK_NETWORK"),
@@ -68,6 +71,7 @@ export function loadConfig(): Config {
     registryUrl: requiredEnv("PB_REGISTRY_URL"),
     registryUser: requiredEnv("PB_REGISTRY_USER"),
     registryPassword: requiredEnv("PB_REGISTRY_PASSWORD"),
+    adminToken: adminTokenRaw === "" ? undefined : adminTokenRaw,
     ttlHours: parsePositiveInt(
       "PB_TTL_HOURS",
       process.env.PB_TTL_HOURS,
