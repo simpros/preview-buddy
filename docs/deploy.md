@@ -174,7 +174,7 @@ compose now so operators do not reconfigure later):
 | `PB_PG_PORT` | Port preview containers use for `PGPORT` (default `5432`) |
 | `PB_PG_USER` | Role preview containers use for `PGUSER` |
 | `PB_PG_PASSWORD` | Password preview containers use for `PGPASSWORD` |
-| `PB_ADMIN_TOKEN` | Bootstrap admin bearer token; auto-generated if **unset** (omit from env — empty string is not unset) |
+| `PB_ADMIN_TOKEN` | Bootstrap admin bearer token; auto-generated if omitted or blank — only a non-empty value pins the token |
 | `PB_FORGE` | `github` or `gitlab` — sweep forge type |
 | `PB_FORGE_TOKEN` | PAT for sweep open-PR listing |
 | `PB_STATE_DB_PATH` | SQLite path (use a volume mount in production) |
@@ -209,8 +209,8 @@ The gateway preview-db module grants that role access when it creates each
 
 ## Bootstrap admin token
 
-After first boot, read the admin token from gateway logs if you did not set
-`PB_ADMIN_TOKEN` in `compose.env`:
+After first boot, read the admin token from gateway logs if you left
+`PB_ADMIN_TOKEN` unset or blank in `compose.env`:
 
 ```bash
 docker compose --env-file compose.env logs gateway | grep -i admin

@@ -110,6 +110,8 @@ services:
       PB_REGISTRY_PASSWORD: ${PB_REGISTRY_PASSWORD:-}
       PB_FORGE: ${PB_FORGE:-github}
       PB_FORGE_TOKEN: ${PB_FORGE_TOKEN:-}
+      # Blank/unset → loadConfig treats as undefined → auto-generate
+      PB_ADMIN_TOKEN: ${PB_ADMIN_TOKEN:-}
       PB_STATE_DB_PATH: /data/preview-buddy.db
       PB_PORT: "7331"
     healthcheck:
