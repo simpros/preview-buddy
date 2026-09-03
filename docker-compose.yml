@@ -72,6 +72,7 @@ services:
     networks:
       - traefik
     ports:
+      # Host port overridable for e2e (see e2e/compose.e2e.env).
       - "${TRAEFIK_HTTP_PORT:-8880}:80"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -88,7 +89,8 @@ services:
       - traefik
       - postgres
     ports:
-      - "7331:7331"
+      # Host port overridable for e2e (see e2e/compose.e2e.env).
+      - "${PB_GATEWAY_HOST_PORT:-7331}:7331"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - gateway-data:/data

@@ -1,0 +1,13 @@
+# Overlay on docker-compose.yml for the e2e acceptance harness.
+# Sets isolated network names / secrets via e2e/compose.e2e.env and relies on
+# PB_GATEWAY_HOST_PORT + TRAEFIK_HTTP_PORT from that env file (no second port
+# binding — compose concatenates `ports` lists across files).
+#
+#   docker compose -p preview-buddy-e2e \
+#     -f docker-compose.yml -f e2e/docker-compose.e2e.yml \
+#     --env-file e2e/compose.e2e.env up -d --build
+
+services:
+  gateway:
+    environment:
+      PB_ADMIN_TOKEN: ${PB_ADMIN_TOKEN:-e2e-admin-token}

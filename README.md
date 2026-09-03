@@ -44,6 +44,7 @@ SQLite. The normative v0.1 specification is tracked in the GitHub issue tracker.
 - [`docs/deploy.md`](docs/deploy.md) — operator compose stack (Postgres + gateway + Traefik)
 - [`docs/adoption.md`](docs/adoption.md) — adopting-repo guide (yaml, CI, entrypoint)
 - [`examples/adopting-repo/`](examples/adopting-repo/) — copy-paste example files
+- [`e2e/`](e2e/) — acceptance harness against compose (`bun run test:e2e`)
 - Spec — normative v0.1 specification (tracked in the GitHub issue tracker)
 - `docs/adr/` — architecture decisions
 
