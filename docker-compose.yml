@@ -2,17 +2,21 @@
 # See docs/deploy.md for wiring notes and external Traefik coexistence.
 #
 # Quick start:
-#   cp compose.env.example .env   # edit secrets
-#   docker compose up -d --build
+#   cp compose.env.example compose.env   # edit secrets
+#   docker compose --env-file compose.env up -d --build
 #   curl -sf http://127.0.0.1:7331/healthz
+#
+# External Traefik/Postgres (Coolify, etc.):
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml \
+#     --env-file compose.env up -d --build gateway
 
 name: preview-buddy
 
 networks:
   traefik:
-    name: traefik
+    name: ${PB_TRAEFIK_NETWORK:-preview-buddy-traefik}
   postgres:
-    name: postgres
+    name: ${PB_POSTGRES_NETWORK:-preview-buddy-postgres}
 
 volumes:
   gateway-data:
@@ -26,13 +30,15 @@ services:
       - postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-pb_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
       POSTGRES_DB: ${POSTGRES_DB:-postgres}
       PB_PG_USER: ${PB_PG_USER:-pb_preview}
-      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in .env}
+      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./deploy/postgres/init-preview-role.sh:/docker-entrypoint-initdb.d/01-preview-role.sh:ro
+      - ./deploy/postgres/ensure-preview-role.sh:/ensure-preview-role.sh:ro
+      - ./deploy/postgres/docker-entrypoint-wrapper.sh:/docker-entrypoint-wrapper.sh:ro
+    entrypoint: ["/bin/bash", "/docker-entrypoint-wrapper.sh"]
     healthcheck:
       test:
         [
@@ -72,18 +78,21 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    # Passes optional vars (e.g. PB_ADMIN_TOKEN) only when set in compose.env —
+    # unlike `environment: PB_ADMIN_TOKEN: ${PB_ADMIN_TOKEN:-}` which always injects "".
+    env_file:
+      - compose.env
     environment:
-      PB_PREVIEW_POSTGRES_URL: postgres://${POSTGRES_USER:-pb_admin}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-postgres}
+      PB_PREVIEW_POSTGRES_URL: ${PB_PREVIEW_POSTGRES_URL:?set PB_PREVIEW_POSTGRES_URL in compose.env}
       PB_PG_HOST: postgres
       PB_PG_PORT: "5432"
       PB_PG_USER: ${PB_PG_USER:-pb_preview}
-      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in .env}
-      PB_TRAEFIK_NETWORK: traefik
-      PB_POSTGRES_NETWORK: postgres
-      PB_REGISTRY_URL: ${PB_REGISTRY_URL:-ghcr.io}
-      PB_REGISTRY_USER: ${PB_REGISTRY_USER:-anonymous}
-      PB_REGISTRY_PASSWORD: ${PB_REGISTRY_PASSWORD:-none}
-      PB_ADMIN_TOKEN: ${PB_ADMIN_TOKEN:-}
+      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
+      PB_TRAEFIK_NETWORK: ${PB_TRAEFIK_NETWORK:-preview-buddy-traefik}
+      PB_POSTGRES_NETWORK: ${PB_POSTGRES_NETWORK:-preview-buddy-postgres}
+      PB_REGISTRY_URL: ${PB_REGISTRY_URL:?set PB_REGISTRY_URL in compose.env}
+      PB_REGISTRY_USER: ${PB_REGISTRY_USER:-}
+      PB_REGISTRY_PASSWORD: ${PB_REGISTRY_PASSWORD:-}
       PB_FORGE: ${PB_FORGE:-github}
       PB_FORGE_TOKEN: ${PB_FORGE_TOKEN:-}
       PB_STATE_DB_PATH: /data/preview-buddy.db

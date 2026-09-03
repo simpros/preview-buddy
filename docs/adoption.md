@@ -98,7 +98,8 @@ The gateway runs it after the app passes the health check, **once per PR**
 
 [`examples/adopting-repo/Dockerfile.seed`](../examples/adopting-repo/Dockerfile.seed)
 shows a minimal pattern: install deps, copy seed script, entrypoint runs
-`bun run seed` using the same `PG*` env the gateway injects.
+`bun run seed` using the same `PG*` env the gateway injects (see
+`docker-seed-entrypoint.sh`).
 
 Pass runtime inputs without storing secrets in yaml:
 
@@ -118,16 +119,16 @@ Symmetric triggers — no forge webhooks on the gateway:
 | `pull_request` synchronize | `pbuddy deploy` (replaces container, keeps DB) |
 | `pull_request` closed | `pbuddy teardown` |
 
-See
-[`examples/adopting-repo/.github/workflows/preview-buddy.yml`](../examples/adopting-repo/.github/workflows/preview-buddy.yml).
+The **canonical** workflow is
+[`examples/adopting-repo/.github/workflows/preview-buddy.yml`](../examples/adopting-repo/.github/workflows/preview-buddy.yml)
+— copy it rather than pasting fragments from this guide. It covers:
 
-Key steps:
-
-1. Build and push the app image tagged with `${{ github.sha }}`.
-2. On deploy events, run `pbuddy deploy -i <image>` (add `-s <seed-image>` when
-   seeding).
-3. Capture `preview_url=` from stdout and comment on the PR.
-4. On close, run `pbuddy teardown` (idempotent — exit 0 if already gone).
+1. Install `pbuddy` from a workspace clone (keeps `@preview-buddy/api-client`
+   resolution; pin a tag/SHA when releases exist).
+2. Build and push app + seed images tagged with `${{ github.sha }}`.
+3. `pbuddy deploy -i … -s …`, capture `preview_url=` from `deploy.log`, comment
+   on the PR.
+4. On close, `pbuddy teardown` (idempotent — exit 0 if already gone).
 
 CLI environment in CI:
 
@@ -137,34 +138,7 @@ env:
   PBUDDY_TOKEN: ${{ secrets.PBUDDY_TOKEN }}
 ```
 
-Install `pbuddy` from a release binary when published, or build from source
-(see the example workflow in `examples/adopting-repo/`).
-
 Canonical repo id is derived from `GITHUB_REPOSITORY` automatically.
-
-## Dual-image CI recipe (app + seed)
-
-Build both images from the **same commit** so app and seed stay in sync. Tag
-both with the same SHA — no separate `--ref` flag on the gateway.
-
-```yaml
-- name: Build and push images
-  run: |
-    APP_IMAGE="${{ vars.REGISTRY }}/myapp:${{ github.sha }}"
-    SEED_IMAGE="${{ vars.REGISTRY }}/myapp-seed:${{ github.sha }}"
-    docker build -t "$APP_IMAGE" .
-    docker build -f Dockerfile.seed -t "$SEED_IMAGE" .
-    docker push "$APP_IMAGE"
-    docker push "$SEED_IMAGE"
-    echo "APP_IMAGE=$APP_IMAGE" >> "$GITHUB_ENV"
-    echo "SEED_IMAGE=$SEED_IMAGE" >> "$GITHUB_ENV"
-
-- name: Deploy preview
-  if: github.event.action != 'closed'
-  run: |
-    pbuddy deploy -i "$APP_IMAGE" -s "$SEED_IMAGE" | tee deploy.log
-    grep '^preview_url=' deploy.log >> "$GITHUB_OUTPUT"
-```
 
 Use `-i` only (no `-s`) when you do not need a seed image.
 
@@ -181,29 +155,6 @@ pbuddy admin token create \
 ```
 
 Add the returned token to the repo's `PBUDDY_TOKEN` secret.
-
-## PR comment snippet
-
-`pbuddy deploy` prints `preview_url=<url>` on success. Parse it in CI:
-
-```yaml
-- name: Comment preview URL
-  if: github.event.action != 'closed'
-  uses: actions/github-script@v7
-  with:
-    script: |
-      const fs = require('fs');
-      const line = fs.readFileSync('deploy.log', 'utf8')
-        .split('\n').find(l => l.startsWith('preview_url='));
-      if (!line) return;
-      const url = line.slice('preview_url='.length);
-      github.rest.issues.createComment({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        issue_number: context.issue.number,
-        body: `Preview: ${url}`,
-      });
-```
 
 Reviewers may see brief 502 responses while the app migrates and starts —
 Traefik routes exist before the app is healthy.

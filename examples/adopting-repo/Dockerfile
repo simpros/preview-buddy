@@ -5,8 +5,8 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package.json bun.lock ./
-RUN bun install --frozen-lockfile
+COPY package.json ./
+RUN bun install
 
 COPY . .
 RUN chmod +x docker-entrypoint.sh

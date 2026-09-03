@@ -21,9 +21,16 @@ jobs:
 
       - name: Install pbuddy
         run: |
+          # Pin to a tag/SHA when releases exist; unpinned HEAD is a temporary seam.
           git clone --depth 1 https://github.com/simpros/preview-buddy.git "$RUNNER_TEMP/preview-buddy"
           cd "$RUNNER_TEMP/preview-buddy" && bun install
-          install -m 755 "$RUNNER_TEMP/preview-buddy/apps/cli/src/index.ts" /usr/local/bin/pbuddy
+          # Run the CLI from the workspace so @preview-buddy/api-client resolves.
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '%s\n' '#!/usr/bin/env bash' \
+            "exec bun \"$RUNNER_TEMP/preview-buddy/apps/cli/src/index.ts\" \"\$@\"" \
+            > "$RUNNER_TEMP/bin/pbuddy"
+          chmod +x "$RUNNER_TEMP/bin/pbuddy"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
       - name: Log in to container registry
         if: github.event.action != 'closed'
@@ -50,8 +57,9 @@ jobs:
         id: deploy
         run: |
           pbuddy deploy -i "$APP_IMAGE" -s "$SEED_IMAGE" | tee deploy.log
-          if grep -q '^preview_url=' deploy.log; then
-            echo "preview_url=$(grep '^preview_url=' deploy.log | cut -d= -f2-)" >> "$GITHUB_OUTPUT"
+          line=$(grep '^preview_url=' deploy.log || true)
+          if [ -n "$line" ]; then
+            echo "preview_url=${line#preview_url=}" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Comment preview URL
@@ -59,14 +67,17 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
+            const line = fs.readFileSync('deploy.log', 'utf8')
+              .split('\n').find(l => l.startsWith('preview_url='));
+            if (!line) return;
+            const url = line.slice('preview_url='.length);
             github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: `Preview: ${process.env.PREVIEW_URL}`,
+              body: `Preview: ${url}`,
             });
-        env:
-          PREVIEW_URL: ${{ steps.deploy.outputs.preview_url }}
 
       - name: Teardown preview
         if: github.event.action == 'closed'

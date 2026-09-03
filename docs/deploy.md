@@ -9,32 +9,39 @@ CI — no per-repo server setup.
 From the repo root:
 
 ```bash
-cp compose.env.example .env
-# Edit POSTGRES_PASSWORD, PB_PG_PASSWORD, and registry credentials.
+cp compose.env.example compose.env
+# Edit POSTGRES_PASSWORD, PB_PREVIEW_POSTGRES_URL (keep in sync), PB_PG_PASSWORD.
+# URL-encode special characters in the DSN password.
 
-docker compose up -d --build
-docker compose ps
+docker compose --env-file compose.env up -d --build
+docker compose --env-file compose.env ps
 curl -sf http://127.0.0.1:7331/healthz
 # Traefik HTTP entrypoint (host port TRAEFIK_HTTP_PORT, default 8880)
 curl -sf http://127.0.0.1:${TRAEFIK_HTTP_PORT:-8880}/ || true
 ```
 
+`compose.env` is the compose project env. Do **not** copy it to `.env` —
+`.env` / `.env.example` are for the gateway process on the host (`bun run
+dev`).
+
 Tear down:
 
 ```bash
-docker compose down
-# docker compose down -v   # also drops SQLite + Postgres volumes
+docker compose --env-file compose.env down
+# docker compose --env-file compose.env down -v   # also drops SQLite + Postgres volumes
 ```
 
 The stack in `docker-compose.yml` is the reference **operator compose stack**
 for local development and CI smoke. Issue #34 builds the E2E harness on top of
-this file.
+this file. Default network names (`preview-buddy-traefik`,
+`preview-buddy-postgres`) are project-local so a smoke `up` does not collide
+with an existing Coolify Traefik network named `traefik`.
 
 ## Architecture
 
 ```text
                     ┌─────────────┐
-   PR traffic ─────►│   Traefik   │  network: traefik
+   PR traffic ─────►│   Traefik   │  network: $PB_TRAEFIK_NETWORK
                     │  (labels)   │
                     └──────┬──────┘
                            │ preview app containers
@@ -44,7 +51,7 @@ this file.
                     └──────┬──────┘
                            │ CREATE/DROP DATABASE (admin)
                     ┌──────▼──────┐
-                    │  Postgres   │  network: postgres
+                    │  Postgres   │  network: $PB_POSTGRES_NETWORK
                     │  (shared)   │
                     └─────────────┘
 ```
@@ -65,31 +72,20 @@ The gateway reads two Docker network names from the environment:
 | `PB_TRAEFIK_NETWORK` | Network shared with Traefik. Preview **app** containers join this network so Traefik can route traffic via Docker labels. |
 | `PB_POSTGRES_NETWORK` | Network shared with Postgres. Gateway, preview **app**, and **seed** containers join this network so they can reach the database by hostname. |
 
-In `docker-compose.yml` both networks are declared with explicit `name:` keys
-(`traefik`, `postgres`) so the gateway env matches regardless of compose
-project name:
+Compose declares both networks with `name: ${PB_…}` so the same variable is the
+single source for the Docker network name and the gateway env (defaults are
+project-local):
 
 ```yaml
 networks:
   traefik:
-    name: traefik
+    name: ${PB_TRAEFIK_NETWORK:-preview-buddy-traefik}
   postgres:
-    name: postgres
+    name: ${PB_POSTGRES_NETWORK:-preview-buddy-postgres}
 ```
 
 When the gateway creates a preview app container it attaches **both** networks.
 Seed containers get **Postgres only** — they never need Traefik reachability.
-
-If your Traefik or Postgres run outside this compose file, create identically
-named networks first:
-
-```bash
-docker network create traefik
-docker network create postgres
-```
-
-Then attach the gateway service to those external networks and set
-`PB_TRAEFIK_NETWORK` / `PB_POSTGRES_NETWORK` to the same names.
 
 ## Traefik coexistence (Coolify and other operators)
 
@@ -97,20 +93,32 @@ preview-buddy does **not** manage Traefik or call the Coolify API. It registers
 routes by setting standard [Traefik Docker labels](https://doc.traefik.io/traefik/providers/docker/)
 on preview app containers.
 
-To coexist with an **externally managed Traefik** (including Coolify's):
+To coexist with an **externally managed Traefik** (including Coolify's), use the
+overlay instead of forking the reference file:
 
-1. Use one shared Docker network between Traefik and preview app containers.
-   Set `PB_TRAEFIK_NETWORK` to that network's exact name.
-2. Ensure the external Traefik has `--providers.docker=true` and
-   `--providers.docker.exposedbydefault=false` (or equivalent) so only labelled
-   containers are published.
-3. Do **not** run a second Traefik instance on the same network unless you
-   intentionally want two proxies (usually you attach to the existing one and
-   omit the `traefik` service from this compose file).
-4. Label conventions the gateway applies (v0.1):
-   - `traefik.enable=true`
-   - `traefik.http.routers.<name>.rule=Host(\`<hostname>\`)`
-   - `traefik.http.services.<name>.loadbalancer.server.port=<port>`
+1. Set `PB_TRAEFIK_NETWORK` / `PB_POSTGRES_NETWORK` in `compose.env` to the
+   existing network names (Coolify often uses `traefik`).
+2. Ensure those networks exist (`docker network create …` if needed).
+3. Bring up **only the gateway** against external networks:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.external.yml \
+  --env-file compose.env up -d --build gateway
+```
+
+The overlay marks both networks `external: true` and disables the bundled
+`traefik` / `postgres` services (via profiles). Point
+`PB_PREVIEW_POSTGRES_URL` at the external Postgres admin DSN.
+
+Also ensure the external Traefik has `--providers.docker=true` and
+`--providers.docker.exposedbydefault=false` (or equivalent) so only labelled
+containers are published.
+
+Label conventions the gateway applies (v0.1):
+
+- `traefik.enable=true`
+- `traefik.http.routers.<name>.rule=Host(\`<hostname>\`)`
+- `traefik.http.services.<name>.loadbalancer.server.port=<port>`
 
 Coolify-managed Traefik already watches the Docker socket; preview-buddy
 preview containers appear alongside Coolify apps as long as they share the
@@ -126,7 +134,13 @@ Required today (gateway fails fast if missing):
 | `PB_TRAEFIK_NETWORK` | Docker network name for Traefik-facing containers |
 | `PB_POSTGRES_NETWORK` | Docker network name for database reachability |
 | `PB_REGISTRY_URL` | Registry host for pulling preview images |
-| `PB_REGISTRY_USER` | Registry username (empty if anonymous pulls) |
+
+Optional registry auth (empty = anonymous pulls — real registry mode, not a
+sentinel string):
+
+| Variable | Description |
+|---|---|
+| `PB_REGISTRY_USER` | Registry username |
 | `PB_REGISTRY_PASSWORD` | Registry password or token |
 
 Additional v0.1 variables (used as app-deployment and sweep land; set them in
@@ -138,7 +152,7 @@ compose now so operators do not reconfigure later):
 | `PB_PG_PORT` | Port preview containers use for `PGPORT` (default `5432`) |
 | `PB_PG_USER` | Role preview containers use for `PGUSER` |
 | `PB_PG_PASSWORD` | Password preview containers use for `PGPASSWORD` |
-| `PB_ADMIN_TOKEN` | Bootstrap admin bearer token; auto-generated if unset |
+| `PB_ADMIN_TOKEN` | Bootstrap admin bearer token; auto-generated if **unset** (omit from env — empty string is not unset) |
 | `PB_FORGE` | `github` or `gitlab` — sweep forge type |
 | `PB_FORGE_TOKEN` | PAT for sweep open-PR listing |
 | `PB_STATE_DB_PATH` | SQLite path (use a volume mount in production) |
@@ -153,22 +167,28 @@ Optional tuning (defaults in parentheses):
 | `PB_PREVIEW_PORT_DEFAULT` | `8080` |
 | `PB_SEED_TIMEOUT` | `180` |
 
-See `.env.example` and `compose.env.example` for copy-paste values.
+See `.env.example` (host gateway / `bun run dev`) and `compose.env.example`
+(compose stack). Keep `POSTGRES_*` and `PB_PREVIEW_POSTGRES_URL` in sync in
+`compose.env`; do not synthesize the DSN from the raw password in YAML.
 
 ## Postgres preview role
 
-The compose stack runs `deploy/postgres/init-preview-role.sh` on first boot to
-create the static preview login (`PB_PG_USER` / `PB_PG_PASSWORD`). The gateway
-preview-db module grants that role access when it creates each
+The compose stack runs `deploy/postgres/ensure-preview-role.sh` on **every**
+Postgres start (via the entrypoint wrapper) to create or `ALTER` the static
+preview login (`PB_PG_USER` / `PB_PG_PASSWORD`) using `format(... %I … %L)` so
+special characters in the password are safe. Changing `PB_PG_PASSWORD` and
+recreating the postgres container (same volume) updates the role password.
+
+The gateway preview-db module grants that role access when it creates each
 `prev_<slug>_pr<id>` database.
 
 ## Bootstrap admin token
 
 After first boot, read the admin token from gateway logs if you did not set
-`PB_ADMIN_TOKEN`:
+`PB_ADMIN_TOKEN` in `compose.env`:
 
 ```bash
-docker compose logs gateway | grep -i admin
+docker compose --env-file compose.env logs gateway | grep -i admin
 ```
 
 Create a **deploy token** for each adopting repo:
@@ -185,10 +205,10 @@ Store the deploy token in the adopting repo's CI secrets as `PBUDDY_TOKEN`.
 
 | Check | Command |
 |---|---|
-| Postgres healthy | `docker compose ps postgres` |
+| Postgres healthy | `docker compose --env-file compose.env ps postgres` |
 | Gateway healthy | `curl -sf http://127.0.0.1:7331/healthz` |
-| Networks exist | `docker network inspect traefik postgres` |
-| Traefik sees Docker | `docker compose logs traefik \| tail` |
+| Networks exist | `docker network inspect preview-buddy-traefik preview-buddy-postgres` |
+| Traefik sees Docker | `docker compose --env-file compose.env logs traefik \| tail` |
 
 ## See also
 

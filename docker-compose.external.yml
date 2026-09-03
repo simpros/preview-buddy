@@ -1,0 +1,23 @@
+# Overlay: attach to existing Traefik + Postgres networks; skip bundled services.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml \
+#     --env-file compose.env up -d --build gateway
+#
+# Set PB_TRAEFIK_NETWORK / PB_POSTGRES_NETWORK in compose.env to the real network
+# names (e.g. Coolify's traefik network), and create them if needed:
+#   docker network create "$PB_TRAEFIK_NETWORK"
+#   docker network create "$PB_POSTGRES_NETWORK"
+
+services:
+  postgres:
+    profiles: ["bundled-postgres"]
+  traefik:
+    profiles: ["bundled-traefik"]
+  gateway:
+    depends_on: !reset {}
+
+networks:
+  traefik:
+    external: true
+  postgres:
+    external: true
