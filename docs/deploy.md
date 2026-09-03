@@ -157,6 +157,7 @@ Required today (gateway fails fast if missing):
 | Variable | Description |
 |---|---|
 | `PB_PREVIEW_POSTGRES_URL` | Admin DSN for `CREATE DATABASE` / `DROP DATABASE` |
+| `PB_PG_USER` | Static preview login; granted ownership of each `prev_*` database |
 | `PB_TRAEFIK_NETWORK` | Docker network name for Traefik-facing containers |
 | `PB_POSTGRES_NETWORK` | Docker network name for database reachability |
 | `PB_REGISTRY_URL` | Registry host for pulling preview images |
@@ -176,7 +177,6 @@ compose now so operators do not reconfigure later):
 |---|---|
 | `PB_PG_HOST` | Hostname preview containers use for `PGHOST` |
 | `PB_PG_PORT` | Port preview containers use for `PGPORT` (default `5432`) |
-| `PB_PG_USER` | Role preview containers use for `PGUSER` |
 | `PB_PG_PASSWORD` | Password preview containers use for `PGPASSWORD` |
 | `PB_ADMIN_TOKEN` | Bootstrap admin bearer token; auto-generated if omitted or blank — only a non-empty value pins the token |
 | `PB_FORGE` | `github` or `gitlab` — sweep forge type (required at boot) |

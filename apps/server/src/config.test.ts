@@ -8,6 +8,7 @@ import {
 
 const TEST_REQUIRED_VALUES: Record<(typeof REQUIRED_ENV)[number], string> = {
   PB_PREVIEW_POSTGRES_URL: "postgres://admin:sekrit@localhost:5432/postgres",
+  PB_PG_USER: "pb_preview",
   PB_TRAEFIK_NETWORK: "traefik",
   PB_POSTGRES_NETWORK: "postgres",
   PB_REGISTRY_URL: "registry.example.com",
@@ -123,6 +124,7 @@ describe("loadConfig", () => {
   test("configSummary redacts secrets", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin:sekrit@localhost:5432/postgres",
+      previewPgUser: "pb_preview",
       traefikNetwork: "traefik",
       postgresNetwork: "postgres",
       registryUrl: "registry.example.com",
@@ -147,6 +149,7 @@ describe("loadConfig", () => {
   test("configSummary marks anonymous registry creds", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
+      previewPgUser: "pb_preview",
       traefikNetwork: "traefik",
       postgresNetwork: "postgres",
       registryUrl: "ghcr.io",

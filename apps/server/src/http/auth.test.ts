@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { ensureAdminToken, revokeToken } from "../auth/store.ts";
 import { hashToken } from "../auth/tokens.ts";
 import { repos } from "../infrastructure/db/schema.ts";
+import { createFakePreviewDb } from "../preview-db/fake.ts";
 import { createRoutes } from "./routes.ts";
 import {
   bearer,
@@ -203,10 +204,20 @@ describe("bearer auth", () => {
     testApp = await createTestApp();
     const res = await testApp.app.handle(
       new Request("http://localhost/v1/deploy", {
-        headers: bearer(testApp.adminToken),
+        method: "POST",
+        headers: {
+          ...bearer(testApp.adminToken),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          canonical_repo_id: REPO,
+          pr_id: 1,
+          slug: "myapp",
+          hostname: "pr-1.example.com",
+        }),
       }),
     );
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
   });
 
   test("deploy token can reach deploy routes", async () => {
@@ -218,10 +229,20 @@ describe("bearer auth", () => {
 
     const res = await testApp.app.handle(
       new Request("http://localhost/v1/deploy", {
-        headers: bearer(body.token),
+        method: "POST",
+        headers: {
+          ...bearer(body.token),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          canonical_repo_id: REPO,
+          pr_id: 1,
+          slug: "myapp",
+          hostname: "pr-1.example.com",
+        }),
       }),
     );
-    expect(res.status).toBe(501);
+    expect(res.status).toBe(200);
   });
 });
 
@@ -251,7 +272,10 @@ describe("ensureAdminToken", () => {
     const again = await ensureAdminToken(testDb.db);
     expect(again).toBeNull();
 
-    const app = createRoutes({ db: testDb.db });
+    const app = createRoutes({
+      db: testDb.db,
+      previewDb: createFakePreviewDb(),
+    });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {
         headers: bearer(generated!),

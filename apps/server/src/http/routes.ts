@@ -1,15 +1,18 @@
 import { Elysia } from "elysia";
 import { authPlugin, requireAdmin, requireAuth } from "../auth/middleware.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import type { PreviewDb } from "../preview-db/port.ts";
 import {
   createDeployToken,
   createDeployTokenBody,
   listTokens,
   revokeToken,
 } from "./admin-tokens.ts";
+import { deploy, lifecycleBody, teardown } from "./deploy.ts";
 
 export type RouteDeps = {
   db: StateDb;
+  previewDb: PreviewDb;
 };
 
 function stubNotImplemented({
@@ -22,6 +25,7 @@ function stubNotImplemented({
 }
 
 export function createRoutes(deps: RouteDeps) {
+  const lifecycle = { db: deps.db, previewDb: deps.previewDb };
   return new Elysia()
     .get("/healthz", () => ({ ok: true }))
     .group("/v1", (v1) =>
@@ -49,8 +53,8 @@ export function createRoutes(deps: RouteDeps) {
             .all("/", stubNotImplemented)
             .all("/*", stubNotImplemented),
         )
-        .all("/deploy", stubNotImplemented)
-        .all("/teardown", stubNotImplemented)
+        .post("/deploy", deploy(lifecycle), { body: lifecycleBody })
+        .post("/teardown", teardown(lifecycle), { body: lifecycleBody })
         .all("/*", stubNotImplemented),
     );
 }
