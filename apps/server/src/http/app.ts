@@ -1,12 +1,17 @@
 import type { Config } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import type { PreviewDb } from "../preview-db/port.ts";
 import { createRoutes } from "./routes.ts";
 
 export type ServerDeps = {
   config: Config;
   db: StateDb;
+  previewDb: PreviewDb;
 };
 
 export function startServer(deps: ServerDeps) {
-  return createRoutes({ db: deps.db }).listen(deps.config.port);
+  return createRoutes({
+    db: deps.db,
+    previewDb: deps.previewDb,
+  }).listen(deps.config.port);
 }

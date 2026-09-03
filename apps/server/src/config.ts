@@ -2,6 +2,7 @@ import { FORGE_KINDS, type ForgeKind } from "./forge/client.ts";
 
 export const REQUIRED_ENV = [
   "PB_PREVIEW_POSTGRES_URL",
+  "PB_PG_USER",
   "PB_TRAEFIK_NETWORK",
   "PB_POSTGRES_NETWORK",
   "PB_REGISTRY_URL",
@@ -18,6 +19,7 @@ export const OPTIONAL_ENV_DEFAULTS = {
 
 export type Config = {
   previewPostgresUrl: string;
+  previewPgUser: string;
   traefikNetwork: string;
   postgresNetwork: string;
   registryUrl: string;
@@ -84,6 +86,7 @@ export function loadConfig(): Config {
 
   return {
     previewPostgresUrl: requiredEnv("PB_PREVIEW_POSTGRES_URL"),
+    previewPgUser: requiredEnv("PB_PG_USER"),
     traefikNetwork: requiredEnv("PB_TRAEFIK_NETWORK"),
     postgresNetwork: requiredEnv("PB_POSTGRES_NETWORK"),
     registryUrl: requiredEnv("PB_REGISTRY_URL"),
@@ -123,6 +126,7 @@ export function loadConfig(): Config {
 export function configSummary(config: Config): Record<string, string | number> {
   return {
     previewPostgresUrl: redactUrl(config.previewPostgresUrl),
+    previewPgUser: config.previewPgUser,
     traefikNetwork: config.traefikNetwork,
     postgresNetwork: config.postgresNetwork,
     registryUrl: config.registryUrl,

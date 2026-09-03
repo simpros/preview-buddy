@@ -9,7 +9,7 @@
 - **CLI:** `pbuddy` (`apps/cli`)
 - **API client:** `@preview-buddy/api-client` (Elysia Eden)
 - **Control-plane DB:** SQLite via Drizzle ORM (`drizzle-orm` RC) + `drizzle-kit` migrations
-- **Preview Postgres:** `Bun.sql` admin connection for CREATE/DROP DATABASE (later slices)
+- **Preview Postgres:** `Bun.sql` admin connection for CREATE/DROP DATABASE
 - **Tests:** `bun test`
 
 ## Commands
