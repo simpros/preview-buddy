@@ -1,27 +1,28 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { eq } from "drizzle-orm";
-import { bootstrapAdminToken } from "../auth/bootstrap.ts";
-import { connectState } from "../infrastructure/db/client.ts";
+import { ensureAdminToken, revokeToken } from "../auth/store.ts";
+import { hashToken } from "../auth/tokens.ts";
 import { repos } from "../infrastructure/db/schema.ts";
-import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
-import { bearer, createTestApp, type TestApp } from "./test-helpers.ts";
+import {
+  bearer,
+  createTestApp,
+  createTestDb,
+  postDeployToken,
+  type TestApp,
+  type TestDb,
+} from "./test-helpers.ts";
 
 const REPO = "https://github.com/org/repo";
 
 let testApp: TestApp | undefined;
-let tmpDir: string | undefined;
+let testDb: TestDb | undefined;
 
 afterEach(async () => {
   await testApp?.cleanup();
   testApp = undefined;
-  if (tmpDir) {
-    rmSync(tmpDir, { recursive: true, force: true });
-    tmpDir = undefined;
-  }
+  await testDb?.cleanup();
+  testDb = undefined;
 });
 
 describe("createRoutes", () => {
@@ -71,18 +72,11 @@ describe("bearer auth", () => {
 
   test("creates deploy token bound to canonical repo and auto-registers repo", async () => {
     testApp = await createTestApp();
-    const createRes = await testApp.app.handle(
-      new Request("http://localhost/v1/admin/tokens", {
-        method: "POST",
-        headers: { ...bearer(testApp.adminToken), "content-type": "application/json" },
-        body: JSON.stringify({
-          canonical_repo_id: REPO,
-          slug: "myapp",
-        }),
-      }),
-    );
-    expect(createRes.status).toBe(201);
-    const created = await createRes.json();
+    const { status, body: created } = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
+    expect(status).toBe(201);
     expect(created.scope).toBe("deploy");
     expect(created.canonical_repo_id).toBe(REPO);
     expect(typeof created.token).toBe("string");
@@ -110,6 +104,37 @@ describe("bearer auth", () => {
     expect(repo?.slug).toBe("myapp");
   });
 
+  test("rejects second deploy token with conflicting slug", async () => {
+    testApp = await createTestApp();
+    const first = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
+    expect(first.status).toBe(201);
+
+    const second = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "other",
+    });
+    expect(second.status).toBe(409);
+    expect(second.body).toEqual({ error: "slug conflict" });
+  });
+
+  test("allows second deploy token with same slug", async () => {
+    testApp = await createTestApp();
+    const first = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
+    const second = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    expect(second.body.token).not.toBe(first.body.token);
+  });
+
   test("rejects unauthenticated unknown /v1 routes with 401", async () => {
     testApp = await createTestApp();
     const res = await testApp.app.handle(
@@ -120,20 +145,13 @@ describe("bearer auth", () => {
 
   test("revokes token via DELETE /v1/admin/tokens/:id", async () => {
     testApp = await createTestApp();
-    const createRes = await testApp.app.handle(
-      new Request("http://localhost/v1/admin/tokens", {
-        method: "POST",
-        headers: { ...bearer(testApp.adminToken), "content-type": "application/json" },
-        body: JSON.stringify({
-          canonical_repo_id: REPO,
-          slug: "myapp",
-        }),
-      }),
-    );
-    const { token, id } = await createRes.json();
+    const { body: created } = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
 
     const deleteRes = await testApp.app.handle(
-      new Request(`http://localhost/v1/admin/tokens/${id}`, {
+      new Request(`http://localhost/v1/admin/tokens/${created.id}`, {
         method: "DELETE",
         headers: bearer(testApp.adminToken),
       }),
@@ -142,7 +160,7 @@ describe("bearer auth", () => {
 
     const useRes = await testApp.app.handle(
       new Request("http://localhost/v1/deploy", {
-        headers: bearer(token),
+        headers: bearer(created.token),
       }),
     );
     expect(useRes.status).toBe(401);
@@ -150,25 +168,35 @@ describe("bearer auth", () => {
 
   test("deploy token cannot call admin routes", async () => {
     testApp = await createTestApp();
-    const createRes = await testApp.app.handle(
-      new Request("http://localhost/v1/admin/tokens", {
-        method: "POST",
-        headers: { ...bearer(testApp.adminToken), "content-type": "application/json" },
-        body: JSON.stringify({
-          canonical_repo_id: REPO,
-          slug: "myapp",
-        }),
-      }),
-    );
-    const { token: deployToken } = await createRes.json();
+    const { body } = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
 
     const res = await testApp.app.handle(
       new Request("http://localhost/v1/admin/tokens", {
-        headers: bearer(deployToken),
+        headers: bearer(body.token),
       }),
     );
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "forbidden" });
+  });
+
+  test("deploy token cannot call /v1/previews or /v1/doctor", async () => {
+    testApp = await createTestApp();
+    const { body } = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
+
+    for (const path of ["/v1/previews", "/v1/doctor"]) {
+      const res = await testApp.app.handle(
+        new Request(`http://localhost${path}`, {
+          headers: bearer(body.token),
+        }),
+      );
+      expect(res.status).toBe(403);
+    }
   });
 
   test("admin token can reach non-admin /v1 routes", async () => {
@@ -183,64 +211,75 @@ describe("bearer auth", () => {
 
   test("deploy token can reach deploy routes", async () => {
     testApp = await createTestApp();
-    const createRes = await testApp.app.handle(
-      new Request("http://localhost/v1/admin/tokens", {
-        method: "POST",
-        headers: { ...bearer(testApp.adminToken), "content-type": "application/json" },
-        body: JSON.stringify({
-          canonical_repo_id: REPO,
-          slug: "myapp",
-        }),
-      }),
-    );
-    const { token: deployToken } = await createRes.json();
+    const { body } = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
 
     const res = await testApp.app.handle(
       new Request("http://localhost/v1/deploy", {
-        headers: bearer(deployToken),
+        headers: bearer(body.token),
       }),
     );
     expect(res.status).toBe(501);
   });
 });
 
-describe("bootstrapAdminToken", () => {
-  test("PB_ADMIN_TOKEN bootstrap inserts admin hash idempotently", async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "pb-bootstrap-"));
-    const { sql, db } = connectState(join(tmpDir, "state.db"));
-    try {
-      await runMigrations(sql);
-      await bootstrapAdminToken(db, { adminToken: "configured-admin" });
-      await bootstrapAdminToken(db, { adminToken: "configured-admin" });
+describe("ensureAdminToken", () => {
+  test("configured token inserts admin hash idempotently and authenticates", async () => {
+    testApp = await createTestApp("configured-admin");
+    await ensureAdminToken(testApp.db, "configured-admin");
+    await ensureAdminToken(testApp.db, "configured-admin");
 
-      const generated = await bootstrapAdminToken(db, {});
-      expect(generated).toBeNull();
+    const generated = await ensureAdminToken(testApp.db);
+    expect(generated).toBeNull();
 
-      const app = createRoutes({ db });
-      const res = await app.handle(
-        new Request("http://localhost/v1/admin/tokens", {
-          headers: bearer("configured-admin"),
-        }),
-      );
-      expect(res.status).toBe(200);
-    } finally {
-      await sql.close();
-    }
+    const res = await testApp.app.handle(
+      new Request("http://localhost/v1/admin/tokens", {
+        headers: bearer("configured-admin"),
+      }),
+    );
+    expect(res.status).toBe(200);
   });
 
   test("auto-generates admin token when none configured", async () => {
-    tmpDir = mkdtempSync(join(tmpdir(), "pb-bootstrap-"));
-    const { sql, db } = connectState(join(tmpDir, "state.db"));
-    try {
-      await runMigrations(sql);
-      const generated = await bootstrapAdminToken(db, {});
-      expect(generated).toBeString();
-      expect(generated!.startsWith("pb_")).toBe(true);
+    testDb = await createTestDb();
+    const generated = await ensureAdminToken(testDb.db);
+    expect(generated).toBeString();
+    expect(generated!.startsWith("pb_")).toBe(true);
 
-      const again = await bootstrapAdminToken(db, {});
-      expect(again).toBeNull();
-    } finally {
-      await sql.close();
-    }
+    const again = await ensureAdminToken(testDb.db);
+    expect(again).toBeNull();
+
+    const app = createRoutes({ db: testDb.db });
+    const res = await app.handle(
+      new Request("http://localhost/v1/admin/tokens", {
+        headers: bearer(generated!),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("revives revoked configured admin token on ensure", async () => {
+    const token = "revive-me-admin";
+    testApp = await createTestApp(token);
+    await revokeToken(testApp.db, hashToken(token));
+
+    const denied = await testApp.app.handle(
+      new Request("http://localhost/v1/admin/tokens", {
+        headers: bearer(token),
+      }),
+    );
+    expect(denied.status).toBe(401);
+
+    const generated = await ensureAdminToken(testApp.db, token);
+    expect(generated).toBeNull();
+
+    const ok = await testApp.app.handle(
+      new Request("http://localhost/v1/admin/tokens", {
+        headers: bearer(token),
+      }),
+    );
+    expect(ok.status).toBe(200);
   });
 });
