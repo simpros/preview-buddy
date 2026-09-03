@@ -1,0 +1,84 @@
+name: preview-buddy
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+
+env:
+  PBUDDY_URL: ${{ secrets.PBUDDY_URL }}
+  PBUDDY_TOKEN: ${{ secrets.PBUDDY_TOKEN }}
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install pbuddy
+        run: |
+          # Pin to a tag/SHA when releases exist; unpinned HEAD is a temporary seam.
+          git clone --depth 1 https://github.com/simpros/preview-buddy.git "$RUNNER_TEMP/preview-buddy"
+          cd "$RUNNER_TEMP/preview-buddy" && bun install
+          # Run the CLI from the workspace so @preview-buddy/api-client resolves.
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '%s\n' '#!/usr/bin/env bash' \
+            "exec bun \"$RUNNER_TEMP/preview-buddy/apps/cli/src/index.ts\" \"\$@\"" \
+            > "$RUNNER_TEMP/bin/pbuddy"
+          chmod +x "$RUNNER_TEMP/bin/pbuddy"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Log in to container registry
+        if: github.event.action != 'closed'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USER }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push images
+        if: github.event.action != 'closed'
+        run: |
+          APP_IMAGE="${{ vars.REGISTRY }}/demoapp:${{ github.sha }}"
+          SEED_IMAGE="${{ vars.REGISTRY }}/demoapp-seed:${{ github.sha }}"
+          docker build -t "$APP_IMAGE" .
+          docker build -f Dockerfile.seed -t "$SEED_IMAGE" .
+          docker push "$APP_IMAGE"
+          docker push "$SEED_IMAGE"
+          echo "APP_IMAGE=$APP_IMAGE" >> "$GITHUB_ENV"
+          echo "SEED_IMAGE=$SEED_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy preview
+        if: github.event.action != 'closed'
+        id: deploy
+        run: |
+          pbuddy deploy -i "$APP_IMAGE" -s "$SEED_IMAGE" | tee deploy.log
+          line=$(grep '^preview_url=' deploy.log || true)
+          if [ -n "$line" ]; then
+            echo "preview_url=${line#preview_url=}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment preview URL
+        if: github.event.action != 'closed' && steps.deploy.outputs.preview_url != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const line = fs.readFileSync('deploy.log', 'utf8')
+              .split('\n').find(l => l.startsWith('preview_url='));
+            if (!line) return;
+            const url = line.slice('preview_url='.length);
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `Preview: ${url}`,
+            });
+
+      - name: Teardown preview
+        if: github.event.action == 'closed'
+        run: pbuddy teardown

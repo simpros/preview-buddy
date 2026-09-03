@@ -1,0 +1,10 @@
+{
+  "name": "adopting-repo-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun -e \"Bun.serve({ port: 8080, fetch: () => new Response('ok') })\"",
+    "db:migrate": "bun -e \"console.log('migrate stub — replace with your toolchain')\"",
+    "seed": "bun run scripts/seed.ts"
+  }
+}

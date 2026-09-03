@@ -3,8 +3,6 @@ export const REQUIRED_ENV = [
   "PB_TRAEFIK_NETWORK",
   "PB_POSTGRES_NETWORK",
   "PB_REGISTRY_URL",
-  "PB_REGISTRY_USER",
-  "PB_REGISTRY_PASSWORD",
 ] as const;
 
 export const OPTIONAL_ENV_DEFAULTS = {
@@ -20,7 +18,9 @@ export type Config = {
   traefikNetwork: string;
   postgresNetwork: string;
   registryUrl: string;
+  /** Empty string = anonymous registry pull. */
   registryUser: string;
+  /** Empty string = anonymous registry pull. */
   registryPassword: string;
   adminToken?: string;
   ttlHours: number;
@@ -51,6 +51,11 @@ function requiredEnv(key: (typeof REQUIRED_ENV)[number]): string {
   return raw.trim();
 }
 
+/** Trimmed env value; missing or blank → "". */
+function optionalEnv(key: string): string {
+  return process.env[key]?.trim() ?? "";
+}
+
 export function loadConfig(): Config {
   const missing = REQUIRED_ENV.filter((key) => {
     const raw = process.env[key];
@@ -69,8 +74,8 @@ export function loadConfig(): Config {
     traefikNetwork: requiredEnv("PB_TRAEFIK_NETWORK"),
     postgresNetwork: requiredEnv("PB_POSTGRES_NETWORK"),
     registryUrl: requiredEnv("PB_REGISTRY_URL"),
-    registryUser: requiredEnv("PB_REGISTRY_USER"),
-    registryPassword: requiredEnv("PB_REGISTRY_PASSWORD"),
+    registryUser: optionalEnv("PB_REGISTRY_USER"),
+    registryPassword: optionalEnv("PB_REGISTRY_PASSWORD"),
     adminToken: adminTokenRaw === "" ? undefined : adminTokenRaw,
     ttlHours: parsePositiveInt(
       "PB_TTL_HOURS",
@@ -106,8 +111,8 @@ export function configSummary(config: Config): Record<string, string | number> {
     traefikNetwork: config.traefikNetwork,
     postgresNetwork: config.postgresNetwork,
     registryUrl: config.registryUrl,
-    registryUser: config.registryUser,
-    registryPassword: "[set]",
+    registryUser: config.registryUser === "" ? "[anonymous]" : config.registryUser,
+    registryPassword: config.registryPassword === "" ? "[anonymous]" : "[set]",
     ttlHours: config.ttlHours,
     sweepMinutes: config.sweepMinutes,
     previewPortDefault: config.previewPortDefault,

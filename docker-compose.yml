@@ -1,0 +1,128 @@
+# Operator smoke stack: Postgres + gateway + Traefik.
+# See docs/deploy.md for wiring notes and external Traefik coexistence.
+#
+# Quick start:
+#   cp compose.env.example compose.env   # edit secrets
+#   docker compose --env-file compose.env up -d --build
+#   curl -sf http://127.0.0.1:7331/healthz
+#
+# External Traefik/Postgres (Coolify, etc.):
+#   docker compose -f docker-compose.yml -f docker-compose.external.yml \
+#     --env-file compose.env up -d --build gateway
+
+name: preview-buddy
+
+networks:
+  traefik:
+    name: ${PB_TRAEFIK_NETWORK:-preview-buddy-traefik}
+  postgres:
+    name: ${PB_POSTGRES_NETWORK:-preview-buddy-postgres}
+
+volumes:
+  gateway-data:
+  postgres-data:
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks:
+      - postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pb_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-pb_admin} -d ${POSTGRES_DB:-postgres}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: create/sync PB_PG_USER over TCP after Postgres is healthy.
+  # Stock postgres entrypoint stays PID 1 — no custom supervisor.
+  ensure-preview-role:
+    image: postgres:16-alpine
+    restart: "no"
+    networks:
+      - postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-pb_admin}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in compose.env}
+      PGHOST: ${PB_PG_HOST:-postgres}
+      PGPORT: ${PB_PG_PORT:-5432}
+      PB_PG_USER: ${PB_PG_USER:-pb_preview}
+      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
+    volumes:
+      - ./deploy/postgres/ensure-preview-role.sh:/ensure-preview-role.sh:ro
+    entrypoint: ["/bin/bash", "/ensure-preview-role.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  traefik:
+    image: traefik:v3.6
+    restart: unless-stopped
+    networks:
+      - traefik
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-8880}:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --log.level=INFO
+
+  gateway:
+    build: .
+    restart: unless-stopped
+    networks:
+      - traefik
+      - postgres
+    ports:
+      - "7331:7331"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - gateway-data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ensure-preview-role:
+        condition: service_completed_successfully
+    environment:
+      PB_PREVIEW_POSTGRES_URL: ${PB_PREVIEW_POSTGRES_URL:?set PB_PREVIEW_POSTGRES_URL in compose.env}
+      PB_PG_HOST: ${PB_PG_HOST:-postgres}
+      PB_PG_PORT: ${PB_PG_PORT:-5432}
+      PB_PG_USER: ${PB_PG_USER:-pb_preview}
+      PB_PG_PASSWORD: ${PB_PG_PASSWORD:?set PB_PG_PASSWORD in compose.env}
+      PB_TRAEFIK_NETWORK: ${PB_TRAEFIK_NETWORK:-preview-buddy-traefik}
+      PB_POSTGRES_NETWORK: ${PB_POSTGRES_NETWORK:-preview-buddy-postgres}
+      PB_REGISTRY_URL: ${PB_REGISTRY_URL:?set PB_REGISTRY_URL in compose.env}
+      PB_REGISTRY_USER: ${PB_REGISTRY_USER:-}
+      PB_REGISTRY_PASSWORD: ${PB_REGISTRY_PASSWORD:-}
+      PB_FORGE: ${PB_FORGE:-github}
+      PB_FORGE_TOKEN: ${PB_FORGE_TOKEN:-}
+      # Blank/unset → loadConfig treats as undefined → auto-generate
+      PB_ADMIN_TOKEN: ${PB_ADMIN_TOKEN:-}
+      PB_STATE_DB_PATH: /data/preview-buddy.db
+      PB_PORT: "7331"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "const r=await fetch('http://127.0.0.1:7331/healthz'); process.exit(r.ok?0:1)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s

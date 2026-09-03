@@ -21,11 +21,11 @@ data isolation per PR.
 
 ## How
 
-1. Operator deploys **Postgres** + the **gateway** (Docker compose) once.
-2. Adopting repo adds `.preview-buddy.yaml` and a CI workflow:
-   - `pbuddy deploy -i <app-image>` on PR open/sync
-   - `pbuddy deploy -i <app-image> -s <seed-image>` when seeding is needed
-   - `pbuddy teardown` on PR close
+1. Operator deploys **Postgres** + the **gateway** + **Traefik** via
+   [Docker Compose](docs/deploy.md) once.
+2. Adopting repo adds `.preview-buddy.yaml` and a CI workflow — see the
+   [adoption guide](docs/adoption.md) and
+   [`examples/adopting-repo/`](examples/adopting-repo/).
 3. Gateway **preview-db module** creates `prev_<slug>_pr<id>` on the shared
    instance.
 4. Gateway **app-deployment module** runs the app container with Traefik
@@ -41,6 +41,9 @@ SQLite. The normative v0.1 specification is tracked in the GitHub issue tracker.
 ## Docs
 
 - `CONTEXT.md` — domain vocabulary
+- [`docs/deploy.md`](docs/deploy.md) — operator compose stack (Postgres + gateway + Traefik)
+- [`docs/adoption.md`](docs/adoption.md) — adopting-repo guide (yaml, CI, entrypoint)
+- [`examples/adopting-repo/`](examples/adopting-repo/) — copy-paste example files
 - Spec — normative v0.1 specification (tracked in the GitHub issue tracker)
 - `docs/adr/` — architecture decisions
 

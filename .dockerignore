@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+.git
+.env
+.env.*
+!.env.example
+*.log
+.turbo
+preview-buddy.db
+preview-buddy.db-*
+coverage
+.agents

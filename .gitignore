@@ -4,6 +4,7 @@ build/
 .env
 .env.*
 !.env.example
+compose.env
 *.log
 .DS_Store
 .bun-cache/

@@ -11,20 +11,22 @@ const TEST_REQUIRED_VALUES: Record<(typeof REQUIRED_ENV)[number], string> = {
   PB_TRAEFIK_NETWORK: "traefik",
   PB_POSTGRES_NETWORK: "postgres",
   PB_REGISTRY_URL: "registry.example.com",
-  PB_REGISTRY_USER: "puller",
-  PB_REGISTRY_PASSWORD: "registry-secret",
 };
 
 function setRequiredEnv(): void {
   for (const key of REQUIRED_ENV) {
     process.env[key] = TEST_REQUIRED_VALUES[key];
   }
+  process.env.PB_REGISTRY_USER = "puller";
+  process.env.PB_REGISTRY_PASSWORD = "registry-secret";
 }
 
 function clearGatewayEnv(): void {
   for (const key of REQUIRED_ENV) {
     delete process.env[key];
   }
+  delete process.env.PB_REGISTRY_USER;
+  delete process.env.PB_REGISTRY_PASSWORD;
   for (const key of Object.keys(OPTIONAL_ENV_DEFAULTS)) {
     delete process.env[key];
   }
@@ -70,6 +72,15 @@ describe("loadConfig", () => {
     );
   });
 
+  test("allows empty registry user/password for anonymous pulls", () => {
+    setRequiredEnv();
+    delete process.env.PB_REGISTRY_USER;
+    delete process.env.PB_REGISTRY_PASSWORD;
+    const config = loadConfig();
+    expect(config.registryUser).toBe("");
+    expect(config.registryPassword).toBe("");
+  });
+
   test("configSummary redacts secrets", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin:sekrit@localhost:5432/postgres",
@@ -88,5 +99,23 @@ describe("loadConfig", () => {
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
     expect(summary.registryPassword).toBe("[set]");
     expect(summary.registryUser).toBe("puller");
+  });
+
+  test("configSummary marks anonymous registry creds", () => {
+    const summary = configSummary({
+      previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
+      traefikNetwork: "traefik",
+      postgresNetwork: "postgres",
+      registryUrl: "ghcr.io",
+      registryUser: "",
+      registryPassword: "",
+      ttlHours: 72,
+      sweepMinutes: 30,
+      previewPortDefault: 8080,
+      seedTimeout: 180,
+      port: 7331,
+    });
+    expect(summary.registryUser).toBe("[anonymous]");
+    expect(summary.registryPassword).toBe("[anonymous]");
   });
 });
