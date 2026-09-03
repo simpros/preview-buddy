@@ -1,16 +1,13 @@
-import { eq, sql } from "drizzle-orm";
 import { t } from "elysia";
-import { generateToken, hashToken } from "../auth/tokens.ts";
+import {
+  issueDeployToken,
+  listTokens as listTokenRows,
+  revokeToken as revokeTokenRow,
+  type TokenRow,
+} from "../auth/store.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
-import { apiTokens, repos } from "../infrastructure/db/schema.ts";
 
-function tokenResponse(row: {
-  tokenHash: string;
-  scope: string;
-  canonicalRepoId: string | null;
-  createdAt: string;
-  revokedAt: string | null;
-}) {
+function tokenResponse(row: TokenRow) {
   return {
     id: row.tokenHash,
     scope: row.scope,
@@ -27,7 +24,7 @@ export const createDeployTokenBody = t.Object({
 
 export function listTokens(db: StateDb) {
   return async () => {
-    const rows = await db.select().from(apiTokens);
+    const rows = await listTokenRows(db);
     return { tokens: rows.map(tokenResponse) };
   };
 }
@@ -40,30 +37,16 @@ export function createDeployToken(db: StateDb) {
     body: { canonical_repo_id: string; slug: string };
     set: { status?: number | string };
   }) => {
-    const raw = generateToken();
-    const tokenHash = hashToken(raw);
-    await db
-      .insert(repos)
-      .values({
-        canonicalId: body.canonical_repo_id,
-        slug: body.slug,
-      })
-      .onConflictDoNothing();
-
-    await db.insert(apiTokens).values({
-      tokenHash,
-      scope: "deploy",
+    const result = await issueDeployToken(db, {
       canonicalRepoId: body.canonical_repo_id,
+      slug: body.slug,
     });
-
-    const [row] = await db
-      .select()
-      .from(apiTokens)
-      .where(eq(apiTokens.tokenHash, tokenHash))
-      .limit(1);
-
+    if (!result.ok) {
+      set.status = 409;
+      return { error: "slug conflict" };
+    }
     set.status = 201;
-    return { ...tokenResponse(row!), token: raw };
+    return { ...tokenResponse(result.row), token: result.raw };
   };
 }
 
@@ -75,13 +58,8 @@ export function revokeToken(db: StateDb) {
     params: { id: string };
     set: { status?: number | string };
   }) => {
-    const result = await db
-      .update(apiTokens)
-      .set({ revokedAt: sql`(datetime('now'))` })
-      .where(eq(apiTokens.tokenHash, params.id))
-      .returning({ tokenHash: apiTokens.tokenHash });
-
-    if (result.length === 0) {
+    const found = await revokeTokenRow(db, params.id);
+    if (!found) {
       set.status = 404;
       return { error: "not found" };
     }
