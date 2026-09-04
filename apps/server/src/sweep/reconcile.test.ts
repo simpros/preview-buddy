@@ -93,7 +93,6 @@ describe("runSweepPass", () => {
         prId: 10,
         slug: "widgets",
         dbName: "prev_widgets_pr10",
-        containerId: "c10",
       },
     ]);
   });
@@ -123,7 +122,6 @@ describe("runSweepPass", () => {
         prId: 5,
         slug: "widgets",
         dbName: "prev_widgets_pr5",
-        containerId: null,
       },
     ]);
     // TTL-only candidates never need a forge round-trip.
@@ -170,7 +168,6 @@ describe("runSweepPass", () => {
         reason: "sweep:orphan-container",
         prId: 55,
         slug: "widgets",
-        containerId: "ctr-orphan",
       },
     ]);
     expect(logs).toContain("deleted (sweep:orphan-container)");
@@ -203,7 +200,6 @@ describe("runSweepPass", () => {
         reason: "sweep:orphan-container",
         prId: 42,
         slug: "widgets",
-        containerId: "ctr-42",
       },
     ]);
     expect(logs).toContain("deleted (sweep:orphan-db)");
@@ -249,7 +245,6 @@ describe("runSweepPass", () => {
         prId: 10,
         slug: "widgets",
         dbName: "prev_widgets_pr10",
-        containerId: "c10",
       },
       {
         reason: "sweep:orphan-db",
@@ -301,7 +296,6 @@ describe("runSweepPass", () => {
         prId: 10,
         slug: "widgets",
         dbName: "prev_widgets_pr10",
-        containerId: "c10",
       },
       {
         reason: "sweep:orphan-db",
@@ -352,7 +346,6 @@ describe("runSweepPass", () => {
         prId: 2,
         slug: "repob",
         dbName: "prev_repob_pr2",
-        containerId: "cb",
       },
     ]);
   });
@@ -450,7 +443,6 @@ describe("runSweepPass", () => {
         prId: 10,
         slug: "widgets",
         dbName: "prev_widgets_pr10",
-        containerId: "c10",
       },
       {
         reason: "sweep:orphan-db",
@@ -464,7 +456,6 @@ describe("runSweepPass", () => {
         prId: 11,
         slug: "widgets",
         dbName: "prev_widgets_pr11",
-        containerId: "c11",
       },
     ]);
   });
@@ -505,13 +496,11 @@ describe("runSweepPass", () => {
         prId: 10,
         slug: "widgets",
         dbName: "prev_widgets_pr10",
-        containerId: "c10",
       },
       {
         reason: "sweep:orphan-container",
         prId: 55,
         slug: "widgets",
-        containerId: "ctr-55",
       },
     ]);
   });
@@ -593,7 +582,6 @@ describe("runSweepPass", () => {
         prId: 2,
         slug: "widgets",
         dbName: "prev_widgets_pr2",
-        containerId: "c2",
       },
     ]);
   });

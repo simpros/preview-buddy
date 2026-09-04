@@ -28,15 +28,12 @@ export type SweepDeletion =
       prId: number;
       slug: string;
       dbName: string;
-      /** null = remove by deterministic name */
-      containerId: string | null;
     }
   | { reason: "sweep:orphan-db"; slug: string; prId: number; dbName: string }
   | {
       reason: "sweep:orphan-container";
       slug: string;
       prId: number;
-      containerId: string;
     };
 
 export type SweepPorts = {
@@ -105,7 +102,6 @@ function planOrphans(
       reason: "sweep:orphan-container",
       slug: container.slug,
       prId: container.prId,
-      containerId: container.containerId,
     });
   }
   return out;
@@ -153,7 +149,6 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
         prId: preview.prId,
         slug: preview.slug,
         dbName: preview.dbName,
-        containerId: preview.containerId,
       });
     } else {
       remainingPreviews.push(preview);
@@ -201,7 +196,6 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
       prId: preview.prId,
       slug: preview.slug,
       dbName: preview.dbName,
-      containerId: preview.containerId,
     });
   }
 

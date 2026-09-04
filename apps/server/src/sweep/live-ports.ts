@@ -33,8 +33,7 @@ async function teardownResources(
   deletion: SweepDeletion,
 ): Promise<void> {
   // Best-effort each resource step; leave SQLite non-removed on any
-  // failure so the next pass can retry. Field presence on the deletion
-  // union is the resource plan — do not re-encode via reason switches.
+  // failure so the next pass can retry.
   let failLabel = `${deletion.slug}:${deletion.prId}`;
   const steps: Promise<void>[] = [];
 
@@ -47,16 +46,10 @@ async function teardownResources(
       }),
     );
   }
-  if ("containerId" in deletion) {
-    // null = remove by deterministic name (preview rows)
-    if (deletion.containerId) failLabel = deletion.containerId;
+  if (deletion.reason !== "sweep:orphan-db") {
     steps.push(
       deps.containers
-        .remove({
-          containerId: deletion.containerId,
-          slug: deletion.slug,
-          prId: deletion.prId,
-        })
+        .remove({ slug: deletion.slug, prId: deletion.prId })
         .catch((error) => {
           deps.log?.(
             `sweep remove container failed: ${String(error)}`,

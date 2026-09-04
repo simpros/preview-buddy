@@ -9,11 +9,7 @@ export type CatalogContainer = {
 
 export type ContainerPorts = {
   listPreviewContainers: () => Promise<CatalogContainer[]>;
-  remove: (opts: {
-    containerId: string | null;
-    slug: string;
-    prId: number;
-  }) => Promise<void>;
+  remove: (opts: { slug: string; prId: number }) => Promise<void>;
 };
 
 export type DockerRemoverOptions = {
@@ -79,15 +75,7 @@ export function createDockerRemover(
       }
       return out;
     },
-    async remove({ containerId, slug, prId }) {
-      // Id is a hint; deterministic name is the canonical identity.
-      if (containerId) {
-        try {
-          await removeByRef(containerId);
-        } catch {
-          // hint failed; fall through to canonical name
-        }
-      }
+    async remove({ slug, prId }) {
       // 204/404 ok; hard fail throws
       await removeByRef(previewContainerName(slug, prId));
     },

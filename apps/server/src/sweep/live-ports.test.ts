@@ -48,8 +48,8 @@ describe("createLiveSweepPorts", () => {
     };
     const containers: ContainerPorts = {
       listPreviewContainers: async () => [],
-      remove: async ({ containerId }) => {
-        if (containerId) removedContainers.push(containerId);
+      remove: async ({ slug, prId }) => {
+        removedContainers.push(`${slug}:${prId}`);
       },
     };
 
@@ -67,7 +67,7 @@ describe("createLiveSweepPorts", () => {
     const result = await runSweepPass(ports);
     expect(result.forgeRepoFailures).toEqual([]);
     expect(droppedDbs).toEqual(["prev_widgets_pr10"]);
-    expect(removedContainers).toEqual(["ctr-10"]);
+    expect(removedContainers).toEqual(["widgets:10"]);
 
     const rows = await testDb.db.select().from(previews);
     expect(rows).toHaveLength(1);

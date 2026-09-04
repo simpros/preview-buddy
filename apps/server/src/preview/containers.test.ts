@@ -35,7 +35,7 @@ describe("createDockerRemover", () => {
     ]);
   });
 
-  test("removes by container id then always attempts deterministic name", async () => {
+  test("removes by deterministic preview container name", async () => {
     const calls: string[] = [];
     const remover = createDockerRemover({
       fetch: async (input) => {
@@ -44,14 +44,13 @@ describe("createDockerRemover", () => {
       },
     });
 
-    await remover.remove({ containerId: "abc123", slug: "widgets", prId: 7 });
+    await remover.remove({ slug: "widgets", prId: 7 });
     expect(calls).toEqual([
-      "http://localhost/containers/abc123?force=true",
       `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
     ]);
   });
 
-  test("falls back to preview container name when containerId is null", async () => {
+  test("treats 404 as success when container is already gone", async () => {
     const calls: string[] = [];
     const remover = createDockerRemover({
       fetch: async (input) => {
@@ -60,66 +59,25 @@ describe("createDockerRemover", () => {
       },
     });
 
-    await remover.remove({ containerId: null, slug: "widgets", prId: 7 });
+    await remover.remove({ slug: "widgets", prId: 7 });
     expect(calls).toEqual([
       `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
     ]);
   });
 
-  test("attempts deterministic name after containerId 404", async () => {
+  test("rejects when deterministic name hard-fails", async () => {
     const calls: string[] = [];
     const remover = createDockerRemover({
       fetch: async (input) => {
         calls.push(String(input));
-        return new Response(null, { status: 404 });
-      },
-    });
-
-    await remover.remove({ containerId: "stale-id", slug: "widgets", prId: 7 });
-    expect(calls).toEqual([
-      "http://localhost/containers/stale-id?force=true",
-      `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
-    ]);
-  });
-
-  test("succeeds when containerId hard-fails but deterministic name returns 204", async () => {
-    const calls: string[] = [];
-    const remover = createDockerRemover({
-      fetch: async (input) => {
-        const url = String(input);
-        calls.push(url);
-        if (url.includes("/containers/stale-id?")) {
-          return new Response("engine error", { status: 500 });
-        }
-        return new Response(null, { status: 204 });
-      },
-    });
-
-    await remover.remove({ containerId: "stale-id", slug: "widgets", prId: 7 });
-    expect(calls).toEqual([
-      "http://localhost/containers/stale-id?force=true",
-      `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
-    ]);
-  });
-
-  test("rejects when containerId is 404 but deterministic name hard-fails", async () => {
-    const calls: string[] = [];
-    const remover = createDockerRemover({
-      fetch: async (input) => {
-        const url = String(input);
-        calls.push(url);
-        if (url.includes("/containers/stale-id?")) {
-          return new Response(null, { status: 404 });
-        }
         return new Response("engine error", { status: 500 });
       },
     });
 
-    await expect(
-      remover.remove({ containerId: "stale-id", slug: "widgets", prId: 7 }),
-    ).rejects.toThrow(/Docker remove .* failed: 500/);
+    await expect(remover.remove({ slug: "widgets", prId: 7 })).rejects.toThrow(
+      /Docker remove .* failed: 500/,
+    );
     expect(calls).toEqual([
-      "http://localhost/containers/stale-id?force=true",
       `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
     ]);
   });
