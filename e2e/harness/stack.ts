@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { COMPOSE_E2E_ENV_PATH, E2E_COMPOSE_PROJECT, e2eConfig } from "./config.ts";
-
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
+import { join } from "node:path";
+import {
+  COMPOSE_E2E_ENV_PATH,
+  E2E_COMPOSE_PROJECT,
+  e2eConfig,
+  repoRoot,
+} from "./config.ts";
 
 export function composeArgs(extra: string[]): string[] {
   return [

@@ -7,19 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  fixtures:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-      - run: bun install --frozen-lockfile
-      - run: bun run test:e2e:fixtures
-
   # NOTE: acceptance stays non-blocking until the compose path is confirmed
-  # end-to-end in CI. Today the managed run asserts compose smoke + fixtures;
-  # lifecycle/sweep stay PB_E2E_FULL / test.todo until #25–#31 land.
+  # end-to-end in CI. Today the managed run asserts compose smoke only
+  # (/healthz + admin deploy-token via api-client). Lifecycle/sweep are
+  # test.todo until #25–#31; forge fixture coverage waits on #30's parser.
   acceptance:
     continue-on-error: true
     runs-on: ubuntu-latest
