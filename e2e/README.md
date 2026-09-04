@@ -1,7 +1,7 @@
 # E2E acceptance harness
 
 Runs against the **operator compose stack** (`docker-compose.yml` +
-`e2e/docker-compose.e2e.yml`) with real Docker, Postgres, and Traefik.
+`e2e/compose.e2e.env`) with real Docker, Postgres, and Traefik.
 
 ## Commands
 
@@ -11,25 +11,29 @@ bun run test:e2e:fixtures
 
 # Full harness: compose up → tests → compose down
 bun run test:e2e
+
+# Also run lifecycle suites (needs deploy/teardown endpoints from #25–#31)
+PB_E2E_FULL=1 bun run test:e2e
 ```
 
 Requires Docker. The managed run uses project name `preview-buddy-e2e`, host
-ports **17331** (gateway) / **18880** (Traefik), and admin token
-`e2e-admin-token` (see `compose.e2e.env`).
+ports / admin token from `compose.e2e.env` (also the source for
+`e2e/harness/config.ts` — no duplicate defaults). `run.ts` waits for the
+gateway once and writes `e2e/.session.json` (gitignored); suites only read
+that artifact.
 
 ## What runs today vs skipped
 
 | Suite | Needs | Status |
 |---|---|---|
 | `fixtures.test.ts` | nothing | always runs |
-| `stack.test.ts` | compose | `/healthz` + admin deploy-token create |
-| `lifecycle.test.ts` | `#25`/`#26`/`#27` (+ seed `#28`) | `skipIf` while `/v1/deploy` or `/v1/teardown` return **501** |
-| `sweep.test.ts` | `#25`+`#30`/`#31` | compose assert `skipIf` until deploy + doctor exist; orphan fixture shape in `fixtures.test.ts` |
+| `stack.test.ts` | compose (`PB_E2E_MANAGED`) | `/healthz` + admin deploy-token create |
+| `lifecycle.test.ts` | `#25`–`#28` (+ `#31` for list) | `PB_E2E_FULL=1` gate until endpoints land |
+| `sweep.test.ts` | `#30` | `test.todo` until sweep trigger exists |
 
-When feature tickets land and leave the 501 stubs, the lifecycle/sweep tests
-enable themselves via the capability probe — no harness edit required for the
-skip gate (request body shape may still need a one-line adjust in
-`harness/gateway.ts`).
+Compose suites skip cleanly when `PB_E2E_MANAGED` is unset (plain `bun test`).
+Setting `PB_E2E_MANAGED=1` without going through `bun run test:e2e` errors
+with a clear "run via bun run test:e2e" message (missing session artifact).
 
 ## Recorded forge fixtures
 

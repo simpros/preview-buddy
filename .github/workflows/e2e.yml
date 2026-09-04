@@ -18,7 +18,8 @@ jobs:
       - run: bun run test:e2e:fixtures
 
   # NOTE: acceptance stays non-blocking until the compose path is confirmed
-  # end-to-end in CI (Docker image build + env + healthy gateway).
+  # end-to-end in CI. Today the managed run asserts compose smoke + fixtures;
+  # lifecycle/sweep stay PB_E2E_FULL / test.todo until #25–#31 land.
   acceptance:
     continue-on-error: true
     runs-on: ubuntu-latest

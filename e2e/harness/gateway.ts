@@ -1,14 +1,48 @@
+import { expect } from "bun:test";
 import { e2eConfig } from "./config.ts";
 
-export type GatewayCapabilities = {
-  /** POST /v1/deploy is no longer a 501 stub (#25+). */
-  deploy: boolean;
-  /** POST /v1/teardown is no longer a 501 stub (#25+). */
-  teardown: boolean;
-  /** GET /v1/previews is no longer a 501 stub (#31). */
-  previews: boolean;
-  /** GET /v1/doctor is no longer a 501 stub (#31). */
-  doctor: boolean;
+/** POST /v1/deploy request body (gateway contract for #25+). */
+export type DeployRequest = {
+  pr_id: number;
+  slug: string;
+  hostname: string;
+  app_image: string;
+  /** Omit for no-seed deploys; JSON.stringify drops undefined. */
+  seed_image?: string;
+  health: {
+    path: string;
+    interval_seconds: number;
+    timeout_seconds: number;
+    expect: number;
+  };
+};
+
+export type DeployResponse = {
+  db_name: string;
+  status: string;
+  preview_url?: string;
+  container_id?: string;
+  seeded_at?: string | null;
+};
+
+export type PreviewRow = {
+  pr_id: number;
+  db_name: string;
+  status: string;
+  container_id?: string | null;
+};
+
+export type PreviewsResponse = {
+  previews: PreviewRow[];
+};
+
+export type TokensListResponse = {
+  tokens: Array<{ scope: string; canonical_repo_id: string | null }>;
+};
+
+export type CreateTokenResponse = {
+  token: string;
+  id: string;
 };
 
 function bearer(token: string): HeadersInit {
@@ -32,34 +66,17 @@ export async function gatewayFetch(
   });
 }
 
-/** Probe stubs: 501 means the feature ticket has not landed yet. */
-export async function probeCapabilities(
-  adminToken = e2eConfig.adminToken,
-): Promise<GatewayCapabilities> {
-  const [deploy, teardown, previews, doctor] = await Promise.all([
-    gatewayFetch("/v1/deploy", { method: "POST", token: adminToken, body: "{}" }),
-    gatewayFetch("/v1/teardown", {
-      method: "POST",
-      token: adminToken,
-      body: "{}",
-    }),
-    gatewayFetch("/v1/previews", { method: "GET", token: adminToken }),
-    gatewayFetch("/v1/doctor", { method: "GET", token: adminToken }),
-  ]);
-
-  return {
-    deploy: deploy.status !== 501,
-    teardown: teardown.status !== 501,
-    previews: previews.status !== 501,
-    doctor: doctor.status !== 501,
-  };
+/** Assert an HTTP status is in the 2xx range (not merely < 300). */
+export function expect2xx(status: number): void {
+  expect(status).toBeGreaterThanOrEqual(200);
+  expect(status).toBeLessThan(300);
 }
 
 export async function createDeployToken(input: {
   canonicalRepoId: string;
   slug: string;
   adminToken?: string;
-}): Promise<{ token: string; id: string }> {
+}): Promise<CreateTokenResponse> {
   const res = await gatewayFetch("/v1/admin/tokens", {
     method: "POST",
     token: input.adminToken ?? e2eConfig.adminToken,
@@ -73,16 +90,28 @@ export async function createDeployToken(input: {
       `create deploy token failed: ${res.status} ${await res.text()}`,
     );
   }
-  const body = (await res.json()) as { token: string; id: string };
-  return { token: body.token, id: body.id };
+  return (await res.json()) as CreateTokenResponse;
+}
+
+export async function readDeployResponse(
+  res: Response,
+): Promise<DeployResponse> {
+  const body = (await res.json()) as DeployResponse;
+  expect(typeof body.db_name).toBe("string");
+  expect(typeof body.status).toBe("string");
+  return body;
 }
 
 /**
  * Best-effort deploy body for when #25/#26 land. Shape follows the v0.1
  * gateway contract (slug/pr/image from adopting-repo CI). Adjust here if the
  * implementing tickets finalize a different schema — not in shared modules.
+ *
+ * Follow-up: switch to `@preview-buddy/api-client` once routes stabilize.
  */
-export function deployBody(overrides: Record<string, unknown> = {}) {
+export function deployBody(
+  overrides: Partial<DeployRequest> = {},
+): DeployRequest {
   return {
     pr_id: e2eConfig.prId,
     slug: e2eConfig.slug,

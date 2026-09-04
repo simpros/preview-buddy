@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { E2E_COMPOSE_PROJECT, e2eConfig } from "./config.ts";
+import { COMPOSE_E2E_ENV_PATH, E2E_COMPOSE_PROJECT, e2eConfig } from "./config.ts";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -12,10 +12,8 @@ export function composeArgs(extra: string[]): string[] {
     E2E_COMPOSE_PROJECT,
     "-f",
     join(repoRoot, "docker-compose.yml"),
-    "-f",
-    join(repoRoot, "e2e/docker-compose.e2e.yml"),
     "--env-file",
-    join(repoRoot, "e2e/compose.e2e.env"),
+    COMPOSE_E2E_ENV_PATH,
     ...extra,
   ];
 }
@@ -56,10 +54,9 @@ export async function composeDown(): Promise<void> {
 export async function buildDemoImages(): Promise<void> {
   const demoDir = join(repoRoot, "examples/adopting-repo");
   if (!existsSync(demoDir)) {
-    console.error(
+    throw new Error(
       `e2e: demo directory missing: ${demoDir} (needed for adopting-repo image builds)`,
     );
-    process.exit(1);
   }
   await run([
     "docker",

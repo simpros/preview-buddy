@@ -12,3 +12,4 @@ coverage/
 .turbo/
 preview-buddy.db
 preview-buddy.db-*
+e2e/.session.json
