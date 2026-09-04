@@ -33,12 +33,13 @@ docker compose --env-file compose.env down
 
 The stack in `docker-compose.yml` is the reference **operator compose stack**
 for local development and CI smoke. The **E2E acceptance harness** (`e2e/`)
-runs on top of this file via `e2e/docker-compose.e2e.yml` and
-`e2e/compose.e2e.env` — see [`e2e/README.md`](../e2e/README.md) or
-`bun run test:e2e`. Default network names (`preview-buddy-traefik`,
-`preview-buddy-postgres`) are project-local so a smoke `up` does not collide
-with an existing Coolify Traefik network named `traefik`. Host ports are
-`PB_GATEWAY_HOST_PORT` (default 7331) and `TRAEFIK_HTTP_PORT` (default 8880).
+runs the same file with `--env-file e2e/compose.e2e.env` — see
+[`e2e/README.md`](../e2e/README.md) or `bun run test:e2e`. Default network
+names (`preview-buddy-traefik`, `preview-buddy-postgres`) are project-local so
+a smoke `up` does not collide with an existing Coolify Traefik network named
+`traefik`. Host ports are `PB_GATEWAY_HOST_PORT` (default 7331) and
+`TRAEFIK_HTTP_PORT` (default 8880); the harness ports come from
+`e2e/compose.e2e.env`.
 
 ## Architecture
 
