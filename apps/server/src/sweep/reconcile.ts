@@ -1,14 +1,15 @@
 import { isForgeApiError } from "../forge/types.ts";
-import type { CatalogContainer } from "../preview/containers.ts";
-import type { CatalogDatabase } from "../preview/postgres-admin.ts";
-
-export type { CatalogContainer, CatalogDatabase };
 
 export type SweepReason =
   | "sweep:pr-not-open"
   | "sweep:ttl-expired"
   | "sweep:orphan-db"
   | "sweep:orphan-container";
+
+/** Minimal preview identity for orphan planning (no Docker list metadata). */
+export type PreviewRef = { slug: string; prId: number };
+
+export type CatalogDbRef = PreviewRef & { dbName: string };
 
 export type SweepPreview = {
   canonicalRepoId: string;
@@ -37,8 +38,8 @@ export type SweepDeletion =
 
 export type SweepPorts = {
   listPreviews: () => Promise<SweepPreview[]>;
-  listCatalogDatabases: () => Promise<CatalogDatabase[]>;
-  listPreviewContainers: () => Promise<CatalogContainer[]>;
+  listCatalogDatabases: () => Promise<CatalogDbRef[]>;
+  listPreviewContainers: () => Promise<PreviewRef[]>;
   listOpenPrIds: (canonicalRepoId: string) => Promise<number[]>;
   drop: (deletion: SweepDeletion) => Promise<void>;
   ttlHours: number;
@@ -82,8 +83,8 @@ async function dropSettled(
 
 function planOrphans(
   previewKeys: Set<string>,
-  catalog: CatalogDatabase[],
-  containers: CatalogContainer[],
+  catalog: CatalogDbRef[],
+  containers: PreviewRef[],
 ): SweepDeletion[] {
   const out: SweepDeletion[] = [];
   for (const db of catalog) {

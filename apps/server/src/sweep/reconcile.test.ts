@@ -3,8 +3,8 @@ import { createForgeClient } from "../forge/client.ts";
 import { forgeApiError } from "../forge/types.ts";
 import {
   runSweepPass,
-  type CatalogContainer,
-  type CatalogDatabase,
+  type CatalogDbRef,
+  type PreviewRef,
   type SweepDeletion,
   type SweepPorts,
   type SweepPreview,
@@ -12,8 +12,8 @@ import {
 
 function memoryPorts(seed: {
   previews?: SweepPreview[];
-  catalog?: CatalogDatabase[] | Error;
-  containers?: CatalogContainer[] | Error;
+  catalog?: CatalogDbRef[] | Error;
+  containers?: PreviewRef[] | Error;
   openPrs?: Record<string, number[] | Error>;
   dropErrorFor?: (deletion: SweepDeletion) => Error | undefined;
   log?: SweepPorts["log"];
@@ -150,14 +150,7 @@ describe("runSweepPass", () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const { ports, deletions, logs } = memoryPorts({
       previews: [],
-      containers: [
-        {
-          containerId: "ctr-orphan",
-          containerName: "pb-widgets-pr-55",
-          slug: "widgets",
-          prId: 55,
-        },
-      ],
+      containers: [{ slug: "widgets", prId: 55 }],
     });
 
     await runSweepPass(ports);
@@ -176,14 +169,7 @@ describe("runSweepPass", () => {
     const { ports, deletions, logs } = memoryPorts({
       previews: [],
       catalog: [{ dbName: "prev_widgets_pr42", slug: "widgets", prId: 42 }],
-      containers: [
-        {
-          containerId: "ctr-42",
-          containerName: "pb-widgets-pr-42",
-          slug: "widgets",
-          prId: 42,
-        },
-      ],
+      containers: [{ slug: "widgets", prId: 42 }],
     });
 
     await runSweepPass(ports);
@@ -462,14 +448,7 @@ describe("runSweepPass", () => {
         },
       ],
       catalog: new Error("postgres catalog boom"),
-      containers: [
-        {
-          containerId: "ctr-55",
-          containerName: "pb-widgets-pr-55",
-          slug: "widgets",
-          prId: 55,
-        },
-      ],
+      containers: [{ slug: "widgets", prId: 55 }],
     });
 
     await runSweepPass(ports);
@@ -516,14 +495,7 @@ describe("runSweepPass", () => {
         },
       ],
       catalog: [{ dbName: "prev_widgets_pr3", slug: "widgets", prId: 3 }],
-      containers: [
-        {
-          containerId: "c3",
-          containerName: "pb-widgets-pr-3",
-          slug: "widgets",
-          prId: 3,
-        },
-      ],
+      containers: [{ slug: "widgets", prId: 3 }],
       openPrs: { "https://github.com/acme/widgets": [3] },
     });
 

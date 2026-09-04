@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { connectState } from "./client.ts";
+import { parseUnambiguousUtcMs } from "./instant.ts";
 import { apiTokens, previews, repos } from "./schema.ts";
 import { runMigrations } from "../../scripts/migrate.ts";
 
@@ -20,19 +21,6 @@ function sqlitePath(): string {
 
 /** SQLite strftime `%f` → `ss.sss` with a Z suffix. */
 const ISO_Z = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
-
-/**
- * Same fail-closed rule as live-ports `parseCreatedAtMs`: only unambiguous
- * UTC (Z or ±HH:MM) may become a TTL instant. Kept local so db tests stay
- * off the sweep stack.
- */
-const UNAMBIGUOUS_UTC_INSTANT = /Z|[+-]\d{2}:\d{2}$/;
-
-function parseCreatedAtMs(createdAt: string): number | null {
-  if (!UNAMBIGUOUS_UTC_INSTANT.test(createdAt)) return null;
-  const parsed = Date.parse(createdAt);
-  return Number.isNaN(parsed) ? null : parsed;
-}
 
 async function tableNames(sql: ReturnType<typeof connectState>["sql"]) {
   const rows = await sql<{ name: string }[]>`
@@ -119,16 +107,16 @@ describe("runMigrations", () => {
       expect(preview?.createdAt).toMatch(ISO_Z);
       expect(preview?.updatedAt).toMatch(ISO_Z);
 
-      expect(parseCreatedAtMs(repo!.createdAt)).toBe(
+      expect(parseUnambiguousUtcMs(repo!.createdAt)).toBe(
         Date.parse(repo!.createdAt),
       );
-      expect(parseCreatedAtMs(preview!.createdAt)).toBe(
+      expect(parseUnambiguousUtcMs(preview!.createdAt)).toBe(
         Date.parse(preview!.createdAt),
       );
 
       // Fail-closed: space-separated legacy forms never become an instant.
-      expect(parseCreatedAtMs("2026-09-02 12:00:00")).toBeNull();
-      expect(parseCreatedAtMs("not-a-timestamp")).toBeNull();
+      expect(parseUnambiguousUtcMs("2026-09-02 12:00:00")).toBeNull();
+      expect(parseUnambiguousUtcMs("not-a-timestamp")).toBeNull();
     } finally {
       await sql.close();
     }
