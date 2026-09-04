@@ -19,7 +19,6 @@ bun install
 bun run dev          # turbo dev, server watch only
 bun test
 bun run test:e2e     # compose acceptance harness (needs Docker)
-bun run test:e2e:fixtures  # forge fixture contracts only
 bun run typecheck    # turbo build (tsc per package)
 bun run db:generate  # drizzle-kit generate (apps/server)
 bun run db:migrate   # runtime migrator (apps/server; same as boot)

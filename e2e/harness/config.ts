@@ -10,7 +10,10 @@ import { fileURLToPath } from "node:url";
 
 export const E2E_COMPOSE_PROJECT = "preview-buddy-e2e";
 
-const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
+export const repoRoot = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 export const COMPOSE_E2E_ENV_PATH = join(repoRoot, "e2e/compose.e2e.env");
 export const E2E_SESSION_PATH = join(repoRoot, "e2e/.session.json");
 
@@ -54,7 +57,7 @@ export const e2eConfig = {
     `http://127.0.0.1:${traefikHttpPort}`,
   adminToken:
     process.env.PB_E2E_ADMIN_TOKEN?.trim() || composeAdminToken,
-  /** Demo images built by the harness from examples/adopting-repo. */
+  /** Demo images built by the harness from examples/adopting-repo (PB_E2E_FULL). */
   demoAppImage:
     process.env.PB_E2E_DEMO_APP_IMAGE?.trim() || "preview-buddy-e2e-demo:app",
   demoSeedImage:
