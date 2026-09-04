@@ -8,7 +8,7 @@ import {
   listTokens,
   revokeToken,
 } from "./admin-tokens.ts";
-import { deploy, lifecycleBody, teardown } from "./deploy.ts";
+import { deploy, deployBody, teardown, teardownBody } from "./deploy.ts";
 
 export type RouteDeps = {
   db: StateDb;
@@ -53,8 +53,8 @@ export function createRoutes(deps: RouteDeps) {
             .all("/", stubNotImplemented)
             .all("/*", stubNotImplemented),
         )
-        .post("/deploy", deploy(lifecycle), { body: lifecycleBody })
-        .post("/teardown", teardown(lifecycle), { body: lifecycleBody })
+        .post("/deploy", deploy(lifecycle), { body: deployBody })
+        .post("/teardown", teardown(lifecycle), { body: teardownBody })
         .all("/*", stubNotImplemented),
     );
 }

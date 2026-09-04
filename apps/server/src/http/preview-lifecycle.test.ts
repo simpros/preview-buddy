@@ -24,8 +24,17 @@ afterEach(async () => {
   fakePreviewDb = undefined;
 });
 
-async function setup() {
+async function setup(options?: {
+  createDatabase?: (dbName: string) => Promise<void>;
+  dropDatabase?: (dbName: string) => Promise<void>;
+}) {
   fakePreviewDb = createFakePreviewDb();
+  if (options?.createDatabase) {
+    fakePreviewDb.createDatabase = options.createDatabase;
+  }
+  if (options?.dropDatabase) {
+    fakePreviewDb.dropDatabase = options.dropDatabase;
+  }
   testApp = await createTestApp({ previewDb: fakePreviewDb });
   const { body } = await postDeployToken(testApp, {
     canonical_repo_id: REPO,
@@ -40,6 +49,15 @@ function deployBody(overrides: Record<string, unknown> = {}) {
     pr_id: 42,
     slug: "myapp",
     hostname: "pr-42.myapp.preview.example.com",
+    ...overrides,
+  };
+}
+
+function teardownBody(overrides: Record<string, unknown> = {}) {
+  return {
+    canonical_repo_id: REPO,
+    pr_id: 42,
+    slug: "myapp",
     ...overrides,
   };
 }
@@ -156,7 +174,7 @@ describe("POST /v1/deploy", () => {
   test("recreates database after teardown", async () => {
     const { deployToken } = await setup();
     await postDeploy(deployToken, deployBody());
-    await postTeardown(deployToken, deployBody());
+    await postTeardown(deployToken, teardownBody());
     const res = await postDeploy(deployToken, deployBody());
     expect(res.status).toBe(200);
     expect(fakePreviewDb!.created).toEqual([
@@ -172,13 +190,51 @@ describe("POST /v1/deploy", () => {
       .limit(1);
     expect(row?.status).toBe("provisioning");
   });
+
+  test("marks error when createDatabase fails after SQLite write", async () => {
+    const { deployToken } = await setup({
+      createDatabase: async () => {
+        throw new Error("boom");
+      },
+    });
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "preview_db_create_failed" });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.status).toBe("error");
+  });
+
+  test("retries provision after previous create failure", async () => {
+    let failOnce = true;
+    const { deployToken } = await setup({
+      createDatabase: async (dbName) => {
+        if (failOnce) {
+          failOnce = false;
+          throw new Error("boom");
+        }
+        fakePreviewDb!.created.push(dbName);
+      },
+    });
+    expect((await postDeploy(deployToken, deployBody())).status).toBe(500);
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "provisioning" });
+    expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
+  });
 });
 
 describe("POST /v1/teardown", () => {
   test("drops database and sets status removed", async () => {
     const { deployToken } = await setup();
     await postDeploy(deployToken, deployBody());
-    const res = await postTeardown(deployToken, deployBody());
+    const res = await postTeardown(deployToken, teardownBody());
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: "removed" });
     expect(fakePreviewDb!.dropped).toEqual(["prev_myapp_pr42"]);
@@ -193,11 +249,23 @@ describe("POST /v1/teardown", () => {
     expect(row?.status).toBe("removed");
   });
 
+  test("accepts body without hostname", async () => {
+    const { deployToken } = await setup();
+    await postDeploy(deployToken, deployBody());
+    const res = await postTeardown(deployToken, {
+      canonical_repo_id: REPO,
+      pr_id: 42,
+      slug: "myapp",
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, status: "removed" });
+  });
+
   test("is idempotent when already removed", async () => {
     const { deployToken } = await setup();
     await postDeploy(deployToken, deployBody());
-    await postTeardown(deployToken, deployBody());
-    const res = await postTeardown(deployToken, deployBody());
+    await postTeardown(deployToken, teardownBody());
+    const res = await postTeardown(deployToken, teardownBody());
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: "removed" });
     expect(fakePreviewDb!.dropped).toEqual(["prev_myapp_pr42"]);
@@ -205,7 +273,7 @@ describe("POST /v1/teardown", () => {
 
   test("is idempotent when preview never existed", async () => {
     const { deployToken } = await setup();
-    const res = await postTeardown(deployToken, deployBody());
+    const res = await postTeardown(deployToken, teardownBody());
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: "removed" });
     expect(fakePreviewDb!.dropped).toEqual([]);
@@ -215,9 +283,30 @@ describe("POST /v1/teardown", () => {
     const { deployToken } = await setup();
     const res = await postTeardown(
       deployToken,
-      deployBody({ slug: "Bad!" }),
+      teardownBody({ slug: "Bad!" }),
     );
     expect(res.status).toBe(422);
     expect(fakePreviewDb!.dropped).toEqual([]);
+  });
+
+  test("marks error when dropDatabase fails after removing", async () => {
+    const { deployToken } = await setup({
+      dropDatabase: async () => {
+        throw new Error("boom");
+      },
+    });
+    await postDeploy(deployToken, deployBody());
+    const res = await postTeardown(deployToken, teardownBody());
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "preview_db_drop_failed" });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.status).toBe("error");
   });
 });
