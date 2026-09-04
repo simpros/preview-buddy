@@ -1,22 +1,16 @@
 import { E2E_SESSION_PATH } from "./config.ts";
 
+/** Managed-latch marker written by `e2e/run.ts` after the gateway is healthy. */
 export type E2eSessionFile = {
-  gatewayUrl: string;
-  adminToken: string;
+  ok: true;
   generatedAt: string;
 };
 
-export type E2eSession = {
-  enabled: boolean;
-  gatewayUrl: string;
-  adminToken: string;
-};
+export type E2eSession = { enabled: true } | { enabled: false };
 
 /** Compose-backed suites only run under `bun run test:e2e` (sets PB_E2E_MANAGED). */
 export function isE2eManaged(): boolean {
-  return (
-    process.env.PB_E2E_MANAGED === "1" || process.env.PB_E2E === "1"
-  );
+  return process.env.PB_E2E_MANAGED === "1";
 }
 
 /** Lifecycle / sweep scenarios pending #25–#31 — opt in with PB_E2E_FULL=1. */
@@ -25,12 +19,12 @@ export function isE2eFull(): boolean {
 }
 
 /**
- * Read the session artifact written once by `e2e/run.ts` after the gateway is
- * healthy. Does not wait, probe, or talk to Docker.
+ * Read the managed latch written once by `e2e/run.ts`. Does not wait, probe,
+ * or talk to Docker. URLs/token live only in `e2eConfig`.
  */
 export async function loadE2eSession(): Promise<E2eSession> {
   if (!isE2eManaged()) {
-    return { enabled: false, gatewayUrl: "", adminToken: "" };
+    return { enabled: false };
   }
 
   const file = Bun.file(E2E_SESSION_PATH);
@@ -41,15 +35,11 @@ export async function loadE2eSession(): Promise<E2eSession> {
   }
 
   const session = (await file.json()) as E2eSessionFile;
-  if (!session.gatewayUrl || !session.adminToken) {
+  if (session.ok !== true) {
     throw new Error(
       `e2e session at ${E2E_SESSION_PATH} is incomplete: run the harness via bun run test:e2e, which starts compose`,
     );
   }
 
-  return {
-    enabled: true,
-    gatewayUrl: session.gatewayUrl,
-    adminToken: session.adminToken,
-  };
+  return { enabled: true };
 }

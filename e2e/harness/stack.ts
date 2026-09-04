@@ -58,23 +58,25 @@ export async function buildDemoImages(): Promise<void> {
       `e2e: demo directory missing: ${demoDir} (needed for adopting-repo image builds)`,
     );
   }
-  await run([
-    "docker",
-    "build",
-    "-t",
-    e2eConfig.demoAppImage,
-    "-f",
-    join(demoDir, "Dockerfile"),
-    demoDir,
-  ]);
-  await run([
-    "docker",
-    "build",
-    "-t",
-    e2eConfig.demoSeedImage,
-    "-f",
-    join(demoDir, "Dockerfile.seed"),
-    demoDir,
+  await Promise.all([
+    run([
+      "docker",
+      "build",
+      "-t",
+      e2eConfig.demoAppImage,
+      "-f",
+      join(demoDir, "Dockerfile"),
+      demoDir,
+    ]),
+    run([
+      "docker",
+      "build",
+      "-t",
+      e2eConfig.demoSeedImage,
+      "-f",
+      join(demoDir, "Dockerfile.seed"),
+      demoDir,
+    ]),
   ]);
 }
 

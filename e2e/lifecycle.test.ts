@@ -10,13 +10,12 @@ import {
 } from "./harness/gateway.ts";
 import { isE2eFull, loadE2eSession } from "./harness/session.ts";
 
-const { enabled } = await loadE2eSession();
-const full = enabled && isE2eFull();
+const session = await loadE2eSession();
+const full = session.enabled && isE2eFull();
 
 /**
  * Full PR lifecycle against real compose. Gated on PB_E2E_FULL=1 until
- * POST /v1/deploy and /v1/teardown leave the 501 stub (#25/#26/#27; seed #28).
- * Previews list (#31) asserted when the route returns 200.
+ * POST /v1/deploy, /v1/teardown, /v1/previews, and seed (#25–#28, #31) exist.
  */
 describe.skipIf(!full)("preview lifecycle", () => {
   test(
@@ -26,12 +25,13 @@ describe.skipIf(!full)("preview lifecycle", () => {
         canonicalRepoId: e2eConfig.canonicalRepoId,
         slug: e2eConfig.slug,
       });
+      const body = deployBody();
       const expectedDb = `prev_${e2eConfig.slug}_pr${e2eConfig.prId}`;
 
       const deploy = await gatewayFetch("/v1/deploy", {
         method: "POST",
         token,
-        body: JSON.stringify(deployBody()),
+        body: JSON.stringify(body),
       });
       expect2xx(deploy.status);
       const deployJson = await readDeployResponse(deploy);
@@ -43,18 +43,16 @@ describe.skipIf(!full)("preview lifecycle", () => {
         method: "GET",
         token: e2eConfig.adminToken,
       });
-      if (list.status === 200) {
-        const body = (await list.json()) as PreviewsResponse;
-        const row = body.previews.find((p) => p.pr_id === e2eConfig.prId);
-        expect(row).toBeDefined();
-        expect(row?.db_name).toBe(expectedDb);
-        expect(row?.status).toBe("running");
-        expect(row?.container_id).toBeTruthy();
-      }
+      expect(list.status).toBe(200);
+      const listBody = (await list.json()) as PreviewsResponse;
+      const row = listBody.previews.find((p) => p.pr_id === e2eConfig.prId);
+      expect(row).toBeDefined();
+      expect(row?.db_name).toBe(expectedDb);
+      expect(row?.status).toBe("running");
+      expect(row?.container_id).toBeTruthy();
 
-      const previewHost = `pr-${e2eConfig.prId}.${e2eConfig.slug}.preview.example.com`;
       const viaTraefik = await fetch(e2eConfig.traefikUrl, {
-        headers: { host: previewHost },
+        headers: { host: body.hostname },
       });
       expect(viaTraefik.ok).toBe(true);
     },
@@ -70,11 +68,7 @@ describe.skipIf(!full)("preview lifecycle", () => {
       });
       const prId = e2eConfig.prId + 1;
       const expectedDb = `prev_${slug}_pr${prId}`;
-      const body = deployBody({
-        pr_id: prId,
-        slug,
-        hostname: `pr-${prId}.${slug}.preview.example.com`,
-      });
+      const body = deployBody({ pr_id: prId, slug });
 
       const first = await gatewayFetch("/v1/deploy", {
         method: "POST",
@@ -85,6 +79,7 @@ describe.skipIf(!full)("preview lifecycle", () => {
       const firstJson = await readDeployResponse(first);
       expect(firstJson.db_name).toBe(expectedDb);
       expect(firstJson.container_id).toBeTruthy();
+      expect(firstJson.seeded_at).toBeTruthy();
 
       // Same image as first deploy — harness only builds :app / :seed.
       const second = await gatewayFetch("/v1/deploy", {
@@ -98,10 +93,7 @@ describe.skipIf(!full)("preview lifecycle", () => {
       expect(secondJson.db_name).toBe(expectedDb);
       expect(secondJson.container_id).toBeTruthy();
       expect(secondJson.container_id).not.toBe(firstJson.container_id);
-      // Seed skip (#28): when first deploy recorded seeded_at, sync must keep it.
-      if (firstJson.seeded_at) {
-        expect(secondJson.seeded_at).toBe(firstJson.seeded_at);
-      }
+      expect(secondJson.seeded_at).toBe(firstJson.seeded_at);
     },
   );
 
@@ -120,7 +112,6 @@ describe.skipIf(!full)("preview lifecycle", () => {
         deployBody({
           pr_id: prId,
           slug,
-          hostname: `pr-${prId}.${slug}.preview.example.com`,
           seed_image: undefined,
         }),
       ),
@@ -139,11 +130,10 @@ describe.skipIf(!full)("preview lifecycle", () => {
       method: "GET",
       token: e2eConfig.adminToken,
     });
-    if (list.status === 200) {
-      const body = (await list.json()) as PreviewsResponse;
-      const row = body.previews.find((p) => p.pr_id === prId);
-      expect(row?.status).toBe("removed");
-      expect(row?.container_id == null || row.container_id === "").toBe(true);
-    }
+    expect(list.status).toBe(200);
+    const listBody = (await list.json()) as PreviewsResponse;
+    const row = listBody.previews.find((p) => p.pr_id === prId);
+    expect(row?.status).toBe("removed");
+    expect(row?.container_id == null || row.container_id === "").toBe(true);
   });
 });

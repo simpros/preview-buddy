@@ -12,7 +12,7 @@
 import { unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { E2E_SESSION_PATH, e2eConfig } from "./harness/config.ts";
+import { E2E_SESSION_PATH } from "./harness/config.ts";
 import type { E2eSessionFile } from "./harness/session.ts";
 import {
   buildDemoImages,
@@ -28,8 +28,7 @@ const E2E_TEST_TIMEOUT_MS = "180000";
 
 async function writeSession(): Promise<void> {
   const session: E2eSessionFile = {
-    gatewayUrl: e2eConfig.gatewayUrl,
-    adminToken: e2eConfig.adminToken,
+    ok: true,
     generatedAt: new Date().toISOString(),
   };
   await Bun.write(E2E_SESSION_PATH, `${JSON.stringify(session, null, 2)}\n`);
@@ -53,6 +52,7 @@ async function main() {
   console.log("e2e: composing stack up…");
   await composeUp();
 
+  let code = 0;
   try {
     console.log("e2e: waiting for gateway…");
     await waitForGateway(180_000);
@@ -70,15 +70,13 @@ async function main() {
         // PB_E2E_FULL passes through from the caller when set.
       },
     });
-    const code = await proc.exited;
-    if (code !== 0) {
-      process.exit(code);
-    }
+    code = await proc.exited;
   } finally {
     clearSession();
     console.log("e2e: composing stack down…");
     await composeDown();
   }
+  if (code !== 0) process.exit(code);
 }
 
 main().catch((err) => {

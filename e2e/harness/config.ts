@@ -1,8 +1,8 @@
 /** Env + defaults for the e2e acceptance harness.
  *
- * Host ports and admin token are derived from `e2e/compose.e2e.env` (the same
- * file passed to `docker compose --env-file`) so they cannot drift from the
- * stack under test. `PB_E2E_*` process-env overrides remain for local debugging.
+ * Host ports and admin token are required keys in `e2e/compose.e2e.env` (the
+ * same file passed to `docker compose --env-file`). `PB_E2E_*` process-env
+ * overrides remain for local debugging.
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -26,11 +26,24 @@ function parseEnvFile(path: string): Record<string, string> {
   return out;
 }
 
+function requireComposeEnv(
+  env: Record<string, string>,
+  key: string,
+): string {
+  const value = env[key]?.trim();
+  if (!value) {
+    throw new Error(
+      `e2e/compose.e2e.env missing required key ${key}`,
+    );
+  }
+  return value;
+}
+
 const composeEnv = parseEnvFile(COMPOSE_E2E_ENV_PATH);
 
-const gatewayHostPort = composeEnv.PB_GATEWAY_HOST_PORT || "17331";
-const traefikHttpPort = composeEnv.TRAEFIK_HTTP_PORT || "18880";
-const composeAdminToken = composeEnv.PB_ADMIN_TOKEN || "e2e-admin-token";
+const gatewayHostPort = requireComposeEnv(composeEnv, "PB_GATEWAY_HOST_PORT");
+const traefikHttpPort = requireComposeEnv(composeEnv, "TRAEFIK_HTTP_PORT");
+const composeAdminToken = requireComposeEnv(composeEnv, "PB_ADMIN_TOKEN");
 
 export const e2eConfig = {
   gatewayUrl:
