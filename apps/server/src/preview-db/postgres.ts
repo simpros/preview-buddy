@@ -2,7 +2,8 @@ import { SQL } from "bun";
 import type { PreviewDb } from "./port.ts";
 
 const SAFE_DB_NAME = /^prev_[a-z][a-z0-9]*_pr[1-9][0-9]*$/;
-const SAFE_ROLE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+/** Unquoted Postgres identifiers fold to lowercase — require lowercase roles. */
+const SAFE_ROLE = /^[a-z_][a-z0-9_]*$/;
 
 export type PostgresPreviewDbOptions = {
   url: string;
@@ -21,12 +22,20 @@ function assertSafeRole(role: string): void {
   }
 }
 
+function isDuplicateDatabase(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const code = "code" in err ? String(err.code) : "";
+  if (code === "42P04") return true;
+  const message = "message" in err ? String(err.message) : String(err);
+  return /already exists/i.test(message);
+}
+
 export function createPostgresPreviewDb(
   options: PostgresPreviewDbOptions,
 ): PreviewDb {
+  assertSafeRole(options.previewRole);
   const sql = new SQL(options.url);
   const previewRole = options.previewRole;
-  assertSafeRole(previewRole);
 
   return {
     async createDatabase(dbName) {
@@ -36,9 +45,15 @@ export function createPostgresPreviewDb(
       `;
       if (existing.length > 0) return;
       // Identifiers validated above; Bun.sql cannot parameterize DDL identifiers.
-      await sql.unsafe(
-        `CREATE DATABASE ${dbName} OWNER ${previewRole}`,
-      );
+      try {
+        await sql.unsafe(
+          `CREATE DATABASE ${dbName} OWNER ${previewRole}`,
+        );
+      } catch (err) {
+        // Concurrent deploy: another request created the DB between SELECT and CREATE.
+        if (isDuplicateDatabase(err)) return;
+        throw err;
+      }
     },
 
     async dropDatabase(dbName) {
