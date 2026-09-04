@@ -179,8 +179,8 @@ compose now so operators do not reconfigure later):
 | `PB_PG_USER` | Role preview containers use for `PGUSER` |
 | `PB_PG_PASSWORD` | Password preview containers use for `PGPASSWORD` |
 | `PB_ADMIN_TOKEN` | Bootstrap admin bearer token; auto-generated if omitted or blank — only a non-empty value pins the token |
-| `PB_FORGE` | `github` or `gitlab` — sweep forge type |
-| `PB_FORGE_TOKEN` | PAT for sweep open-PR listing |
+| `PB_FORGE` | `github` or `gitlab` — sweep forge type (required at boot) |
+| `PB_FORGE_TOKEN` | PAT for sweep open-PR listing (optional at boot; required when sweep calls the forge) |
 | `PB_STATE_DB_PATH` | SQLite path (use a volume mount in production) |
 
 Optional tuning (defaults in parentheses):

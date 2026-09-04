@@ -11,12 +11,14 @@ const TEST_REQUIRED_VALUES: Record<(typeof REQUIRED_ENV)[number], string> = {
   PB_TRAEFIK_NETWORK: "traefik",
   PB_POSTGRES_NETWORK: "postgres",
   PB_REGISTRY_URL: "registry.example.com",
+  PB_FORGE: "github",
 };
 
 function setRequiredEnv(): void {
   for (const key of REQUIRED_ENV) {
     process.env[key] = TEST_REQUIRED_VALUES[key];
   }
+  process.env.PB_FORGE_TOKEN = "forge-token";
   process.env.PB_REGISTRY_USER = "puller";
   process.env.PB_REGISTRY_PASSWORD = "registry-secret";
 }
@@ -25,6 +27,7 @@ function clearGatewayEnv(): void {
   for (const key of REQUIRED_ENV) {
     delete process.env[key];
   }
+  delete process.env.PB_FORGE_TOKEN;
   delete process.env.PB_REGISTRY_USER;
   delete process.env.PB_REGISTRY_PASSWORD;
   for (const key of Object.keys(OPTIONAL_ENV_DEFAULTS)) {
@@ -47,6 +50,8 @@ describe("loadConfig", () => {
   test("applies defaults for optional vars", () => {
     setRequiredEnv();
     const config = loadConfig();
+    expect(config.forge).toBe("github");
+    expect(config.forgeToken).toBe("forge-token");
     expect(config.ttlHours).toBe(OPTIONAL_ENV_DEFAULTS.PB_TTL_HOURS);
     expect(config.sweepMinutes).toBe(OPTIONAL_ENV_DEFAULTS.PB_SWEEP_MINUTES);
     expect(config.previewPortDefault).toBe(
@@ -54,6 +59,14 @@ describe("loadConfig", () => {
     );
     expect(config.seedTimeout).toBe(OPTIONAL_ENV_DEFAULTS.PB_SEED_TIMEOUT);
     expect(config.port).toBe(OPTIONAL_ENV_DEFAULTS.PB_PORT);
+  });
+
+  test("rejects invalid PB_FORGE", () => {
+    setRequiredEnv();
+    process.env.PB_FORGE = "bitbucket";
+    expect(() => loadConfig()).toThrow(
+      "Invalid PB_FORGE: must be one of github, gitlab",
+    );
   });
 
   test("rejects non-numeric optional env vars", () => {
@@ -81,6 +94,32 @@ describe("loadConfig", () => {
     expect(config.registryPassword).toBe("");
   });
 
+  test("allows empty PB_FORGE_TOKEN at boot (required only for forge API calls)", () => {
+    setRequiredEnv();
+    delete process.env.PB_FORGE_TOKEN;
+    const config = loadConfig();
+    expect(config.forgeToken).toBe("");
+  });
+
+  test("configSummary marks unset forge token", () => {
+    const summary = configSummary({
+      previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
+      traefikNetwork: "traefik",
+      postgresNetwork: "postgres",
+      registryUrl: "ghcr.io",
+      registryUser: "",
+      registryPassword: "",
+      forge: "github",
+      forgeToken: "",
+      ttlHours: 72,
+      sweepMinutes: 30,
+      previewPortDefault: 8080,
+      seedTimeout: 180,
+      port: 7331,
+    });
+    expect(summary.forgeToken).toBe("[unset]");
+  });
+
   test("configSummary redacts secrets", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin:sekrit@localhost:5432/postgres",
@@ -89,6 +128,8 @@ describe("loadConfig", () => {
       registryUrl: "registry.example.com",
       registryUser: "puller",
       registryPassword: "registry-secret",
+      forge: "github",
+      forgeToken: "forge-secret",
       ttlHours: 72,
       sweepMinutes: 30,
       previewPortDefault: 8080,
@@ -99,6 +140,8 @@ describe("loadConfig", () => {
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
     expect(summary.registryPassword).toBe("[set]");
     expect(summary.registryUser).toBe("puller");
+    expect(summary.forge).toBe("github");
+    expect(summary.forgeToken).toBe("[set]");
   });
 
   test("configSummary marks anonymous registry creds", () => {
@@ -109,6 +152,8 @@ describe("loadConfig", () => {
       registryUrl: "ghcr.io",
       registryUser: "",
       registryPassword: "",
+      forge: "gitlab",
+      forgeToken: "t",
       ttlHours: 72,
       sweepMinutes: 30,
       previewPortDefault: 8080,
