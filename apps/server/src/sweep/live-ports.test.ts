@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createTestDb } from "../http/test-helpers.ts";
 import { previews, repos } from "../infrastructure/db/schema.ts";
-import type { ContainerPorts } from "./docker-remover.ts";
+import type { ContainerPorts } from "../preview/containers.ts";
+import type { PostgresAdmin } from "../preview/postgres-admin.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
-import type { PostgresAdmin } from "./postgres-admin.ts";
 import { runSweepPass } from "./reconcile.ts";
 
 describe("createLiveSweepPorts", () => {

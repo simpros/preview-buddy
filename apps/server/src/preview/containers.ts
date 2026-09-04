@@ -1,8 +1,11 @@
-import {
-  parsePreviewContainerName,
-  previewContainerName,
-} from "../preview/naming.ts";
-import type { CatalogContainer } from "./reconcile.ts";
+import { parsePreviewContainerName, previewContainerName } from "./naming.ts";
+
+export type CatalogContainer = {
+  containerId: string;
+  containerName: string;
+  slug: string;
+  prId: number;
+};
 
 export type ContainerPorts = {
   listPreviewContainers: () => Promise<CatalogContainer[]>;

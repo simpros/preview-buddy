@@ -1,9 +1,9 @@
 import { createForgeClient } from "../forge/client.ts";
 import type { Config } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
-import { createDockerRemover } from "./docker-remover.ts";
+import { createDockerRemover } from "../preview/containers.ts";
+import { createPostgresAdmin } from "../preview/postgres-admin.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
-import { createPostgresAdmin } from "./postgres-admin.ts";
 import { runSweepPass } from "./reconcile.ts";
 import { startSweepTimer, type SweepTimerHandle } from "./timer.ts";
 
@@ -24,48 +24,8 @@ export function startGatewaySweep(deps: {
     forge,
     ttlHours: deps.config.ttlHours,
     log: (message, deletion) => {
-      if (!deletion) {
-        console.log(message);
-        return;
-      }
-      switch (deletion.reason) {
-        case "sweep:pr-not-open":
-        case "sweep:ttl-expired":
-          console.log(message, {
-            reason: deletion.reason,
-            prId: deletion.prId,
-            slug: deletion.slug,
-            dbName: deletion.dbName,
-            canonicalRepoId: deletion.canonicalRepoId,
-            containerId: deletion.containerId,
-          });
-          break;
-        case "sweep:orphan-db":
-          console.log(message, {
-            reason: deletion.reason,
-            prId: deletion.prId,
-            slug: deletion.slug,
-            dbName: deletion.dbName,
-          });
-          break;
-        case "sweep:orphan-container":
-          console.log(message, {
-            reason: deletion.reason,
-            prId: deletion.prId,
-            slug: deletion.slug,
-            containerId: deletion.containerId,
-          });
-          break;
-        case "sweep:orphan-both":
-          console.log(message, {
-            reason: deletion.reason,
-            prId: deletion.prId,
-            slug: deletion.slug,
-            dbName: deletion.dbName,
-            containerId: deletion.containerId,
-          });
-          break;
-      }
+      if (deletion) console.log(message, deletion);
+      else console.log(message);
     },
   });
 

@@ -1,11 +1,14 @@
 import { isForgeApiError } from "../forge/types.ts";
+import type { CatalogContainer } from "../preview/containers.ts";
+import type { CatalogDatabase } from "../preview/postgres-admin.ts";
+
+export type { CatalogContainer, CatalogDatabase };
 
 export type SweepReason =
   | "sweep:pr-not-open"
   | "sweep:ttl-expired"
   | "sweep:orphan-db"
-  | "sweep:orphan-container"
-  | "sweep:orphan-both";
+  | "sweep:orphan-container";
 
 export type SweepPreview = {
   canonicalRepoId: string;
@@ -16,19 +19,6 @@ export type SweepPreview = {
   /** null = unparsable createdAt; skip TTL, still protect orphans / forge. */
   createdAtMs: number | null;
   status: string;
-};
-
-export type CatalogDatabase = {
-  dbName: string;
-  slug: string;
-  prId: number;
-};
-
-export type CatalogContainer = {
-  containerId: string;
-  containerName: string;
-  slug: string;
-  prId: number;
 };
 
 export type SweepDeletion =
@@ -46,13 +36,6 @@ export type SweepDeletion =
       reason: "sweep:orphan-container";
       slug: string;
       prId: number;
-      containerId: string;
-    }
-  | {
-      reason: "sweep:orphan-both";
-      slug: string;
-      prId: number;
-      dbName: string;
       containerId: string;
     };
 
@@ -106,55 +89,26 @@ function planOrphans(
   catalog: CatalogDatabase[],
   containers: CatalogContainer[],
 ): SweepDeletion[] {
-  const byKey = new Map<
-    string,
-    { slug: string; prId: number; dbName?: string; containerId?: string }
-  >();
-
+  const out: SweepDeletion[] = [];
   for (const db of catalog) {
-    const key = `${db.slug}:${db.prId}`;
-    if (previewKeys.has(key)) continue;
-    const row = byKey.get(key) ?? { slug: db.slug, prId: db.prId };
-    row.dbName = db.dbName;
-    byKey.set(key, row);
+    if (previewKeys.has(`${db.slug}:${db.prId}`)) continue;
+    out.push({
+      reason: "sweep:orphan-db",
+      slug: db.slug,
+      prId: db.prId,
+      dbName: db.dbName,
+    });
   }
-
   for (const container of containers) {
-    const key = `${container.slug}:${container.prId}`;
-    if (previewKeys.has(key)) continue;
-    const row = byKey.get(key) ?? {
+    if (previewKeys.has(`${container.slug}:${container.prId}`)) continue;
+    out.push({
+      reason: "sweep:orphan-container",
       slug: container.slug,
       prId: container.prId,
-    };
-    row.containerId = container.containerId;
-    byKey.set(key, row);
+      containerId: container.containerId,
+    });
   }
-
-  return [...byKey.values()].map((row): SweepDeletion => {
-    if (row.dbName !== undefined && row.containerId !== undefined) {
-      return {
-        reason: "sweep:orphan-both",
-        slug: row.slug,
-        prId: row.prId,
-        dbName: row.dbName,
-        containerId: row.containerId,
-      };
-    }
-    if (row.dbName !== undefined) {
-      return {
-        reason: "sweep:orphan-db",
-        slug: row.slug,
-        prId: row.prId,
-        dbName: row.dbName,
-      };
-    }
-    return {
-      reason: "sweep:orphan-container",
-      slug: row.slug,
-      prId: row.prId,
-      containerId: row.containerId!,
-    };
-  });
+  return out;
 }
 
 export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> {

@@ -176,7 +176,7 @@ describe("runSweepPass", () => {
     expect(logs).toContain("deleted (sweep:orphan-container)");
   });
 
-  test("merges orphan db + container on the same slug:prId", async () => {
+  test("emits separate orphan-db and orphan-container for the same slug:prId", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const { ports, deletions, logs } = memoryPorts({
       previews: [],
@@ -194,14 +194,20 @@ describe("runSweepPass", () => {
     await runSweepPass(ports);
     expect(deletions).toEqual([
       {
-        reason: "sweep:orphan-both",
+        reason: "sweep:orphan-db",
         prId: 42,
         slug: "widgets",
         dbName: "prev_widgets_pr42",
+      },
+      {
+        reason: "sweep:orphan-container",
+        prId: 42,
+        slug: "widgets",
         containerId: "ctr-42",
       },
     ]);
-    expect(logs).toContain("deleted (sweep:orphan-both)");
+    expect(logs).toContain("deleted (sweep:orphan-db)");
+    expect(logs).toContain("deleted (sweep:orphan-container)");
   });
 
   test("empty forge token soft-fails into forgeRepoFailures; TTL/orphan still run", async () => {

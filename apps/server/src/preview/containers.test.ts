@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { previewContainerName } from "../preview/naming.ts";
-import { createDockerRemover } from "./docker-remover.ts";
+import { createDockerRemover } from "./containers.ts";
+import { previewContainerName } from "./naming.ts";
 
 describe("createDockerRemover", () => {
   test("lists preview containers from Docker catalog", async () => {

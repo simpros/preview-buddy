@@ -2,8 +2,8 @@ import { eq, and } from "drizzle-orm";
 import type { ForgeClient } from "../forge/client.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
-import type { ContainerPorts } from "./docker-remover.ts";
-import type { PostgresAdmin } from "./postgres-admin.ts";
+import type { ContainerPorts } from "../preview/containers.ts";
+import type { PostgresAdmin } from "../preview/postgres-admin.ts";
 import type {
   SweepDeletion,
   SweepPorts,
@@ -28,41 +28,6 @@ function parseCreatedAtMs(createdAt: string): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-async function dropDatabase(
-  deps: LiveSweepDeps,
-  deletion: SweepDeletion,
-  dbName: string,
-): Promise<boolean> {
-  try {
-    await deps.postgres.dropDatabase(dbName);
-    return false;
-  } catch (error) {
-    deps.log?.(`sweep drop database failed: ${String(error)}`, deletion);
-    return true;
-  }
-}
-
-async function removeContainer(
-  deps: LiveSweepDeps,
-  deletion: SweepDeletion,
-  containerId: string | null,
-): Promise<boolean> {
-  try {
-    await deps.containers.remove({
-      containerId,
-      slug: deletion.slug,
-      prId: deletion.prId,
-    });
-    return false;
-  } catch (error) {
-    deps.log?.(
-      `sweep remove container failed: ${String(error)}`,
-      deletion,
-    );
-    return true;
-  }
-}
-
 async function teardownResources(
   deps: LiveSweepDeps,
   deletion: SweepDeletion,
@@ -70,24 +35,40 @@ async function teardownResources(
   // Best-effort each resource step; leave SQLite non-removed on any
   // failure so the next pass can retry. Field presence on the deletion
   // union is the resource plan — do not re-encode via reason switches.
-  let resourceFailed = false;
   let failLabel = `${deletion.slug}:${deletion.prId}`;
+  const steps: Promise<void>[] = [];
 
   if ("dbName" in deletion) {
     failLabel = deletion.dbName;
-    if (await dropDatabase(deps, deletion, deletion.dbName)) {
-      resourceFailed = true;
-    }
+    steps.push(
+      deps.postgres.dropDatabase(deletion.dbName).catch((error) => {
+        deps.log?.(`sweep drop database failed: ${String(error)}`, deletion);
+        throw error;
+      }),
+    );
   }
   if ("containerId" in deletion) {
     // null = remove by deterministic name (preview rows)
     if (deletion.containerId) failLabel = deletion.containerId;
-    if (await removeContainer(deps, deletion, deletion.containerId)) {
-      resourceFailed = true;
-    }
+    steps.push(
+      deps.containers
+        .remove({
+          containerId: deletion.containerId,
+          slug: deletion.slug,
+          prId: deletion.prId,
+        })
+        .catch((error) => {
+          deps.log?.(
+            `sweep remove container failed: ${String(error)}`,
+            deletion,
+          );
+          throw error;
+        }),
+    );
   }
 
-  if (resourceFailed) {
+  const results = await Promise.allSettled(steps);
+  if (results.some((r) => r.status === "rejected")) {
     throw new Error(`teardown incomplete: ${failLabel}`);
   }
 }

@@ -1,9 +1,11 @@
 import { SQL } from "bun";
-import {
-  parsePreviewDatabaseName,
-  quoteIdent,
-} from "../preview/naming.ts";
-import type { CatalogDatabase } from "./reconcile.ts";
+import { parsePreviewDatabaseName, quoteIdent } from "./naming.ts";
+
+export type CatalogDatabase = {
+  dbName: string;
+  slug: string;
+  prId: number;
+};
 
 export type PostgresAdmin = {
   listPreviewDatabases: () => Promise<CatalogDatabase[]>;
