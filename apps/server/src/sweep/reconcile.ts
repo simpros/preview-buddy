@@ -15,7 +15,6 @@ export type SweepPreview = {
   prId: number;
   slug: string;
   dbName: string;
-  containerId: string | null;
   /** null = unparsable createdAt; skip TTL, still protect orphans / forge. */
   createdAtMs: number | null;
   status: string;

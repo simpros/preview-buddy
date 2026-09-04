@@ -85,7 +85,6 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           prId: row.prId,
           slug: row.slug,
           dbName: row.dbName,
-          containerId: row.containerId,
           createdAtMs,
           status: row.status,
         });
