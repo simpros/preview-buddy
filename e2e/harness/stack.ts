@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { E2E_COMPOSE_PROJECT, e2eConfig } from "./config.ts";
@@ -54,6 +55,12 @@ export async function composeDown(): Promise<void> {
 
 export async function buildDemoImages(): Promise<void> {
   const demoDir = join(repoRoot, "examples/adopting-repo");
+  if (!existsSync(demoDir)) {
+    console.error(
+      `e2e: demo directory missing: ${demoDir} (needed for adopting-repo image builds)`,
+    );
+    process.exit(1);
+  }
   await run([
     "docker",
     "build",
@@ -95,7 +102,12 @@ export async function waitForGateway(
     }
     await Bun.sleep(intervalMs);
   }
+  const logs = await run(
+    ["docker", ...composeArgs(["logs", "--tail", "200", "gateway"])],
+    { allowFailure: true },
+  );
   throw new Error(
-    `gateway at ${e2eConfig.gatewayUrl} not healthy within ${timeoutMs}ms (${lastError})`,
+    `gateway at ${e2eConfig.gatewayUrl} not healthy within ${timeoutMs}ms (${lastError})\n` +
+      `--- docker compose logs gateway ---\n${logs.stdout}${logs.stderr}`,
   );
 }

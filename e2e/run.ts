@@ -12,7 +12,6 @@ import {
   buildDemoImages,
   composeDown,
   composeUp,
-  waitForGateway,
 } from "./harness/stack.ts";
 
 const e2eDir = dirname(fileURLToPath(import.meta.url));
@@ -29,9 +28,7 @@ async function main() {
 
   process.env.PB_E2E_MANAGED = "1";
   try {
-    console.log("e2e: waiting for gateway…");
-    await waitForGateway(180_000);
-
+    // Gateway wait lives in loadE2eSession() (single polling point).
     console.log("e2e: running bun test…");
     const proc = Bun.spawn({
       cmd: ["bun", "test", e2eDir],

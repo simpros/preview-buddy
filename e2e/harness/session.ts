@@ -27,6 +27,6 @@ export async function loadE2eSession(): Promise<E2eSession> {
   if (!isE2eManaged()) {
     return { enabled: false, caps: disabledCaps };
   }
-  await waitForGateway(120_000);
+  await waitForGateway(180_000);
   return { enabled: true, caps: await probeCapabilities() };
 }
