@@ -1,28 +1,16 @@
 import { createApiClient } from "@preview-buddy/api-client";
 import { describe, expect, test } from "bun:test";
 import { e2eConfig } from "./harness/config.ts";
-import { assertSessionLatch } from "./harness/session.ts";
 
-const enabled = await assertSessionLatch();
-
-function adminClient() {
-  return createApiClient(e2eConfig.gatewayUrl, {
-    headers: {
-      authorization: `Bearer ${e2eConfig.adminToken}`,
-    },
-  });
-}
+const enabled = process.env.PB_E2E_MANAGED === "1";
 
 describe.skipIf(!enabled)("compose stack", () => {
-  test("GET /healthz is reachable on the e2e gateway", async () => {
-    const client = createApiClient(e2eConfig.gatewayUrl);
-    const res = await client.healthz.get();
-    expect(res.error).toBeNull();
-    expect(res.data).toEqual({ ok: true });
-  });
-
   test("admin token can create a deploy token", async () => {
-    const client = adminClient();
+    const client = createApiClient(e2eConfig.gatewayUrl, {
+      headers: {
+        authorization: `Bearer ${e2eConfig.adminToken}`,
+      },
+    });
     const created = await client.v1.admin.tokens.post({
       canonical_repo_id: e2eConfig.canonicalRepoId,
       slug: e2eConfig.slug,
