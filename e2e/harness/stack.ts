@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { createApiClient } from "@preview-buddy/api-client";
 import { join } from "node:path";
 import {
   COMPOSE_E2E_ENV_PATH,
@@ -7,7 +7,7 @@ import {
   repoRoot,
 } from "./config.ts";
 
-export function composeArgs(extra: string[]): string[] {
+function composeArgs(extra: string[]): string[] {
   return [
     "compose",
     "-p",
@@ -53,51 +53,21 @@ export async function composeDown(): Promise<void> {
   });
 }
 
-export async function buildDemoImages(): Promise<void> {
-  const demoDir = join(repoRoot, "examples/adopting-repo");
-  if (!existsSync(demoDir)) {
-    throw new Error(
-      `e2e: demo directory missing: ${demoDir} (needed for adopting-repo image builds)`,
-    );
-  }
-  await Promise.all([
-    run([
-      "docker",
-      "build",
-      "-t",
-      e2eConfig.demoAppImage,
-      "-f",
-      join(demoDir, "Dockerfile"),
-      demoDir,
-    ]),
-    run([
-      "docker",
-      "build",
-      "-t",
-      e2eConfig.demoSeedImage,
-      "-f",
-      join(demoDir, "Dockerfile.seed"),
-      demoDir,
-    ]),
-  ]);
-}
-
 export async function waitForGateway(
   timeoutMs = 120_000,
   intervalMs = 1_000,
 ): Promise<void> {
+  const client = createApiClient(e2eConfig.gatewayUrl);
   const deadline = Date.now() + timeoutMs;
   let lastError = "not started";
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${e2eConfig.gatewayUrl}/healthz`);
-      if (res.ok) {
-        const body = (await res.json()) as { ok?: boolean };
-        if (body.ok === true) return;
-        lastError = `unexpected body ${JSON.stringify(body)}`;
-      } else {
-        lastError = `status ${res.status}`;
-      }
+      const res = await client.healthz.get();
+      if (res.data?.ok === true) return;
+      lastError =
+        res.error != null
+          ? `eden error ${JSON.stringify(res.error)}`
+          : `unexpected body ${JSON.stringify(res.data)}`;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
     }
