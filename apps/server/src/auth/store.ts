@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { apiTokens, repos } from "../infrastructure/db/schema.ts";
 import { generateToken, hashToken } from "./tokens.ts";
@@ -73,7 +73,7 @@ export async function revokeToken(
 ): Promise<boolean> {
   const result = await db
     .update(apiTokens)
-    .set({ revokedAt: sql`(datetime('now'))` })
+    .set({ revokedAt: new Date().toISOString() })
     .where(eq(apiTokens.tokenHash, tokenHash))
     .returning({ tokenHash: apiTokens.tokenHash });
   return result.length > 0;
