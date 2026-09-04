@@ -112,18 +112,24 @@ export async function readDeployResponse(
 export function deployBody(
   overrides: Partial<DeployRequest> = {},
 ): DeployRequest {
-  return {
-    pr_id: e2eConfig.prId,
-    slug: e2eConfig.slug,
-    hostname: `pr-${e2eConfig.prId}.${e2eConfig.slug}.preview.example.com`,
-    app_image: e2eConfig.demoAppImage,
-    seed_image: e2eConfig.demoSeedImage,
-    health: {
+  const pr_id = overrides.pr_id ?? e2eConfig.prId;
+  const slug = overrides.slug ?? e2eConfig.slug;
+  const body: DeployRequest = {
+    pr_id,
+    slug,
+    hostname:
+      overrides.hostname ?? `pr-${pr_id}.${slug}.preview.example.com`,
+    app_image: overrides.app_image ?? e2eConfig.demoAppImage,
+    seed_image:
+      "seed_image" in overrides
+        ? overrides.seed_image
+        : e2eConfig.demoSeedImage,
+    health: overrides.health ?? {
       path: "/health",
       interval_seconds: 2,
       timeout_seconds: 120,
       expect: 200,
     },
-    ...overrides,
   };
+  return body;
 }
