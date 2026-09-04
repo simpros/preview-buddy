@@ -7,6 +7,22 @@ import {
 } from "./harness/gateway.ts";
 import { loadE2eSession } from "./harness/session.ts";
 
+/** Successful POST /v1/deploy body — db_name and status are always present. */
+type DeployResponse = {
+  db_name: string;
+  status: string;
+  preview_url?: string;
+  container_id?: string;
+  seeded_at?: string | null;
+};
+
+async function readDeployResponse(res: Response): Promise<DeployResponse> {
+  const body = (await res.json()) as Partial<DeployResponse>;
+  expect(typeof body.db_name).toBe("string");
+  expect(typeof body.status).toBe("string");
+  return body as DeployResponse;
+}
+
 const { enabled, caps } = await loadE2eSession();
 
 /**
@@ -29,11 +45,7 @@ describe.skipIf(!enabled)("preview lifecycle", () => {
         body: JSON.stringify(deployBody()),
       });
       expect(deploy.status).toBeLessThan(300);
-      const deployJson = (await deploy.json()) as {
-        preview_url?: string;
-        db_name?: string;
-        status?: string;
-      };
+      const deployJson = await readDeployResponse(deploy);
 
       expect(deployJson.db_name).toBe(expectedDb);
       expect(deployJson.status).toBe("running");
@@ -89,11 +101,7 @@ describe.skipIf(!enabled)("preview lifecycle", () => {
         body: JSON.stringify(body),
       });
       expect(first.status).toBeLessThan(300);
-      const firstJson = (await first.json()) as {
-        container_id?: string;
-        seeded_at?: string | null;
-        db_name?: string;
-      };
+      const firstJson = await readDeployResponse(first);
       expect(firstJson.db_name).toBe(expectedDb);
       expect(firstJson.container_id).toBeTruthy();
 
@@ -106,11 +114,7 @@ describe.skipIf(!enabled)("preview lifecycle", () => {
         }),
       });
       expect(second.status).toBeLessThan(300);
-      const secondJson = (await second.json()) as {
-        container_id?: string;
-        seeded_at?: string | null;
-        db_name?: string;
-      };
+      const secondJson = await readDeployResponse(second);
 
       expect(secondJson.db_name).toBe(expectedDb);
       expect(secondJson.container_id).toBeTruthy();
@@ -146,6 +150,7 @@ describe.skipIf(!enabled)("preview lifecycle", () => {
         ),
       });
       expect(deploy.status).toBeLessThan(300);
+      await readDeployResponse(deploy);
 
       const teardown = await gatewayFetch("/v1/teardown", {
         method: "POST",

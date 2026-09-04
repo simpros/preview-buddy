@@ -7,11 +7,6 @@ import {
 } from "./harness/gateway.ts";
 import { loadE2eSession } from "./harness/session.ts";
 
-const orphanFixture = new URL(
-  "./fixtures/forge/github-orphan-no-open-prs.json",
-  import.meta.url,
-);
-
 const { enabled, caps } = await loadE2eSession();
 
 /**
@@ -22,6 +17,10 @@ const { enabled, caps } = await loadE2eSession();
  * Fixture shape lives in fixtures.test.ts; this file is the compose path.
  */
 describe.skipIf(!enabled)("sweep orphan", () => {
+  // Incomplete until #30 exposes a sweep-trigger endpoint (admin sweep or
+  // forge client fed fixtures/forge/github-orphan-no-open-prs.json).
+  test.todo("sweep trigger pending #30");
+
   test.skipIf(!caps.deploy || !caps.doctor)(
     "sweep drops intentional orphan when forge reports no open PRs",
     async () => {
@@ -45,13 +44,8 @@ describe.skipIf(!enabled)("sweep orphan", () => {
       });
       expect(deploy.status).toBeLessThan(300);
 
-      // Recorded forge truth for "PR not open" — wire into #30 sweep trigger
-      // (admin sweep endpoint or forge client fed this fixture) when available.
-      const openPrIds = (
-        (await Bun.file(orphanFixture).json()) as Array<{ number: number }>
-      ).map((pr) => pr.number);
-      expect(openPrIds).toEqual([]);
-      expect(openPrIds.includes(prId)).toBe(false);
+      // TODO(#30): trigger sweep with forge truth from
+      // fixtures/forge/github-orphan-no-open-prs.json, then assert below.
 
       const doctor = await gatewayFetch("/v1/doctor", {
         method: "GET",
