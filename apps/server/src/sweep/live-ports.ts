@@ -1,5 +1,5 @@
+import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import type { ForgeClient } from "../forge/client.ts";
-import { removePreviewApp } from "../app-deployment/replace.ts";
 import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
@@ -8,7 +8,7 @@ import {
   dropOrphanDatabase,
   removePreview,
   type TeardownDeps,
-} from "../preview-db/lifecycle.ts";
+} from "../preview/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import type {
   SweepDeletion,
@@ -20,6 +20,8 @@ export type LiveSweepDeps = {
   db: StateDb;
   previewDb: PreviewDb;
   docker: PreviewDocker;
+  /** Same bound ops as HTTP — remove only for control-plane + orphan cleanup. */
+  app: Pick<PreviewAppOps, "remove">;
   forge: ForgeClient;
   ttlHours: number;
   log?: SweepPorts["log"];
@@ -29,9 +31,7 @@ function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
   return {
     db: deps.db,
     previewDb: deps.previewDb,
-    app: {
-      remove: (slug, prId) => removePreviewApp(deps.docker, slug, prId),
-    },
+    app: deps.app,
   };
 }
 
@@ -122,11 +122,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         }
         case "sweep:orphan-container": {
           try {
-            await removePreviewApp(
-              deps.docker,
-              deletion.slug,
-              deletion.prId,
-            );
+            await deps.app.remove(deletion.slug, deletion.prId);
             return true;
           } catch (error) {
             deps.log?.(

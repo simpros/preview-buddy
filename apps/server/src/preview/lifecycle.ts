@@ -2,8 +2,8 @@ import { and, eq, ne } from "drizzle-orm";
 import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
-import { previewDbName } from "./names.ts";
-import type { PreviewDb } from "./port.ts";
+import { previewDbName } from "../preview-db/names.ts";
+import type { PreviewDb } from "../preview-db/port.ts";
 
 function utcIsoNow(): string {
   return new Date().toISOString();
@@ -240,6 +240,7 @@ async function attachAppContainer(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: AttachInput,
+  refreshGeneration: boolean,
 ): Promise<Result<PreviewSnapshot>> {
   try {
     const { containerId } = await deps.app.replace({
@@ -250,9 +251,6 @@ async function attachAppContainer(
       dbName: row.dbName,
     });
     const now = utcIsoNow();
-    // Mint only when leaving provisioning (fresh / intent rewrite / stuck-create).
-    // Same-identity error recovery and ready redeploy keep the generation.
-    const mintGeneration = row.status === "provisioning";
     const [updated] = await deps.db
       .update(previews)
       .set({
@@ -260,7 +258,7 @@ async function attachAppContainer(
         appImage: input.appImage,
         containerId,
         status: "ready",
-        ...(mintGeneration ? { createdAt: now } : {}),
+        ...(refreshGeneration ? { createdAt: now } : {}),
         updatedAt: now,
       })
       .where(
@@ -285,13 +283,14 @@ async function bringUpNew(
   deps: LifecycleDeps,
   row: PreviewRow,
   attachInput: AttachInput,
+  refreshGeneration: boolean,
 ): Promise<Result<PreviewSnapshot>> {
   const ensured = await ensureDatabase(deps, row);
   if (!ensured.ok) {
     await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
     return ensured;
   }
-  return attachAppContainer(deps, row, attachInput);
+  return attachAppContainer(deps, row, attachInput, refreshGeneration);
 }
 
 /** Stuck-create resume: leave provisioning on CREATE failure; else attach. */
@@ -302,19 +301,17 @@ async function resumeProvisioning(
 ): Promise<Result<PreviewSnapshot>> {
   const ensured = await ensureDatabase(deps, row);
   if (!ensured.ok) return ensured;
-  return attachAppContainer(deps, row, attachInput);
+  // Mint generation when stuck-create finally becomes live.
+  return attachAppContainer(deps, row, attachInput, true);
 }
 
-function identityMatches(
+/** slug + dbName ownership; hostname is routing and may change on replace. */
+function dbIdentityMatches(
   row: PreviewRow,
   input: ProvisionInput,
   requestedDbName: string,
 ): boolean {
-  return (
-    row.slug === input.slug &&
-    row.dbName === requestedDbName &&
-    row.hostname === input.hostname
-  );
+  return row.slug === input.slug && row.dbName === requestedDbName;
 }
 
 async function provisionUnlocked(
@@ -343,7 +340,8 @@ async function provisionUnlocked(
     if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
-    return bringUpNew(deps, inserted, attachInput);
+    // First live: mint generation at attach (DB+app ready).
+    return bringUpNew(deps, inserted, attachInput, true);
   }
 
   const status = parsePreviewStatus(row.status);
@@ -356,26 +354,35 @@ async function provisionUnlocked(
         input,
         requestedDbName,
       );
-      return bringUpNew(deps, intent, attachInput);
+      // Intent write already minted createdAt — do not remint on attach.
+      return bringUpNew(deps, intent, attachInput, false);
     }
     case "error": {
-      // Same identity: resume without burning TTL generation.
-      if (identityMatches(row, input, requestedDbName)) {
-        return bringUpNew(deps, row, attachInput);
+      // Same slug/dbName: resume without burning TTL generation.
+      if (dbIdentityMatches(row, input, requestedDbName)) {
+        return bringUpNew(deps, row, attachInput, false);
       }
       const intent = await writeProvisioningIntent(
         deps,
         input,
         requestedDbName,
       );
-      return bringUpNew(deps, intent, attachInput);
+      return bringUpNew(deps, intent, attachInput, false);
     }
     case "provisioning":
-      // Crash window only: CREATE not finished. Do not rewrite identity.
+      // Crash window only: CREATE may be unfinished. Do not rewrite identity
+      // (slug/dbName) mid-flight — retry ensure + attach on the claimed row.
       return resumeProvisioning(deps, row, attachInput);
     case "ready":
-      // Replace app container; keep database and identity (slug/db_name).
-      return attachAppContainer(deps, row, attachInput);
+      if (!dbIdentityMatches(row, input, requestedDbName)) {
+        return {
+          ok: false,
+          status: 409,
+          error: "preview_identity_conflict",
+        };
+      }
+      // Replace app; hostname/image may change; keep slug/dbName + generation.
+      return attachAppContainer(deps, row, attachInput, false);
     case "removing":
       return {
         ok: false,
@@ -461,10 +468,11 @@ async function teardownUnlocked(
 /**
  * Ensure a preview DB + app container exist for (repo, prId).
  * - removed: rewrite identity, CREATE, start/replace app, advance to ready
- * - error + same identity: ensure DB + attach without burning generation
- * - error + new identity: rewrite intent, then bring-up
+ * - error + same slug/dbName: ensure DB + attach without burning generation
+ * - error + new slug/dbName: rewrite intent, then bring-up
  * - provisioning: retry CREATE (stuck-create recovery), then start app → ready
- * - ready: replace app container only (database kept)
+ * - ready + same slug/dbName: replace app (hostname/image may change)
+ * - ready + slug/dbName mismatch: 409 preview_identity_conflict
  * - removing: 409
  *
  * Registry pull runs outside the preview lock so a hung pull cannot stall

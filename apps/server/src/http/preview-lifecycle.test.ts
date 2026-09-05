@@ -406,7 +406,7 @@ describe("POST /v1/deploy", () => {
     expect(fakePreviewDb!.created).toEqual([]);
   });
 
-  test("concurrent reprovision from error keeps a single db name", async () => {
+  test("concurrent reprovision from error: one slug wins, other conflicts once ready", async () => {
     const { deployToken } = await setup();
     await testApp!.db.insert(previews).values({
       canonicalRepoId: REPO,
@@ -420,8 +420,12 @@ describe("POST /v1/deploy", () => {
       postDeploy(deployToken, deployBody({ slug: "alpha" })),
       postDeploy(deployToken, deployBody({ slug: "beta" })),
     ]);
-    expect(a.status).toBe(200);
-    expect(b.status).toBe(200);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([200, 409]);
+    const winner = a.status === 200 ? a : b;
+    const loser = a.status === 409 ? a : b;
+    expect(loser.body).toEqual({ error: "preview_identity_conflict" });
+    expect(winner.body).toMatchObject({ status: "ready" });
     const names = new Set(fakePreviewDb!.created);
     expect(names.size).toBe(1);
     const [row] = await testApp!.db
@@ -432,6 +436,7 @@ describe("POST /v1/deploy", () => {
       )
       .limit(1);
     expect(names.has(row!.dbName)).toBe(true);
+    expect(row!.slug).toBe((winner.body as { slug: string }).slug);
   });
 
   test("redeploy from error with same identity keeps createdAt generation", async () => {
@@ -547,6 +552,69 @@ describe("POST /v1/deploy", () => {
     expect(row!.createdAt).toBe(createdAtAfterReady);
     expect(row!.status).toBe("ready");
     expect(row!.appImage).toBe("ghcr.io/org/myapp:next");
+  });
+
+  test("ready redeploy with slug change returns identity conflict", async () => {
+    const { deployToken } = await setup();
+    await postDeploy(deployToken, deployBody());
+    const res = await postDeploy(
+      deployToken,
+      deployBody({
+        slug: "other",
+        hostname: "pr-42.other.preview.example.com",
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: "preview_identity_conflict" });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.slug).toBe("myapp");
+    expect(row?.dbName).toBe("prev_myapp_pr42");
+    expect(row?.status).toBe("ready");
+    expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
+  });
+
+  test("ready redeploy with hostname-only change keeps slug/db generation", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const { deployToken } = await setup();
+    await postDeploy(deployToken, deployBody());
+    const createdAtAfterReady = (
+      await testApp!.db
+        .select()
+        .from(previews)
+        .where(
+          and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+        )
+        .limit(1)
+    )[0]!.createdAt;
+
+    const res = await postDeploy(
+      deployToken,
+      deployBody({ hostname: "pr-42.alt.preview.example.com" }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: "ready",
+      slug: "myapp",
+      db_name: "prev_myapp_pr42",
+      hostname: "pr-42.alt.preview.example.com",
+    });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row!.createdAt).toBe(createdAtAfterReady);
+    expect(row!.hostname).toBe("pr-42.alt.preview.example.com");
   });
 
   test("slow create then teardown+redeploy leaves at most the winner db", async () => {

@@ -1,3 +1,4 @@
+import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import { createForgeClient } from "../forge/client.ts";
 import type { Config } from "../config.ts";
 import type { PreviewDocker } from "../docker/port.ts";
@@ -12,6 +13,7 @@ export function startGatewaySweep(deps: {
   db: StateDb;
   previewDb: PreviewDb;
   docker: PreviewDocker;
+  app: Pick<PreviewAppOps, "remove">;
 }): SweepTimerHandle {
   const forge = createForgeClient({
     forge: deps.config.forge,
@@ -21,6 +23,7 @@ export function startGatewaySweep(deps: {
     db: deps.db,
     previewDb: deps.previewDb,
     docker: deps.docker,
+    app: deps.app,
     forge,
     ttlHours: deps.config.ttlHours,
     log: (message, deletion) => {

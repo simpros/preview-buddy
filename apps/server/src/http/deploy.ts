@@ -4,7 +4,7 @@ import {
   provisionPreview,
   teardownPreview,
   type LifecycleDeps,
-} from "../preview-db/lifecycle.ts";
+} from "../preview/lifecycle.ts";
 import { validatePrId, validateSlug } from "../preview-db/names.ts";
 
 export type { LifecycleDeps };
