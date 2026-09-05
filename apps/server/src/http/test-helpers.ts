@@ -3,13 +3,16 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ensureAdminToken } from "../auth/store.ts";
 import {
+  bindPreviewApp,
+  type ReplacePreviewAppDeps,
+} from "../app-deployment/replace.ts";
+import {
   createFakeDockerClient,
   type FakeDockerClient,
 } from "../docker/fake.ts";
 import type { PreviewDocker } from "../docker/port.ts";
 import { connectState, type StateDb } from "../infrastructure/db/client.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
-import type { LifecycleDeps } from "../preview-db/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
@@ -28,7 +31,7 @@ export type TestApp = {
   cleanup: () => Promise<void>;
 };
 
-const defaultAppDeploy: LifecycleDeps["appDeploy"] = {
+const defaultReplaceDeps: Omit<ReplacePreviewAppDeps, "docker"> = {
   pg: {
     host: "postgres",
     port: 5432,
@@ -61,7 +64,7 @@ export async function createTestApp(
         adminToken?: string;
         previewDb?: PreviewDb;
         docker?: PreviewDocker;
-        appDeploy?: LifecycleDeps["appDeploy"];
+        replaceDeps?: Partial<Omit<ReplacePreviewAppDeps, "docker">>;
       }
     | string = {},
 ): Promise<TestApp> {
@@ -70,11 +73,15 @@ export async function createTestApp(
   const adminToken = opts.adminToken ?? "test-admin-token";
   const previewDb = opts.previewDb ?? createFakePreviewDb();
   const docker = opts.docker ?? createFakeDockerClient();
-  const appDeploy = opts.appDeploy ?? defaultAppDeploy;
+  const appOps = bindPreviewApp({
+    docker,
+    ...defaultReplaceDeps,
+    ...opts.replaceDeps,
+  });
   const { db, cleanup } = await createTestDb();
   await ensureAdminToken(db, adminToken);
   return {
-    app: createRoutes({ db, previewDb, docker, appDeploy }),
+    app: createRoutes({ db, previewDb, app: appOps }),
     db,
     adminToken,
     previewDb,

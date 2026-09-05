@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { authPlugin, requireAdmin, requireAuth } from "../auth/middleware.ts";
-import type { PreviewDocker } from "../docker/port.ts";
+import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import type { LifecycleDeps } from "../preview-db/lifecycle.ts";
@@ -15,8 +15,7 @@ import { deploy, deployBody, teardown, teardownBody } from "./deploy.ts";
 export type RouteDeps = {
   db: StateDb;
   previewDb: PreviewDb;
-  docker: PreviewDocker;
-  appDeploy: LifecycleDeps["appDeploy"];
+  app: PreviewAppOps;
 };
 
 function stubNotImplemented({
@@ -32,8 +31,7 @@ export function createRoutes(deps: RouteDeps) {
   const lifecycle: LifecycleDeps = {
     db: deps.db,
     previewDb: deps.previewDb,
-    docker: deps.docker,
-    appDeploy: deps.appDeploy,
+    app: deps.app,
   };
   return new Elysia()
     .get("/healthz", () => ({ ok: true }))

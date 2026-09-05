@@ -29,7 +29,9 @@ function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
   return {
     db: deps.db,
     previewDb: deps.previewDb,
-    docker: deps.docker,
+    app: {
+      remove: (slug, prId) => removePreviewApp(deps.docker, slug, prId),
+    },
   };
 }
 

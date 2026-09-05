@@ -1,12 +1,5 @@
 import { and, eq, ne } from "drizzle-orm";
-import {
-  preparePreviewImage,
-  removePreviewApp,
-  replacePreviewApp,
-  type AppDeployNetworks,
-  type AppDeployPg,
-} from "../app-deployment/replace.ts";
-import type { PreviewDocker } from "../docker/port.ts";
+import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { previewDbName } from "./names.ts";
@@ -31,15 +24,13 @@ export type PreviewStatus =
 export type TeardownDeps = {
   db: StateDb;
   previewDb: PreviewDb;
-  docker: PreviewDocker;
+  app: Pick<PreviewAppOps, "remove">;
 };
 
-export type LifecycleDeps = TeardownDeps & {
-  appDeploy: {
-    pg: AppDeployPg;
-    networks: AppDeployNetworks;
-    previewPortDefault: number;
-  };
+export type LifecycleDeps = {
+  db: StateDb;
+  previewDb: PreviewDb;
+  app: PreviewAppOps;
 };
 
 export type ProvisionInput = {
@@ -240,34 +231,28 @@ async function ensureDatabase(
   });
 }
 
+type AttachInput = {
+  hostname: string;
+  appImage: string;
+};
+
 async function attachAppContainer(
   deps: LifecycleDeps,
   row: PreviewRow,
-  input: {
-    hostname: string;
-    appImage: string;
-    port: number;
-  },
+  input: AttachInput,
 ): Promise<Result<PreviewSnapshot>> {
   try {
-    const { containerId } = await replacePreviewApp(
-      {
-        docker: deps.docker,
-        pg: deps.appDeploy.pg,
-        networks: deps.appDeploy.networks,
-      },
-      {
-        slug: row.slug,
-        prId: row.prId,
-        hostname: input.hostname,
-        image: input.appImage,
-        dbName: row.dbName,
-        port: input.port,
-      },
-    );
+    const { containerId } = await deps.app.replace({
+      slug: row.slug,
+      prId: row.prId,
+      hostname: input.hostname,
+      image: input.appImage,
+      dbName: row.dbName,
+    });
     const now = utcIsoNow();
-    // Mint generation when DB+app first become live; keep TTL on ready redeploy.
-    const mintGeneration = row.status !== "ready";
+    // Mint only when leaving provisioning (fresh / intent rewrite / stuck-create).
+    // Same-identity error recovery and ready redeploy keep the generation.
+    const mintGeneration = row.status === "provisioning";
     const [updated] = await deps.db
       .update(previews)
       .set({
@@ -295,12 +280,6 @@ async function attachAppContainer(
   }
 }
 
-type AttachInput = {
-  hostname: string;
-  appImage: string;
-  port: number;
-};
-
 /** Fresh / recovered identity: CREATE failure → error; else attach. */
 async function bringUpNew(
   deps: LifecycleDeps,
@@ -326,16 +305,26 @@ async function resumeProvisioning(
   return attachAppContainer(deps, row, attachInput);
 }
 
+function identityMatches(
+  row: PreviewRow,
+  input: ProvisionInput,
+  requestedDbName: string,
+): boolean {
+  return (
+    row.slug === input.slug &&
+    row.dbName === requestedDbName &&
+    row.hostname === input.hostname
+  );
+}
+
 async function provisionUnlocked(
   deps: LifecycleDeps,
   input: ProvisionInput,
-  port: number,
 ): Promise<Result<PreviewSnapshot>> {
   const requestedDbName = previewDbName(input.slug, input.prId);
   const attachInput: AttachInput = {
     hostname: input.hostname,
     appImage: input.appImage,
-    port,
   };
   let row = await getPreviewRow(deps.db, input.repo, input.prId);
 
@@ -361,8 +350,19 @@ async function provisionUnlocked(
   if (!status.ok) return status;
 
   switch (status.value) {
-    case "removed":
+    case "removed": {
+      const intent = await writeProvisioningIntent(
+        deps,
+        input,
+        requestedDbName,
+      );
+      return bringUpNew(deps, intent, attachInput);
+    }
     case "error": {
+      // Same identity: resume without burning TTL generation.
+      if (identityMatches(row, input, requestedDbName)) {
+        return bringUpNew(deps, row, attachInput);
+      }
       const intent = await writeProvisioningIntent(
         deps,
         input,
@@ -402,7 +402,7 @@ async function dropAndMarkRemoved(
   // Best-effort container remove outside dbName lock (still under preview lock).
   // Leftover pb-* containers are reclaimed by orphan-container sweep.
   try {
-    await removePreviewApp(deps.docker, existing.slug, existing.prId);
+    await deps.app.remove(existing.slug, existing.prId);
   } catch {
     console.warn(
       `preview container remove failed for ${existing.slug} pr=${prId}; continuing with DROP`,
@@ -460,25 +460,22 @@ async function teardownUnlocked(
 
 /**
  * Ensure a preview DB + app container exist for (repo, prId).
- * - removed/error: rewrite identity, CREATE, start/replace app, advance to ready
+ * - removed: rewrite identity, CREATE, start/replace app, advance to ready
+ * - error + same identity: ensure DB + attach without burning generation
+ * - error + new identity: rewrite intent, then bring-up
  * - provisioning: retry CREATE (stuck-create recovery), then start app → ready
  * - ready: replace app container only (database kept)
  * - removing: 409
  *
  * Registry pull runs outside the preview lock so a hung pull cannot stall
- * teardown for the same (repo, prId).
+ * teardown for the same (repo, prId). Port inspect stays inside replace.
  */
 export async function provisionPreview(
   deps: LifecycleDeps,
   input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
-  let port: number;
   try {
-    port = await preparePreviewImage(
-      deps.docker,
-      input.appImage,
-      deps.appDeploy.previewPortDefault,
-    );
+    await deps.app.pullImage(input.appImage);
   } catch {
     // Preflight only — do not poison a live ready/provisioning row.
     // Attach under the lock marks error when replace actually fails.
@@ -486,7 +483,7 @@ export async function provisionPreview(
   }
 
   return withPreviewLock(input.repo, input.prId, () =>
-    provisionUnlocked(deps, input, port),
+    provisionUnlocked(deps, input),
   );
 }
 

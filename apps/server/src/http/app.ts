@@ -1,3 +1,4 @@
+import { bindPreviewApp } from "../app-deployment/replace.ts";
 import type { Config } from "../config.ts";
 import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
@@ -12,22 +13,23 @@ export type ServerDeps = {
 };
 
 export function startServer(deps: ServerDeps) {
+  const app = bindPreviewApp({
+    docker: deps.docker,
+    pg: {
+      host: deps.config.previewPgHost,
+      port: deps.config.previewPgPort,
+      user: deps.config.previewPgUser,
+      password: deps.config.previewPgPassword,
+    },
+    networks: {
+      traefik: deps.config.traefikNetwork,
+      postgres: deps.config.postgresNetwork,
+    },
+    previewPortDefault: deps.config.previewPortDefault,
+  });
   return createRoutes({
     db: deps.db,
     previewDb: deps.previewDb,
-    docker: deps.docker,
-    appDeploy: {
-      pg: {
-        host: deps.config.previewPgHost,
-        port: deps.config.previewPgPort,
-        user: deps.config.previewPgUser,
-        password: deps.config.previewPgPassword,
-      },
-      networks: {
-        traefik: deps.config.traefikNetwork,
-        postgres: deps.config.postgresNetwork,
-      },
-      previewPortDefault: deps.config.previewPortDefault,
-    },
+    app,
   }).listen(deps.config.port);
 }

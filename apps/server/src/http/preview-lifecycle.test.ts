@@ -434,7 +434,7 @@ describe("POST /v1/deploy", () => {
     expect(names.has(row!.dbName)).toBe(true);
   });
 
-  test("redeploy from error refreshes createdAt generation", async () => {
+  test("redeploy from error with same identity keeps createdAt generation", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const { deployToken } = await setup();
     await testApp!.db.insert(previews).values({
@@ -459,13 +459,94 @@ describe("POST /v1/deploy", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
+    expect(row!.createdAt).toBe("2026-08-01T12:00:00.000Z");
+  });
+
+  test("redeploy from error with new identity refreshes createdAt generation", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "old",
+      dbName: "prev_old_pr42",
+      hostname: "old.example.com",
+      status: "error",
+      createdAt: "2026-08-01T12:00:00.000Z",
+      updatedAt: "2026-08-01T12:00:00.000Z",
+    });
+
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      status: "ready",
+      slug: "myapp",
+      db_name: "prev_myapp_pr42",
+    });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
     expect(row!.createdAt).not.toBe("2026-08-01T12:00:00.000Z");
     expect(row!.createdAt).toMatch(/Z$/);
     expect(parseUnambiguousUtcMs(row!.createdAt)).not.toBeNull();
-    // Fresh generation is not TTL-eligible at 72h with "now" = deploy time.
     const ageMs =
       Date.now() - parseUnambiguousUtcMs(row!.createdAt)!;
     expect(ageMs).toBeLessThan(72 * 60 * 60 * 1000);
+  });
+
+  test("failed ready-replace then same-identity recover keeps createdAt", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const { deployToken } = await setup({
+      exposedPorts: {
+        [APP_IMAGE]: 3000,
+        "ghcr.io/org/myapp:next": 3000,
+      },
+    });
+    await postDeploy(deployToken, deployBody());
+    const createdAtAfterReady = (
+      await testApp!.db
+        .select()
+        .from(previews)
+        .where(
+          and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+        )
+        .limit(1)
+    )[0]!.createdAt;
+
+    const originalCreate = fakeDocker!.createAndStart.bind(fakeDocker);
+    fakeDocker!.createAndStart = async () => {
+      throw new Error("engine blip");
+    };
+    const fail = await postDeploy(
+      deployToken,
+      deployBody({ app_image: "ghcr.io/org/myapp:next" }),
+    );
+    expect(fail.status).toBe(500);
+    expect(fail.body).toEqual({ error: "preview_app_deploy_failed" });
+
+    fakeDocker!.createAndStart = originalCreate;
+    const ok = await postDeploy(
+      deployToken,
+      deployBody({ app_image: "ghcr.io/org/myapp:next" }),
+    );
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ status: "ready" });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row!.createdAt).toBe(createdAtAfterReady);
+    expect(row!.status).toBe("ready");
+    expect(row!.appImage).toBe("ghcr.io/org/myapp:next");
   });
 
   test("slow create then teardown+redeploy leaves at most the winner db", async () => {
