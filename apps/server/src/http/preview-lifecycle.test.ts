@@ -121,7 +121,7 @@ describe("POST /v1/deploy", () => {
       slug: "myapp",
       db_name: "prev_myapp_pr42",
       hostname: "pr-42.myapp.preview.example.com",
-      status: "provisioning",
+      status: "ready",
     });
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
 
@@ -138,7 +138,7 @@ describe("POST /v1/deploy", () => {
       slug: "myapp",
       dbName: "prev_myapp_pr42",
       hostname: "pr-42.myapp.preview.example.com",
-      status: "provisioning",
+      status: "ready",
       containerId: null,
     });
     expect(row!.updatedAt).toMatch(/Z$/);
@@ -156,7 +156,7 @@ describe("POST /v1/deploy", () => {
     expect(fakePreviewDb!.created).toEqual([]);
   });
 
-  test("re-deploy keeps existing identity while retrying CREATE", async () => {
+  test("re-deploy while ready is a no-op (keeps identity, no CREATE)", async () => {
     const { deployToken } = await setup();
     await postDeploy(deployToken, deployBody());
     const res = await postDeploy(
@@ -168,13 +168,9 @@ describe("POST /v1/deploy", () => {
       slug: "myapp",
       db_name: "prev_myapp_pr42",
       hostname: "pr-42.myapp.preview.example.com",
-      status: "provisioning",
+      status: "ready",
     });
-    // provisioning always retries CREATE (idempotent in postgres adapter)
-    expect(fakePreviewDb!.created).toEqual([
-      "prev_myapp_pr42",
-      "prev_myapp_pr42",
-    ]);
+    expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
   });
 
   test("retries createDatabase when stuck in provisioning with no DB", async () => {
@@ -193,7 +189,7 @@ describe("POST /v1/deploy", () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       db_name: "prev_myapp_pr42",
-      status: "provisioning",
+      status: "ready",
     });
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
   });
@@ -215,7 +211,7 @@ describe("POST /v1/deploy", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
-    expect(row?.status).toBe("provisioning");
+    expect(row?.status).toBe("ready");
   });
 
   test("marks error when createDatabase fails after SQLite write", async () => {
@@ -252,7 +248,7 @@ describe("POST /v1/deploy", () => {
     expect((await postDeploy(deployToken, deployBody())).status).toBe(500);
     const res = await postDeploy(deployToken, deployBody());
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ status: "provisioning" });
+    expect(res.body).toMatchObject({ status: "ready" });
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
   });
 
@@ -355,7 +351,7 @@ describe("POST /v1/deploy", () => {
     expect(b.body).toMatchObject({
       slug: "beta",
       db_name: "prev_beta_pr42",
-      status: "provisioning",
+      status: "ready",
     });
 
     const [row] = await testApp!.db
@@ -366,7 +362,7 @@ describe("POST /v1/deploy", () => {
       )
       .limit(1);
     expect(row?.dbName).toBe("prev_beta_pr42");
-    expect(row?.status).toBe("provisioning");
+    expect(row?.status).toBe("ready");
 
     // Winner's name must be present; alpha must have been dropped.
     expect(fakePreviewDb!.created).toContain("prev_beta_pr42");
@@ -376,25 +372,18 @@ describe("POST /v1/deploy", () => {
     expect([...live]).toEqual(["prev_beta_pr42"]);
   });
 
-  test("parallel create where one fails does not drop the winner", async () => {
-    let calls = 0;
-    const { deployToken } = await setup({
-      createDatabase: async (dbName) => {
-        calls += 1;
-        if (calls === 1) {
-          fakePreviewDb!.created.push(dbName);
-          return;
-        }
-        throw new Error("transient");
-      },
-    });
+  test("parallel deploys after ready do not CREATE again", async () => {
+    const { deployToken } = await setup();
+    const first = await postDeploy(deployToken, deployBody());
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({ status: "ready" });
+
     const [a, b] = await Promise.all([
       postDeploy(deployToken, deployBody()),
       postDeploy(deployToken, deployBody()),
     ]);
-    const statuses = [a.status, b.status].sort();
-    // Serialized: first CREATE succeeds; ensure retry fails without poisoning status.
-    expect(statuses).toEqual([200, 500]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
     expect(fakePreviewDb!.dropped).toEqual([]);
     const [row] = await testApp!.db
@@ -404,8 +393,37 @@ describe("POST /v1/deploy", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
-    expect(row?.status).toBe("provisioning");
+    expect(row?.status).toBe("ready");
     expect(row?.dbName).toBe("prev_myapp_pr42");
+  });
+
+  test("stuck provisioning ensure failure leaves status provisioning", async () => {
+    let calls = 0;
+    const { deployToken } = await setup({
+      createDatabase: async () => {
+        calls += 1;
+        throw new Error("transient");
+      },
+    });
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "myapp",
+      dbName: "prev_myapp_pr42",
+      hostname: "pr-42.myapp.preview.example.com",
+      status: "provisioning",
+    });
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(500);
+    expect(calls).toBe(1);
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.status).toBe("provisioning");
   });
 });
 
