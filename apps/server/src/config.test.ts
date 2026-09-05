@@ -105,6 +105,7 @@ describe("loadConfig", () => {
   test("configSummary marks unset forge token", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
+      previewPgUser: "pb_preview",
       traefikNetwork: "traefik",
       postgresNetwork: "postgres",
       registryUrl: "ghcr.io",

@@ -1,7 +1,7 @@
 import { SQL } from "bun";
+import { assertPreviewDbName } from "./names.ts";
 import type { PreviewDb } from "./port.ts";
 
-const SAFE_DB_NAME = /^prev_[a-z][a-z0-9]*_pr[1-9][0-9]*$/;
 /** Unquoted Postgres identifiers fold to lowercase — require lowercase roles. */
 const SAFE_ROLE = /^[a-z_][a-z0-9_]*$/;
 
@@ -9,12 +9,6 @@ export type PostgresPreviewDbOptions = {
   url: string;
   previewRole: string;
 };
-
-function assertSafeDbName(dbName: string): void {
-  if (!SAFE_DB_NAME.test(dbName)) {
-    throw new Error(`refusing unsafe preview database name: ${dbName}`);
-  }
-}
 
 function assertSafeRole(role: string): void {
   if (!SAFE_ROLE.test(role)) {
@@ -39,7 +33,7 @@ export function createPostgresPreviewDb(
 
   return {
     async createDatabase(dbName) {
-      assertSafeDbName(dbName);
+      assertPreviewDbName(dbName);
       const existing = await sql`
         SELECT 1 AS ok FROM pg_database WHERE datname = ${dbName} LIMIT 1
       `;
@@ -57,7 +51,7 @@ export function createPostgresPreviewDb(
     },
 
     async dropDatabase(dbName) {
-      assertSafeDbName(dbName);
+      assertPreviewDbName(dbName);
       await sql`
         SELECT pg_terminate_backend(pid)
         FROM pg_stat_activity
