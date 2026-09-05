@@ -2,6 +2,16 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ensureAdminToken } from "../auth/store.ts";
+import {
+  bindPreviewApp,
+  type PreviewAppOps,
+  type ReplacePreviewAppDeps,
+} from "../app-deployment/replace.ts";
+import {
+  createFakeDockerClient,
+  type FakeDockerClient,
+} from "../docker/fake.ts";
+import type { PreviewDocker } from "../docker/port.ts";
 import { connectState, type StateDb } from "../infrastructure/db/client.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
@@ -18,8 +28,35 @@ export type TestApp = {
   db: StateDb;
   adminToken: string;
   previewDb: PreviewDb;
+  docker: PreviewDocker;
   cleanup: () => Promise<void>;
 };
+
+const defaultReplaceDeps: Omit<ReplacePreviewAppDeps, "docker"> = {
+  pg: {
+    host: "postgres",
+    port: 5432,
+    user: "pb_preview",
+    password: "preview-secret",
+  },
+  networks: {
+    traefik: "preview-buddy-traefik",
+    postgres: "preview-buddy-postgres",
+  },
+  previewPortDefault: 8080,
+};
+
+/** Shared bind for HTTP/sweep tests — same PG/network/port bag as createTestApp. */
+export function bindTestPreviewApp(
+  docker: PreviewDocker,
+  replaceDeps?: Partial<Omit<ReplacePreviewAppDeps, "docker">>,
+): PreviewAppOps {
+  return bindPreviewApp({
+    docker,
+    ...defaultReplaceDeps,
+    ...replaceDeps,
+  });
+}
 
 export async function createTestDb(): Promise<TestDb> {
   const dir = mkdtempSync(join(tmpdir(), "pb-auth-"));
@@ -35,19 +72,29 @@ export async function createTestDb(): Promise<TestDb> {
 }
 
 export async function createTestApp(
-  options: { adminToken?: string; previewDb?: PreviewDb } | string = {},
+  options:
+    | {
+        adminToken?: string;
+        previewDb?: PreviewDb;
+        docker?: PreviewDocker;
+        replaceDeps?: Partial<Omit<ReplacePreviewAppDeps, "docker">>;
+      }
+    | string = {},
 ): Promise<TestApp> {
   const opts =
     typeof options === "string" ? { adminToken: options } : options;
   const adminToken = opts.adminToken ?? "test-admin-token";
   const previewDb = opts.previewDb ?? createFakePreviewDb();
+  const docker = opts.docker ?? createFakeDockerClient();
+  const appOps = bindTestPreviewApp(docker, opts.replaceDeps);
   const { db, cleanup } = await createTestDb();
   await ensureAdminToken(db, adminToken);
   return {
-    app: createRoutes({ db, previewDb }),
+    app: createRoutes({ db, previewDb, app: appOps }),
     db,
     adminToken,
     previewDb,
+    docker,
     cleanup,
   };
 }
@@ -72,3 +119,5 @@ export async function postDeployToken(
   );
   return { status: res.status, body: await res.json() };
 }
+
+export type { FakeDockerClient };

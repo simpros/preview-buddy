@@ -1,5 +1,7 @@
+import { bindPreviewApp } from "./app-deployment/replace.ts";
 import { ensureAdminToken } from "./auth/store.ts";
 import { configSummary, loadConfig } from "./config.ts";
+import { createDockerEngineClient } from "./docker/engine.ts";
 import { startServer } from "./http/app.ts";
 import { connectState } from "./infrastructure/db/client.ts";
 import { createPostgresPreviewDb } from "./preview-db/postgres.ts";
@@ -25,8 +27,33 @@ const previewDb = createPostgresPreviewDb({
   previewRole: config.previewPgUser,
 });
 
-startServer({ config, db, previewDb });
-startGatewaySweep({ config, db, previewDb });
+const docker = createDockerEngineClient({
+  registryAuth:
+    config.registryUser === ""
+      ? undefined
+      : {
+          username: config.registryUser,
+          password: config.registryPassword,
+        },
+});
+
+const app = bindPreviewApp({
+  docker,
+  pg: {
+    host: config.previewPgHost,
+    port: config.previewPgPort,
+    user: config.previewPgUser,
+    password: config.previewPgPassword,
+  },
+  networks: {
+    traefik: config.traefikNetwork,
+    postgres: config.postgresNetwork,
+  },
+  previewPortDefault: config.previewPortDefault,
+});
+
+startServer({ config, db, previewDb, app });
+startGatewaySweep({ config, db, previewDb, app });
 console.log(
   `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
 );

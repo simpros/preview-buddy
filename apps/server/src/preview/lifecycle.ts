@@ -1,8 +1,9 @@
 import { and, eq, ne } from "drizzle-orm";
+import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
-import { previewDbName } from "./names.ts";
-import type { PreviewDb } from "./port.ts";
+import { previewDbName } from "../preview-db/names.ts";
+import type { PreviewDb } from "../preview-db/port.ts";
 
 function utcIsoNow(): string {
   return new Date().toISOString();
@@ -10,7 +11,8 @@ function utcIsoNow(): string {
 
 /**
  * Preview lifecycle statuses known to this slice.
- * `ready` = DB exists (awaiting app slice). Keep `error` (not `failed`).
+ * `ready` = DB exists and app container started (health → running is a later slice).
+ * Keep `error` (not `failed`).
  */
 export type PreviewStatus =
   | "provisioning"
@@ -19,9 +21,16 @@ export type PreviewStatus =
   | "removed"
   | "error";
 
+export type TeardownDeps = {
+  db: StateDb;
+  previewDb: PreviewDb;
+  app: Pick<PreviewAppOps, "remove">;
+};
+
 export type LifecycleDeps = {
   db: StateDb;
   previewDb: PreviewDb;
+  app: PreviewAppOps;
 };
 
 export type ProvisionInput = {
@@ -29,6 +38,7 @@ export type ProvisionInput = {
   prId: number;
   slug: string;
   hostname: string;
+  appImage: string;
 };
 
 export type TeardownInput = {
@@ -173,31 +183,6 @@ async function markPreviewError(
     );
 }
 
-async function markReady(
-  db: StateDb,
-  repo: string,
-  prId: number,
-): Promise<PreviewRow> {
-  const now = utcIsoNow();
-  const [updated] = await db
-    .update(previews)
-    .set({
-      status: "ready",
-      // Mint generation when the DB becomes live (covers stuck-provisioning
-      // recovery that skips writeProvisioningIntent).
-      createdAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
-    )
-    .returning();
-  if (!updated) {
-    throw new Error("preview_row_missing_on_ready");
-  }
-  return updated;
-}
-
 async function writeProvisioningIntent(
   deps: LifecycleDeps,
   input: ProvisionInput,
@@ -231,35 +216,102 @@ async function writeProvisioningIntent(
   return updated;
 }
 
-/** CREATE under dbName lock, then advance to ready. Caller handles CREATE failure. */
-async function createThenReady(
+/** CREATE under dbName lock only. Callers decide error vs leave-provisioning. */
+async function ensureDatabase(
   deps: LifecycleDeps,
   row: PreviewRow,
-): Promise<Result<PreviewSnapshot>> {
+): Promise<Result<true>> {
   return withDbNameLock(row.dbName, async () => {
     try {
       await deps.previewDb.createDatabase(row.dbName);
+      return { ok: true, value: true };
     } catch {
       return { ok: false, status: 500, error: "preview_db_create_failed" };
     }
-    const ready = await markReady(
-      deps.db,
-      row.canonicalRepoId,
-      row.prId,
-    );
-    return { ok: true, value: toSnapshot(ready, "ready") };
   });
 }
 
-async function establishDatabase(
+type AttachInput = {
+  hostname: string;
+  appImage: string;
+};
+
+async function attachAppContainer(
   deps: LifecycleDeps,
   row: PreviewRow,
+  input: AttachInput,
+  refreshGeneration: boolean,
 ): Promise<Result<PreviewSnapshot>> {
-  const result = await createThenReady(deps, row);
-  if (!result.ok) {
+  try {
+    const { containerId } = await deps.app.replace({
+      slug: row.slug,
+      prId: row.prId,
+      hostname: input.hostname,
+      image: input.appImage,
+      dbName: row.dbName,
+    });
+    const now = utcIsoNow();
+    const [updated] = await deps.db
+      .update(previews)
+      .set({
+        hostname: input.hostname,
+        appImage: input.appImage,
+        containerId,
+        status: "ready",
+        ...(refreshGeneration ? { createdAt: now } : {}),
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(previews.canonicalRepoId, row.canonicalRepoId),
+          eq(previews.prId, row.prId),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new Error("preview_row_missing_on_app_attach");
+    }
+    return { ok: true, value: toSnapshot(updated, "ready") };
+  } catch {
     await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
+    return { ok: false, status: 500, error: "preview_app_deploy_failed" };
   }
-  return result;
+}
+
+/** Fresh / recovered identity: CREATE failure → error; else attach. */
+async function bringUpNew(
+  deps: LifecycleDeps,
+  row: PreviewRow,
+  attachInput: AttachInput,
+  refreshGeneration: boolean,
+): Promise<Result<PreviewSnapshot>> {
+  const ensured = await ensureDatabase(deps, row);
+  if (!ensured.ok) {
+    await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
+    return ensured;
+  }
+  return attachAppContainer(deps, row, attachInput, refreshGeneration);
+}
+
+/** Stuck-create resume: leave provisioning on CREATE failure; else attach. */
+async function resumeProvisioning(
+  deps: LifecycleDeps,
+  row: PreviewRow,
+  attachInput: AttachInput,
+): Promise<Result<PreviewSnapshot>> {
+  const ensured = await ensureDatabase(deps, row);
+  if (!ensured.ok) return ensured;
+  // Mint generation when stuck-create finally becomes live.
+  return attachAppContainer(deps, row, attachInput, true);
+}
+
+/** slug + dbName ownership; hostname is routing and may change on replace. */
+function dbIdentityMatches(
+  row: PreviewRow,
+  input: ProvisionInput,
+  requestedDbName: string,
+): boolean {
+  return row.slug === input.slug && row.dbName === requestedDbName;
 }
 
 async function provisionUnlocked(
@@ -267,6 +319,10 @@ async function provisionUnlocked(
   input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
   const requestedDbName = previewDbName(input.slug, input.prId);
+  const attachInput: AttachInput = {
+    hostname: input.hostname,
+    appImage: input.appImage,
+  };
   let row = await getPreviewRow(deps.db, input.repo, input.prId);
 
   if (!row) {
@@ -284,28 +340,51 @@ async function provisionUnlocked(
     if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
-    return establishDatabase(deps, inserted);
+    // First live: mint generation at attach (DB+app ready).
+    return bringUpNew(deps, inserted, attachInput, true);
   }
 
   const status = parsePreviewStatus(row.status);
   if (!status.ok) return status;
 
   switch (status.value) {
-    case "removed":
-    case "error": {
+    case "removed": {
       const intent = await writeProvisioningIntent(
         deps,
         input,
         requestedDbName,
       );
-      return establishDatabase(deps, intent);
+      // Intent write already minted createdAt — do not remint on attach.
+      return bringUpNew(deps, intent, attachInput, false);
+    }
+    case "error": {
+      // Same slug/dbName: resume without burning TTL generation.
+      if (dbIdentityMatches(row, input, requestedDbName)) {
+        return bringUpNew(deps, row, attachInput, false);
+      }
+      const intent = await writeProvisioningIntent(
+        deps,
+        input,
+        requestedDbName,
+      );
+      return bringUpNew(deps, intent, attachInput, false);
     }
     case "provisioning":
-      // Crash window only: CREATE not finished. Do not rewrite identity.
-      return createThenReady(deps, row);
-    case "ready":
-      // Option A: DB intent complete — healthy redeploy is a snapshot no-op.
-      return { ok: true, value: toSnapshot(row, "ready") };
+    case "ready": {
+      // Live claim: refuse slug/dbName rewrite mid-flight / on replace.
+      // Hostname/image may still change when identity matches.
+      if (!dbIdentityMatches(row, input, requestedDbName)) {
+        return {
+          ok: false,
+          status: 409,
+          error: "preview_identity_conflict",
+        };
+      }
+      if (status.value === "ready") {
+        return attachAppContainer(deps, row, attachInput, false);
+      }
+      return resumeProvisioning(deps, row, attachInput);
+    }
     case "removing":
       return {
         ok: false,
@@ -316,7 +395,7 @@ async function provisionUnlocked(
 }
 
 async function dropAndMarkRemoved(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   existing: PreviewRow,
 ): Promise<Result<TeardownSnapshot>> {
   const repo = existing.canonicalRepoId;
@@ -328,6 +407,16 @@ async function dropAndMarkRemoved(
     .where(
       and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
     );
+
+  // Best-effort container remove outside dbName lock (still under preview lock).
+  // Leftover pb-* containers are reclaimed by orphan-container sweep.
+  try {
+    await deps.app.remove(existing.slug, existing.prId);
+  } catch {
+    console.warn(
+      `preview container remove failed for ${existing.slug} pr=${prId}; continuing with DROP`,
+    );
+  }
 
   return withDbNameLock(existing.dbName, async () => {
     try {
@@ -353,7 +442,7 @@ async function dropAndMarkRemoved(
 }
 
 async function teardownUnlocked(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   input: TeardownInput,
 ): Promise<Result<TeardownSnapshot>> {
   const existing = await getPreviewRow(deps.db, input.repo, input.prId);
@@ -379,23 +468,37 @@ async function teardownUnlocked(
 }
 
 /**
- * Ensure a preview DB exists for (repo, prId).
- * - removed/error: rewrite identity, CREATE, advance to ready
- * - provisioning: retry CREATE (stuck-create recovery), then ready
- * - ready: snapshot no-op
+ * Ensure a preview DB + app container exist for (repo, prId).
+ * - removed: rewrite identity, CREATE, start/replace app, advance to ready
+ * - error + same slug/dbName: ensure DB + attach without burning generation
+ * - error + new slug/dbName: rewrite intent, then bring-up
+ * - provisioning + same slug/dbName: retry CREATE, then start app → ready
+ * - ready + same slug/dbName: replace app (hostname/image may change)
+ * - provisioning|ready + slug/dbName mismatch: 409 preview_identity_conflict
  * - removing: 409
+ *
+ * Registry pull runs outside the preview lock so a hung pull cannot stall
+ * teardown for the same (repo, prId). Port inspect stays inside replace.
  */
-export function provisionPreview(
+export async function provisionPreview(
   deps: LifecycleDeps,
   input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
+  try {
+    await deps.app.pullImage(input.appImage);
+  } catch {
+    // Preflight only — do not poison a live ready/provisioning row.
+    // Attach under the lock marks error when replace actually fails.
+    return { ok: false, status: 500, error: "preview_app_deploy_failed" };
+  }
+
   return withPreviewLock(input.repo, input.prId, () =>
     provisionUnlocked(deps, input),
   );
 }
 
 export function teardownPreview(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   input: TeardownInput,
 ): Promise<Result<TeardownSnapshot>> {
   return withPreviewLock(input.repo, input.prId, () =>
@@ -409,7 +512,7 @@ export function teardownPreview(
  * @returns true if the preview was removed; false if the plan was stale.
  */
 export function removePreview(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   input: RemovePreviewInput,
 ): Promise<Result<boolean>> {
   return withPreviewLock(input.repo, input.prId, async () => {
@@ -439,7 +542,7 @@ export function removePreview(
  * @returns true if DROP ran.
  */
 export function dropOrphanDatabase(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   dbName: string,
 ): Promise<boolean> {
   return withDbNameLock(dbName, async () => {

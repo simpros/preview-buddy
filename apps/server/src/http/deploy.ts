@@ -4,7 +4,7 @@ import {
   provisionPreview,
   teardownPreview,
   type LifecycleDeps,
-} from "../preview-db/lifecycle.ts";
+} from "../preview/lifecycle.ts";
 import { validatePrId, validateSlug } from "../preview-db/names.ts";
 
 export type { LifecycleDeps };
@@ -14,6 +14,7 @@ export const deployBody = t.Object({
   pr_id: t.Number(),
   slug: t.String({ minLength: 1 }),
   hostname: t.String({ minLength: 1 }),
+  app_image: t.String({ minLength: 1 }),
 });
 
 /** Identity is (canonical_repo_id, pr_id); slug is not part of teardown. */
@@ -27,6 +28,7 @@ export type DeployBody = {
   pr_id: number;
   slug: string;
   hostname: string;
+  app_image: string;
 };
 
 export type TeardownBody = {
@@ -92,6 +94,7 @@ export function deploy(deps: LifecycleDeps) {
         prId: body.pr_id,
         slug: body.slug,
         hostname: body.hostname,
+        appImage: body.app_image,
       }),
       set,
     );

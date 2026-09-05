@@ -2,7 +2,9 @@ import { FORGE_KINDS, type ForgeKind } from "./forge/client.ts";
 
 export const REQUIRED_ENV = [
   "PB_PREVIEW_POSTGRES_URL",
+  "PB_PG_HOST",
   "PB_PG_USER",
+  "PB_PG_PASSWORD",
   "PB_TRAEFIK_NETWORK",
   "PB_POSTGRES_NETWORK",
   "PB_REGISTRY_URL",
@@ -10,6 +12,7 @@ export const REQUIRED_ENV = [
 ] as const;
 
 export const OPTIONAL_ENV_DEFAULTS = {
+  PB_PG_PORT: 5432,
   PB_TTL_HOURS: 72,
   PB_SWEEP_MINUTES: 30,
   PB_PREVIEW_PORT_DEFAULT: 8080,
@@ -19,7 +22,11 @@ export const OPTIONAL_ENV_DEFAULTS = {
 
 export type Config = {
   previewPostgresUrl: string;
+  /** Hostname preview containers use for PGHOST (often not the admin DSN host). */
+  previewPgHost: string;
+  previewPgPort: number;
   previewPgUser: string;
+  previewPgPassword: string;
   traefikNetwork: string;
   postgresNetwork: string;
   registryUrl: string;
@@ -86,7 +93,14 @@ export function loadConfig(): Config {
 
   return {
     previewPostgresUrl: requiredEnv("PB_PREVIEW_POSTGRES_URL"),
+    previewPgHost: requiredEnv("PB_PG_HOST"),
+    previewPgPort: parsePositiveInt(
+      "PB_PG_PORT",
+      process.env.PB_PG_PORT,
+      OPTIONAL_ENV_DEFAULTS.PB_PG_PORT,
+    ),
     previewPgUser: requiredEnv("PB_PG_USER"),
+    previewPgPassword: requiredEnv("PB_PG_PASSWORD"),
     traefikNetwork: requiredEnv("PB_TRAEFIK_NETWORK"),
     postgresNetwork: requiredEnv("PB_POSTGRES_NETWORK"),
     registryUrl: requiredEnv("PB_REGISTRY_URL"),
@@ -126,7 +140,10 @@ export function loadConfig(): Config {
 export function configSummary(config: Config): Record<string, string | number> {
   return {
     previewPostgresUrl: redactUrl(config.previewPostgresUrl),
+    previewPgHost: config.previewPgHost,
+    previewPgPort: config.previewPgPort,
     previewPgUser: config.previewPgUser,
+    previewPgPassword: config.previewPgPassword === "" ? "[empty]" : "[set]",
     traefikNetwork: config.traefikNetwork,
     postgresNetwork: config.postgresNetwork,
     registryUrl: config.registryUrl,

@@ -2,11 +2,13 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { ensureAdminToken, revokeToken } from "../auth/store.ts";
 import { hashToken } from "../auth/tokens.ts";
+import { createFakeDockerClient } from "../docker/fake.ts";
 import { repos } from "../infrastructure/db/schema.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import { createRoutes } from "./routes.ts";
 import {
   bearer,
+  bindTestPreviewApp,
   createTestApp,
   createTestDb,
   postDeployToken,
@@ -214,6 +216,7 @@ describe("bearer auth", () => {
           pr_id: 1,
           slug: "myapp",
           hostname: "pr-1.example.com",
+          app_image: "ghcr.io/org/myapp:test",
         }),
       }),
     );
@@ -239,6 +242,7 @@ describe("bearer auth", () => {
           pr_id: 1,
           slug: "myapp",
           hostname: "pr-1.example.com",
+          app_image: "ghcr.io/org/myapp:test",
         }),
       }),
     );
@@ -275,6 +279,7 @@ describe("ensureAdminToken", () => {
     const app = createRoutes({
       db: testDb.db,
       previewDb: createFakePreviewDb(),
+      app: bindTestPreviewApp(createFakeDockerClient()),
     });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {
