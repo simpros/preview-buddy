@@ -1,6 +1,6 @@
 import { SQL } from "bun";
-import { assertPreviewDbName } from "./names.ts";
-import type { PreviewDb } from "./port.ts";
+import { assertPreviewDbName, parsePreviewDatabaseName } from "./names.ts";
+import type { CatalogDatabase, PreviewDb } from "./port.ts";
 
 /** Unquoted Postgres identifiers fold to lowercase — require lowercase roles. */
 const SAFE_ROLE = /^[a-z_][a-z0-9_]*$/;
@@ -58,6 +58,24 @@ export function createPostgresPreviewDb(
         WHERE datname = ${dbName} AND pid <> pg_backend_pid()
       `;
       await sql.unsafe(`DROP DATABASE IF EXISTS ${dbName}`);
+    },
+
+    async listPreviewDatabases() {
+      const rows = await sql<{ datname: string }[]>`
+        SELECT datname FROM pg_database
+        WHERE datname LIKE 'prev_%'
+      `;
+      const out: CatalogDatabase[] = [];
+      for (const row of rows) {
+        const parsed = parsePreviewDatabaseName(row.datname);
+        if (!parsed) continue;
+        out.push({
+          dbName: row.datname,
+          slug: parsed.slug,
+          prId: parsed.prId,
+        });
+      }
+      return out;
     },
   };
 }

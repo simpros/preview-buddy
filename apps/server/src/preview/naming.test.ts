@@ -4,7 +4,7 @@ import {
   parsePreviewDatabaseName,
 } from "./naming.ts";
 
-describe("parsePreviewDatabaseName", () => {
+describe("parsePreviewDatabaseName (re-export)", () => {
   test("parses prev_<slug>_pr<id>", () => {
     expect(parsePreviewDatabaseName("prev_widgets_pr42")).toEqual({
       slug: "widgets",

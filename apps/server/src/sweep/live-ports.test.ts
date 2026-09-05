@@ -1,10 +1,20 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createTestDb } from "../http/test-helpers.ts";
 import { previews, repos } from "../infrastructure/db/schema.ts";
+import type { PreviewDb } from "../preview-db/port.ts";
 import type { ContainerPorts } from "../preview/containers.ts";
-import type { PostgresAdmin } from "../preview/postgres-admin.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
 import { runSweepPass } from "./reconcile.ts";
+
+function stubPreviewDb(
+  partial: Partial<PreviewDb> & Pick<PreviewDb, "listPreviewDatabases">,
+): PreviewDb {
+  return {
+    createDatabase: async () => {},
+    dropDatabase: async () => {},
+    ...partial,
+  };
+}
 
 describe("createLiveSweepPorts", () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -38,14 +48,14 @@ describe("createLiveSweepPorts", () => {
 
     const droppedDbs: string[] = [];
     const removedContainers: string[] = [];
-    const postgres: PostgresAdmin = {
+    const previewDb = stubPreviewDb({
       listPreviewDatabases: async () => [
         { dbName: "prev_widgets_pr10", slug: "widgets", prId: 10 },
       ],
       dropDatabase: async (dbName) => {
         droppedDbs.push(dbName);
       },
-    };
+    });
     const containers: ContainerPorts = {
       listPreviewContainers: async () => [],
       remove: async ({ slug, prId }) => {
@@ -55,7 +65,7 @@ describe("createLiveSweepPorts", () => {
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      postgres,
+      previewDb,
       containers,
       forge: {
         listOpenPrIds: async () => [],
@@ -97,10 +107,9 @@ describe("createLiveSweepPorts", () => {
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      postgres: {
+      previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
-        dropDatabase: async () => {},
-      },
+      }),
       containers: {
         listPreviewContainers: async () => [],
         remove: async () => {},
@@ -140,14 +149,14 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      postgres: {
+      previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "prev_widgets_pr1", slug: "widgets", prId: 1 },
         ],
         dropDatabase: async (dbName) => {
           droppedDbs.push(dbName);
         },
-      },
+      }),
       containers: {
         listPreviewContainers: async () => [],
         remove: async () => {},
@@ -197,14 +206,14 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      postgres: {
+      previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "prev_widgets_pr1", slug: "widgets", prId: 1 },
         ],
         dropDatabase: async (dbName) => {
           droppedDbs.push(dbName);
         },
-      },
+      }),
       containers: {
         listPreviewContainers: async () => [],
         remove: async () => {},
@@ -253,12 +262,12 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      postgres: {
+      previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async () => {
           throw new Error("postgres busy");
         },
-      },
+      }),
       containers: {
         listPreviewContainers: async () => [],
         remove: async () => {
@@ -294,12 +303,12 @@ describe("createLiveSweepPorts", () => {
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      postgres: {
+      previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async () => {
           throw new Error("postgres busy");
         },
-      },
+      }),
       containers: {
         listPreviewContainers: async () => [],
         remove: async () => {},

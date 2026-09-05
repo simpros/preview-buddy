@@ -3,8 +3,9 @@ import type { ForgeClient } from "../forge/client.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
+import { withPreviewLock } from "../preview-db/lifecycle.ts";
+import type { PreviewDb } from "../preview-db/port.ts";
 import type { ContainerPorts } from "../preview/containers.ts";
-import type { PostgresAdmin } from "../preview/postgres-admin.ts";
 import type {
   SweepDeletion,
   SweepPorts,
@@ -13,7 +14,7 @@ import type {
 
 export type LiveSweepDeps = {
   db: StateDb;
-  postgres: PostgresAdmin;
+  previewDb: PreviewDb;
   containers: ContainerPorts;
   forge: ForgeClient;
   ttlHours: number;
@@ -32,7 +33,7 @@ async function teardownResources(
   const pushDropDb = (dbName: string) => {
     failLabel = dbName;
     steps.push(
-      deps.postgres.dropDatabase(dbName).catch((error) => {
+      deps.previewDb.dropDatabase(dbName).catch((error) => {
         deps.log?.(`sweep drop database failed: ${String(error)}`, deletion);
         throw error;
       }),
@@ -99,7 +100,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
       return out;
     },
     listCatalogDatabases: async () =>
-      (await deps.postgres.listPreviewDatabases()).map(
+      (await deps.previewDb.listPreviewDatabases()).map(
         ({ slug, prId, dbName }) => ({ slug, prId, dbName }),
       ),
     listPreviewContainers: async () =>
@@ -110,28 +111,46 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
     listOpenPrIds: (canonicalRepoId) =>
       deps.forge.listOpenPrIds(canonicalRepoId),
     drop: async (deletion: SweepDeletion) => {
-      await teardownResources(deps, deletion);
-      // Orphans have no control-plane row.
+      const run = async () => {
+        await teardownResources(deps, deletion);
+        // Orphans have no control-plane row.
+        if (
+          deletion.reason !== "sweep:ttl-expired" &&
+          deletion.reason !== "sweep:pr-not-open"
+        ) {
+          return;
+        }
+
+        await deps.db
+          .update(previews)
+          .set({
+            status: "removed",
+            containerId: null,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(
+            and(
+              eq(previews.canonicalRepoId, deletion.canonicalRepoId),
+              eq(previews.prId, deletion.prId),
+            ),
+          );
+      };
+
+      // Same per-(repo, prId) lock as provision/teardown so sweep cannot
+      // DROP under an in-flight CREATE (and vice versa).
       if (
-        deletion.reason !== "sweep:ttl-expired" &&
-        deletion.reason !== "sweep:pr-not-open"
+        deletion.reason === "sweep:ttl-expired" ||
+        deletion.reason === "sweep:pr-not-open"
       ) {
+        await withPreviewLock(
+          deletion.canonicalRepoId,
+          deletion.prId,
+          run,
+        );
         return;
       }
 
-      await deps.db
-        .update(previews)
-        .set({
-          status: "removed",
-          containerId: null,
-          updatedAt: new Date().toISOString(),
-        })
-        .where(
-          and(
-            eq(previews.canonicalRepoId, deletion.canonicalRepoId),
-            eq(previews.prId, deletion.prId),
-          ),
-        );
+      await run();
     },
   };
 }
