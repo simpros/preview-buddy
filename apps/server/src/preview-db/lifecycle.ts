@@ -47,8 +47,6 @@ export type RemovePreviewInput = {
   expectedDbName: string;
   /** Abort if provision refreshed createdAt since the sweep plan. */
   expectedCreatedAt: string;
-  /** Extra work under the lock after status=removing (e.g. container remove). */
-  also?: (row: PreviewRow) => Promise<void>;
 };
 
 export type PreviewSnapshot = {
@@ -180,9 +178,16 @@ async function markReady(
   repo: string,
   prId: number,
 ): Promise<PreviewRow> {
+  const now = utcIsoNow();
   const [updated] = await db
     .update(previews)
-    .set({ status: "ready", updatedAt: utcIsoNow() })
+    .set({
+      status: "ready",
+      // Mint generation when the DB becomes live (covers stuck-provisioning
+      // recovery that skips writeProvisioningIntent).
+      createdAt: now,
+      updatedAt: now,
+    })
     .where(
       and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
     )
@@ -313,7 +318,6 @@ async function provisionUnlocked(
 async function dropAndMarkRemoved(
   deps: LifecycleDeps,
   existing: PreviewRow,
-  also?: (row: PreviewRow) => Promise<void>,
 ): Promise<Result<TeardownSnapshot>> {
   const repo = existing.canonicalRepoId;
   const prId = existing.prId;
@@ -327,14 +331,7 @@ async function dropAndMarkRemoved(
 
   return withDbNameLock(existing.dbName, async () => {
     try {
-      const steps: Promise<void>[] = [
-        deps.previewDb.dropDatabase(existing.dbName),
-      ];
-      if (also) steps.push(also(existing));
-      const results = await Promise.allSettled(steps);
-      if (results.some((r) => r.status === "rejected")) {
-        throw new Error("preview_remove_step_failed");
-      }
+      await deps.previewDb.dropDatabase(existing.dbName);
     } catch {
       await markPreviewError(deps.db, repo, prId);
       return { ok: false, status: 500, error: "preview_db_drop_failed" };
@@ -430,7 +427,7 @@ export function removePreview(
     const status = parsePreviewStatus(existing.status);
     if (!status.ok) return status;
 
-    const result = await dropAndMarkRemoved(deps, existing, input.also);
+    const result = await dropAndMarkRemoved(deps, existing);
     if (!result.ok) return result;
     return { ok: true, value: true };
   });

@@ -239,7 +239,7 @@ describe("createLiveSweepPorts", () => {
     expect(rows[0]?.status).toBe("ready");
   });
 
-  test("marks error when DB drop or container remove fails (retryable)", async () => {
+  test("marks error when DB drop fails (retryable)", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
@@ -271,9 +271,7 @@ describe("createLiveSweepPorts", () => {
       }),
       containers: {
         listPreviewContainers: async () => [],
-        remove: async () => {
-          throw new Error("docker boom");
-        },
+        remove: async () => {},
       },
       forge: { listOpenPrIds: async () => [] },
       ttlHours: 72,
@@ -290,6 +288,64 @@ describe("createLiveSweepPorts", () => {
     const rows = await testDb.db.select().from(previews);
     expect(rows[0]?.status).toBe("error");
     expect(rows[0]?.containerId).toBe("ctr-10");
+  });
+
+  test("container remove failure after DROP leaves removed (orphan-container later)", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    await testDb.db.insert(repos).values({
+      canonicalId: "https://github.com/acme/widgets",
+      slug: "widgets",
+    });
+    await testDb.db.insert(previews).values({
+      canonicalRepoId: "https://github.com/acme/widgets",
+      prId: 10,
+      slug: "widgets",
+      dbName: "prev_widgets_pr10",
+      hostname: "pr-10.example.com",
+      containerId: "ctr-10",
+      status: "ready",
+      createdAt: "2026-09-02T12:00:00.000Z",
+      updatedAt: "2026-09-02T12:00:00.000Z",
+    });
+
+    const droppedDbs: string[] = [];
+    const logs: string[] = [];
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [
+          { dbName: "prev_widgets_pr10", slug: "widgets", prId: 10 },
+        ],
+        dropDatabase: async (dbName) => {
+          droppedDbs.push(dbName);
+        },
+      }),
+      containers: {
+        listPreviewContainers: async () => [],
+        remove: async () => {
+          throw new Error("docker boom");
+        },
+      },
+      forge: { listOpenPrIds: async () => [] },
+      ttlHours: 72,
+      log: (message) => {
+        logs.push(message);
+      },
+    });
+
+    const result = await runSweepPass(ports);
+    expect(result.forgeRepoFailures).toEqual([]);
+    expect(droppedDbs).toEqual(["prev_widgets_pr10"]);
+    expect(logs.some((m) => m.includes("sweep remove container failed"))).toBe(
+      true,
+    );
+
+    const rows = await testDb.db.select().from(previews);
+    expect(rows[0]?.status).toBe("removed");
+    expect(rows[0]?.containerId).toBeNull();
   });
 
   test("aborts stale TTL plan after redeploy rewrote dbName", async () => {
