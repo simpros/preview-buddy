@@ -51,6 +51,7 @@ function memoryPorts(seed: {
       const err = seed.dropErrorFor?.(deletion);
       if (err) throw err;
       deletions.push(deletion);
+      return true;
     },
     ttlHours: 72,
     log: (message, deletion) => {

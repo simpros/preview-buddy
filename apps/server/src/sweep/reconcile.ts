@@ -41,7 +41,8 @@ export type SweepPorts = {
   listCatalogDatabases: () => Promise<CatalogDbRef[]>;
   listPreviewContainers: () => Promise<PreviewRef[]>;
   listOpenPrIds: (canonicalRepoId: string) => Promise<number[]>;
-  drop: (deletion: SweepDeletion) => Promise<void>;
+  /** @returns true if resources were removed; false if the plan was stale. */
+  drop: (deletion: SweepDeletion) => Promise<boolean>;
   ttlHours: number;
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
@@ -59,8 +60,8 @@ async function dropSettled(
 ): Promise<SweepDeletion[]> {
   const results = await Promise.allSettled(
     candidates.map(async (deletion) => {
-      await ports.drop(deletion);
-      return deletion;
+      const removed = await ports.drop(deletion);
+      return { deletion, removed };
     }),
   );
 
@@ -69,6 +70,7 @@ async function dropSettled(
     const result = results[i]!;
     const deletion = candidates[i]!;
     if (result.status === "fulfilled") {
+      if (!result.value.removed) continue; // stale plan — not a success
       ports.log?.(successLog(deletion), deletion);
       succeeded.push(deletion);
     } else {

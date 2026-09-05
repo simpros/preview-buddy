@@ -1,9 +1,12 @@
-import { eq, and } from "drizzle-orm";
 import type { ForgeClient } from "../forge/client.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
-import { withPreviewLock } from "../preview-db/lifecycle.ts";
+import {
+  dropOrphanDatabase,
+  removePreview,
+  type LifecycleDeps,
+} from "../preview-db/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import type { ContainerPorts } from "../preview/containers.ts";
 import type {
@@ -21,57 +24,8 @@ export type LiveSweepDeps = {
   log?: SweepPorts["log"];
 };
 
-async function teardownResources(
-  deps: LiveSweepDeps,
-  deletion: SweepDeletion,
-): Promise<void> {
-  // Best-effort each resource step; leave SQLite non-removed on any
-  // failure so the next pass can retry.
-  let failLabel = `${deletion.slug}:${deletion.prId}`;
-  const steps: Promise<void>[] = [];
-
-  const pushDropDb = (dbName: string) => {
-    failLabel = dbName;
-    steps.push(
-      deps.previewDb.dropDatabase(dbName).catch((error) => {
-        deps.log?.(`sweep drop database failed: ${String(error)}`, deletion);
-        throw error;
-      }),
-    );
-  };
-
-  const pushRemoveContainer = () => {
-    steps.push(
-      deps.containers
-        .remove({ slug: deletion.slug, prId: deletion.prId })
-        .catch((error) => {
-          deps.log?.(
-            `sweep remove container failed: ${String(error)}`,
-            deletion,
-          );
-          throw error;
-        }),
-    );
-  };
-
-  switch (deletion.reason) {
-    case "sweep:ttl-expired":
-    case "sweep:pr-not-open":
-      pushDropDb(deletion.dbName);
-      pushRemoveContainer();
-      break;
-    case "sweep:orphan-db":
-      pushDropDb(deletion.dbName);
-      break;
-    case "sweep:orphan-container":
-      pushRemoveContainer();
-      break;
-  }
-
-  const results = await Promise.allSettled(steps);
-  if (results.some((r) => r.status === "rejected")) {
-    throw new Error(`teardown incomplete: ${failLabel}`);
-  }
+function lifecycleDeps(deps: LiveSweepDeps): LifecycleDeps {
+  return { db: deps.db, previewDb: deps.previewDb };
 }
 
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
@@ -111,46 +65,82 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
     listOpenPrIds: (canonicalRepoId) =>
       deps.forge.listOpenPrIds(canonicalRepoId),
     drop: async (deletion: SweepDeletion) => {
-      const run = async () => {
-        await teardownResources(deps, deletion);
-        // Orphans have no control-plane row.
-        if (
-          deletion.reason !== "sweep:ttl-expired" &&
-          deletion.reason !== "sweep:pr-not-open"
-        ) {
-          return;
+      switch (deletion.reason) {
+        case "sweep:ttl-expired":
+        case "sweep:pr-not-open": {
+          const cutoff =
+            Date.now() - deps.ttlHours * 60 * 60 * 1000;
+          const result = await removePreview(lifecycleDeps(deps), {
+            repo: deletion.canonicalRepoId,
+            prId: deletion.prId,
+            expectedDbName: deletion.dbName,
+            confirm: async (row) => {
+              if (deletion.reason === "sweep:ttl-expired") {
+                const ms = parseUnambiguousUtcMs(row.createdAt);
+                return ms !== null && ms < cutoff;
+              }
+              // Re-check forge under the lock so a reopen cannot race.
+              const open = await deps.forge.listOpenPrIds(
+                deletion.canonicalRepoId,
+              );
+              return !open.includes(deletion.prId);
+            },
+            also: async (row) => {
+              try {
+                await deps.containers.remove({
+                  slug: row.slug,
+                  prId: row.prId,
+                });
+              } catch (error) {
+                deps.log?.(
+                  `sweep remove container failed: ${String(error)}`,
+                  deletion,
+                );
+                throw error;
+              }
+            },
+          });
+          if (!result.ok) {
+            deps.log?.(
+              `sweep drop database failed: ${result.error}`,
+              deletion,
+            );
+            throw new Error(`teardown incomplete: ${deletion.dbName}`);
+          }
+          return result.value;
         }
-
-        await deps.db
-          .update(previews)
-          .set({
-            status: "removed",
-            containerId: null,
-            updatedAt: new Date().toISOString(),
-          })
-          .where(
-            and(
-              eq(previews.canonicalRepoId, deletion.canonicalRepoId),
-              eq(previews.prId, deletion.prId),
-            ),
-          );
-      };
-
-      // Same per-(repo, prId) lock as provision/teardown so sweep cannot
-      // DROP under an in-flight CREATE (and vice versa).
-      if (
-        deletion.reason === "sweep:ttl-expired" ||
-        deletion.reason === "sweep:pr-not-open"
-      ) {
-        await withPreviewLock(
-          deletion.canonicalRepoId,
-          deletion.prId,
-          run,
-        );
-        return;
+        case "sweep:orphan-db": {
+          try {
+            return await dropOrphanDatabase(
+              lifecycleDeps(deps),
+              deletion.dbName,
+            );
+          } catch (error) {
+            deps.log?.(
+              `sweep drop database failed: ${String(error)}`,
+              deletion,
+            );
+            throw new Error(`teardown incomplete: ${deletion.dbName}`);
+          }
+        }
+        case "sweep:orphan-container": {
+          try {
+            await deps.containers.remove({
+              slug: deletion.slug,
+              prId: deletion.prId,
+            });
+            return true;
+          } catch (error) {
+            deps.log?.(
+              `sweep remove container failed: ${String(error)}`,
+              deletion,
+            );
+            throw new Error(
+              `teardown incomplete: ${deletion.slug}:${deletion.prId}`,
+            );
+          }
+        }
       }
-
-      await run();
     },
   };
 }

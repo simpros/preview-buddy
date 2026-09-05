@@ -41,7 +41,7 @@ describe("createLiveSweepPorts", () => {
       dbName: "prev_widgets_pr10",
       hostname: "pr-10.example.com",
       containerId: "ctr-10",
-      status: "running",
+      status: "ready",
       createdAt: "2026-09-02T12:00:00.000Z",
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
@@ -100,7 +100,7 @@ describe("createLiveSweepPorts", () => {
       dbName: "prev_widgets_pr1",
       hostname: "pr-1.example.com",
       containerId: null,
-      status: "running",
+      status: "ready",
       createdAt: "2026-09-02T12:00:00.000Z",
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
@@ -140,7 +140,7 @@ describe("createLiveSweepPorts", () => {
       dbName: "prev_widgets_pr1",
       hostname: "pr-1.example.com",
       containerId: null,
-      status: "running",
+      status: "ready",
       createdAt: "not-a-timestamp",
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
@@ -178,7 +178,7 @@ describe("createLiveSweepPorts", () => {
     expect(droppedDbs).toEqual([]);
 
     const rows = await testDb.db.select().from(previews);
-    expect(rows[0]?.status).toBe("running");
+    expect(rows[0]?.status).toBe("ready");
   });
 
   test("space-separated legacy createdAt is null; skips TTL; protects orphans", async () => {
@@ -197,7 +197,7 @@ describe("createLiveSweepPorts", () => {
       dbName: "prev_widgets_pr1",
       hostname: "pr-1.example.com",
       containerId: null,
-      status: "running",
+      status: "ready",
       createdAt: "2026-09-02 12:00:00",
       updatedAt: "2026-09-02 12:00:00",
     });
@@ -235,10 +235,10 @@ describe("createLiveSweepPorts", () => {
     expect(droppedDbs).toEqual([]);
 
     const rows = await testDb.db.select().from(previews);
-    expect(rows[0]?.status).toBe("running");
+    expect(rows[0]?.status).toBe("ready");
   });
 
-  test("leaves SQLite non-removed when DB drop or container remove fails", async () => {
+  test("marks error when DB drop or container remove fails (retryable)", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
@@ -254,7 +254,7 @@ describe("createLiveSweepPorts", () => {
       dbName: "prev_widgets_pr10",
       hostname: "pr-10.example.com",
       containerId: "ctr-10",
-      status: "running",
+      status: "ready",
       createdAt: "2026-09-02T12:00:00.000Z",
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
@@ -284,17 +284,111 @@ describe("createLiveSweepPorts", () => {
     const result = await runSweepPass(ports);
     expect(result.forgeRepoFailures).toEqual([]);
     expect(result.deletions).toEqual([]);
-    expect(logs.some((m) => m.includes("sweep drop database failed"))).toBe(
-      true,
-    );
-    expect(logs.some((m) => m.includes("sweep remove container failed"))).toBe(
-      true,
-    );
     expect(logs.some((m) => m.includes("sweep drop failed"))).toBe(true);
 
     const rows = await testDb.db.select().from(previews);
-    expect(rows[0]?.status).toBe("running");
+    expect(rows[0]?.status).toBe("error");
     expect(rows[0]?.containerId).toBe("ctr-10");
+  });
+
+  test("aborts stale TTL plan after redeploy rewrote dbName", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    await testDb.db.insert(repos).values({
+      canonicalId: "https://github.com/acme/widgets",
+      slug: "widgets",
+    });
+    // Row already redeployed with a new identity since the plan was built.
+    await testDb.db.insert(previews).values({
+      canonicalRepoId: "https://github.com/acme/widgets",
+      prId: 42,
+      slug: "widgets",
+      dbName: "prev_widgets_pr42",
+      hostname: "pr-42.example.com",
+      containerId: null,
+      status: "ready",
+      createdAt: "2026-09-03T11:00:00.000Z",
+      updatedAt: "2026-09-03T11:00:00.000Z",
+    });
+
+    const droppedDbs: string[] = [];
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [],
+        dropDatabase: async (dbName) => {
+          droppedDbs.push(dbName);
+        },
+      }),
+      containers: {
+        listPreviewContainers: async () => [],
+        remove: async () => {},
+      },
+      forge: { listOpenPrIds: async () => [42] },
+      ttlHours: 72,
+    });
+
+    const removed = await ports.drop({
+      reason: "sweep:ttl-expired",
+      canonicalRepoId: "https://github.com/acme/widgets",
+      prId: 42,
+      slug: "old",
+      dbName: "prev_old_pr42",
+    });
+    expect(removed).toBe(false);
+    expect(droppedDbs).toEqual([]);
+    const rows = await testDb.db.select().from(previews);
+    expect(rows[0]?.status).toBe("ready");
+    expect(rows[0]?.dbName).toBe("prev_widgets_pr42");
+  });
+
+  test("orphan drop aborts when a live row claims the dbName", async () => {
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    await testDb.db.insert(repos).values({
+      canonicalId: "https://github.com/acme/widgets",
+      slug: "widgets",
+    });
+    await testDb.db.insert(previews).values({
+      canonicalRepoId: "https://github.com/acme/widgets",
+      prId: 42,
+      slug: "widgets",
+      dbName: "prev_widgets_pr42",
+      hostname: "pr-42.example.com",
+      containerId: null,
+      status: "provisioning",
+      createdAt: "2026-09-03T12:00:00.000Z",
+      updatedAt: "2026-09-03T12:00:00.000Z",
+    });
+
+    const droppedDbs: string[] = [];
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [],
+        dropDatabase: async (dbName) => {
+          droppedDbs.push(dbName);
+        },
+      }),
+      containers: {
+        listPreviewContainers: async () => [],
+        remove: async () => {},
+      },
+      forge: { listOpenPrIds: async () => [42] },
+      ttlHours: 72,
+    });
+
+    const removed = await ports.drop({
+      reason: "sweep:orphan-db",
+      slug: "widgets",
+      prId: 42,
+      dbName: "prev_widgets_pr42",
+    });
+    expect(removed).toBe(false);
+    expect(droppedDbs).toEqual([]);
   });
 
   test("throws on orphan teardown when a resource step fails", async () => {
