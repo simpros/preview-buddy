@@ -36,13 +36,17 @@ export type TeardownInput = {
   prId: number;
 };
 
-/** Sweep control-plane remove: revalidate under lock, then same machine as teardown. */
+/**
+ * Sweep control-plane remove: revalidate generation under lock, then same
+ * machine as teardown. Eligibility (TTL / PR-closed) is decided at plan time;
+ * under the lock we only verify identity + generation have not moved.
+ */
 export type RemovePreviewInput = {
   repo: string;
   prId: number;
   expectedDbName: string;
-  /** Abort if false after re-read (stale TTL / PR-open plan). */
-  confirm: (row: PreviewRow) => boolean | Promise<boolean>;
+  /** Abort if provision refreshed createdAt since the sweep plan. */
+  expectedCreatedAt: string;
   /** Extra work under the lock after status=removing (e.g. container remove). */
   also?: (row: PreviewRow) => Promise<void>;
 };
@@ -75,7 +79,7 @@ export type PreviewRow = typeof previews.$inferSelect;
  */
 const previewLocks = new Map<string, Promise<void>>();
 
-export function withPreviewLock<T>(
+function withPreviewLock<T>(
   repo: string,
   prId: number,
   fn: () => Promise<T>,
@@ -99,7 +103,7 @@ export function withPreviewLock<T>(
  */
 const dbNameLocks = new Map<string, Promise<void>>();
 
-export function withDbNameLock<T>(
+function withDbNameLock<T>(
   dbName: string,
   fn: () => Promise<T>,
 ): Promise<T> {
@@ -194,6 +198,7 @@ async function writeProvisioningIntent(
   input: ProvisionInput,
   dbName: string,
 ): Promise<PreviewRow> {
+  const now = utcIsoNow();
   const [updated] = await deps.db
     .update(previews)
     .set({
@@ -204,7 +209,9 @@ async function writeProvisioningIntent(
       appImage: null,
       containerId: null,
       seededAt: null,
-      updatedAt: utcIsoNow(),
+      // New generation: TTL means age of this intent, not birth of the row key.
+      createdAt: now,
+      updatedAt: now,
     })
     .where(
       and(
@@ -219,8 +226,8 @@ async function writeProvisioningIntent(
   return updated;
 }
 
-/** First CREATE after intent write — failure parks row on error. */
-async function establishDatabase(
+/** CREATE under dbName lock, then advance to ready. Caller handles CREATE failure. */
+async function createThenReady(
   deps: LifecycleDeps,
   row: PreviewRow,
 ): Promise<Result<PreviewSnapshot>> {
@@ -228,11 +235,6 @@ async function establishDatabase(
     try {
       await deps.previewDb.createDatabase(row.dbName);
     } catch {
-      await markPreviewError(
-        deps.db,
-        row.canonicalRepoId,
-        row.prId,
-      );
       return { ok: false, status: 500, error: "preview_db_create_failed" };
     }
     const ready = await markReady(
@@ -244,24 +246,15 @@ async function establishDatabase(
   });
 }
 
-/** Stuck-provisioning recovery — failure leaves status provisioning. */
-async function retryCreateDatabase(
+async function establishDatabase(
   deps: LifecycleDeps,
   row: PreviewRow,
 ): Promise<Result<PreviewSnapshot>> {
-  return withDbNameLock(row.dbName, async () => {
-    try {
-      await deps.previewDb.createDatabase(row.dbName);
-    } catch {
-      return { ok: false, status: 500, error: "preview_db_create_failed" };
-    }
-    const ready = await markReady(
-      deps.db,
-      row.canonicalRepoId,
-      row.prId,
-    );
-    return { ok: true, value: toSnapshot(ready, "ready") };
-  });
+  const result = await createThenReady(deps, row);
+  if (!result.ok) {
+    await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
+  }
+  return result;
 }
 
 async function provisionUnlocked(
@@ -304,7 +297,7 @@ async function provisionUnlocked(
     }
     case "provisioning":
       // Crash window only: CREATE not finished. Do not rewrite identity.
-      return retryCreateDatabase(deps, row);
+      return createThenReady(deps, row);
     case "ready":
       // Option A: DB intent complete — healthy redeploy is a snapshot no-op.
       return { ok: true, value: toSnapshot(row, "ready") };
@@ -365,7 +358,6 @@ async function dropAndMarkRemoved(
 async function teardownUnlocked(
   deps: LifecycleDeps,
   input: TeardownInput,
-  also?: (row: PreviewRow) => Promise<void>,
 ): Promise<Result<TeardownSnapshot>> {
   const existing = await getPreviewRow(deps.db, input.repo, input.prId);
 
@@ -386,7 +378,7 @@ async function teardownUnlocked(
       break;
   }
 
-  return dropAndMarkRemoved(deps, existing, also);
+  return dropAndMarkRemoved(deps, existing);
 }
 
 /**
@@ -416,7 +408,7 @@ export function teardownPreview(
 
 /**
  * Sweep control-plane delete: under the same lock as provision/teardown,
- * re-read and abort unless identity + eligibility still match, then remove.
+ * re-read and abort unless identity + generation still match, then remove.
  * @returns true if the preview was removed; false if the plan was stale.
  */
 export function removePreview(
@@ -431,7 +423,7 @@ export function removePreview(
     if (existing.dbName !== input.expectedDbName) {
       return { ok: true, value: false };
     }
-    if (!(await input.confirm(existing))) {
+    if (existing.createdAt !== input.expectedCreatedAt) {
       return { ok: true, value: false };
     }
 

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
@@ -20,6 +20,7 @@ let testApp: TestApp | undefined;
 let fakePreviewDb: FakePreviewDb | undefined;
 
 afterEach(async () => {
+  setSystemTime();
   await testApp?.cleanup();
   testApp = undefined;
   fakePreviewDb = undefined;
@@ -309,6 +310,40 @@ describe("POST /v1/deploy", () => {
       )
       .limit(1);
     expect(names.has(row!.dbName)).toBe(true);
+  });
+
+  test("redeploy from error refreshes createdAt generation", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "myapp",
+      dbName: "prev_myapp_pr42",
+      hostname: "pr-42.myapp.preview.example.com",
+      status: "error",
+      createdAt: "2026-08-01T12:00:00.000Z",
+      updatedAt: "2026-08-01T12:00:00.000Z",
+    });
+
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ status: "ready" });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row!.createdAt).not.toBe("2026-08-01T12:00:00.000Z");
+    expect(row!.createdAt).toMatch(/Z$/);
+    expect(parseUnambiguousUtcMs(row!.createdAt)).not.toBeNull();
+    // Fresh generation is not TTL-eligible at 72h with "now" = deploy time.
+    const ageMs =
+      Date.now() - parseUnambiguousUtcMs(row!.createdAt)!;
+    expect(ageMs).toBeLessThan(72 * 60 * 60 * 1000);
   });
 
   test("slow create then teardown+redeploy leaves at most the winner db", async () => {

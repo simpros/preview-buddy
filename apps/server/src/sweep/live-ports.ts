@@ -28,6 +28,40 @@ function lifecycleDeps(deps: LiveSweepDeps): LifecycleDeps {
   return { db: deps.db, previewDb: deps.previewDb };
 }
 
+async function removeControlPlane(
+  deps: LiveSweepDeps,
+  deletion: Extract<
+    SweepDeletion,
+    { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
+  >,
+): Promise<boolean> {
+  const result = await removePreview(lifecycleDeps(deps), {
+    repo: deletion.canonicalRepoId,
+    prId: deletion.prId,
+    expectedDbName: deletion.dbName,
+    expectedCreatedAt: deletion.createdAt,
+    also: async (row) => {
+      try {
+        await deps.containers.remove({
+          slug: row.slug,
+          prId: row.prId,
+        });
+      } catch (error) {
+        deps.log?.(
+          `sweep remove container failed: ${String(error)}`,
+          deletion,
+        );
+        throw error;
+      }
+    },
+  });
+  if (!result.ok) {
+    deps.log?.(`sweep drop database failed: ${result.error}`, deletion);
+    throw new Error(`teardown incomplete: ${deletion.dbName}`);
+  }
+  return result.value;
+}
+
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
   return {
     ttlHours: deps.ttlHours,
@@ -47,6 +81,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           prId: row.prId,
           slug: row.slug,
           dbName: row.dbName,
+          createdAt: row.createdAt,
           createdAtMs,
           status: row.status,
         });
@@ -67,47 +102,14 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
     drop: async (deletion: SweepDeletion) => {
       switch (deletion.reason) {
         case "sweep:ttl-expired":
+          return removeControlPlane(deps, deletion);
         case "sweep:pr-not-open": {
-          const cutoff =
-            Date.now() - deps.ttlHours * 60 * 60 * 1000;
-          const result = await removePreview(lifecycleDeps(deps), {
-            repo: deletion.canonicalRepoId,
-            prId: deletion.prId,
-            expectedDbName: deletion.dbName,
-            confirm: async (row) => {
-              if (deletion.reason === "sweep:ttl-expired") {
-                const ms = parseUnambiguousUtcMs(row.createdAt);
-                return ms !== null && ms < cutoff;
-              }
-              // Re-check forge under the lock so a reopen cannot race.
-              const open = await deps.forge.listOpenPrIds(
-                deletion.canonicalRepoId,
-              );
-              return !open.includes(deletion.prId);
-            },
-            also: async (row) => {
-              try {
-                await deps.containers.remove({
-                  slug: row.slug,
-                  prId: row.prId,
-                });
-              } catch (error) {
-                deps.log?.(
-                  `sweep remove container failed: ${String(error)}`,
-                  deletion,
-                );
-                throw error;
-              }
-            },
-          });
-          if (!result.ok) {
-            deps.log?.(
-              `sweep drop database failed: ${result.error}`,
-              deletion,
-            );
-            throw new Error(`teardown incomplete: ${deletion.dbName}`);
-          }
-          return result.value;
+          // Forge outside the preview lock — under lock only checks generation.
+          const open = await deps.forge.listOpenPrIds(
+            deletion.canonicalRepoId,
+          );
+          if (open.includes(deletion.prId)) return false;
+          return removeControlPlane(deps, deletion);
         }
         case "sweep:orphan-db": {
           try {
