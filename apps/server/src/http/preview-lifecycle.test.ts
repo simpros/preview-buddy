@@ -314,6 +314,100 @@ describe("POST /v1/deploy", () => {
       .limit(1);
     expect(names.has(row!.dbName)).toBe(true);
   });
+
+  test("slow create then teardown+redeploy leaves at most the winner db", async () => {
+    let releaseCreate!: () => void;
+    const gate = new Promise<void>((r) => {
+      releaseCreate = r;
+    });
+    let signalStarted!: () => void;
+    const createStarted = new Promise<void>((r) => {
+      signalStarted = r;
+    });
+    let createCalls = 0;
+    const { deployToken } = await setup({
+      createDatabase: async (dbName) => {
+        createCalls += 1;
+        if (createCalls === 1) {
+          signalStarted();
+          await gate;
+        }
+        fakePreviewDb!.created.push(dbName);
+      },
+    });
+
+    const first = postDeploy(deployToken, deployBody({ slug: "alpha" }));
+    await createStarted; // first deploy holds the per-preview lock inside CREATE
+    const teardown = postTeardown(deployToken, teardownBody());
+    const second = postDeploy(
+      deployToken,
+      deployBody({
+        slug: "beta",
+        hostname: "pr-42.beta.preview.example.com",
+      }),
+    );
+    releaseCreate();
+
+    const [a, t, b] = await Promise.all([first, teardown, second]);
+    expect(a.status).toBe(200);
+    expect(t.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(b.body).toMatchObject({
+      slug: "beta",
+      db_name: "prev_beta_pr42",
+      status: "provisioning",
+    });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.dbName).toBe("prev_beta_pr42");
+    expect(row?.status).toBe("provisioning");
+
+    // Winner's name must be present; alpha must have been dropped.
+    expect(fakePreviewDb!.created).toContain("prev_beta_pr42");
+    expect(fakePreviewDb!.dropped).toContain("prev_alpha_pr42");
+    const live = new Set(fakePreviewDb!.created);
+    for (const name of fakePreviewDb!.dropped) live.delete(name);
+    expect([...live]).toEqual(["prev_beta_pr42"]);
+  });
+
+  test("parallel create where one fails does not drop the winner", async () => {
+    let calls = 0;
+    const { deployToken } = await setup({
+      createDatabase: async (dbName) => {
+        calls += 1;
+        if (calls === 1) {
+          fakePreviewDb!.created.push(dbName);
+          return;
+        }
+        throw new Error("transient");
+      },
+    });
+    const [a, b] = await Promise.all([
+      postDeploy(deployToken, deployBody()),
+      postDeploy(deployToken, deployBody()),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    // Serialized: first CREATE succeeds; second retries CREATE and fails → error.
+    expect(statuses).toEqual([200, 500]);
+    expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
+    expect(fakePreviewDb!.dropped).toEqual([]);
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    // Second call marks error after its failed CREATE retry.
+    expect(row?.status).toBe("error");
+    expect(row?.dbName).toBe("prev_myapp_pr42");
+  });
 });
 
 describe("POST /v1/teardown", () => {
@@ -393,5 +487,21 @@ describe("POST /v1/teardown", () => {
       )
       .limit(1);
     expect(row?.status).toBe("error");
+  });
+
+  test("unknown status does not silently report removed", async () => {
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "myapp",
+      dbName: "prev_myapp_pr42",
+      hostname: "pr-42.myapp.preview.example.com",
+      status: "running",
+    });
+    const res = await postTeardown(deployToken, teardownBody());
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: "unknown_preview_status" });
+    expect(fakePreviewDb!.dropped).toEqual([]);
   });
 });
