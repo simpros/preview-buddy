@@ -393,7 +393,7 @@ describe("POST /v1/deploy", () => {
       postDeploy(deployToken, deployBody()),
     ]);
     const statuses = [a.status, b.status].sort();
-    // Serialized: first CREATE succeeds; second retries CREATE and fails → error.
+    // Serialized: first CREATE succeeds; ensure retry fails without poisoning status.
     expect(statuses).toEqual([200, 500]);
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
     expect(fakePreviewDb!.dropped).toEqual([]);
@@ -404,8 +404,7 @@ describe("POST /v1/deploy", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
-    // Second call marks error after its failed CREATE retry.
-    expect(row?.status).toBe("error");
+    expect(row?.status).toBe("provisioning");
     expect(row?.dbName).toBe("prev_myapp_pr42");
   });
 });

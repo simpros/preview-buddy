@@ -1,6 +1,9 @@
 const SLUG_RE = /^[a-z][a-z0-9]*$/;
-/** Single grammar for preview DB names — also used by the Postgres DDL guard. */
-const PREVIEW_DB_NAME_RE = /^prev_[a-z][a-z0-9]*_pr[1-9][0-9]*$/;
+/**
+ * Single grammar for preview DB names — build, parse, and DDL refuse-guard.
+ * Lowercase only; pr id starts at 1 (no pr0).
+ */
+const PREVIEW_DB_NAME_RE = /^prev_([a-z][a-z0-9]*)_pr([1-9][0-9]*)$/;
 
 export type IdentifierError = "invalid_slug" | "invalid_pr_id";
 
@@ -27,4 +30,12 @@ export function assertPreviewDbName(dbName: string): void {
   if (!isPreviewDbName(dbName)) {
     throw new Error(`refusing unsafe preview database name: ${dbName}`);
   }
+}
+
+export function parsePreviewDatabaseName(
+  datname: string,
+): { slug: string; prId: number } | null {
+  const match = PREVIEW_DB_NAME_RE.exec(datname);
+  if (!match) return null;
+  return { slug: match[1]!, prId: Number(match[2]) };
 }

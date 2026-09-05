@@ -54,13 +54,13 @@ type Result<T> =
 type PreviewRow = typeof previews.$inferSelect;
 
 /**
- * Serialize provision/teardown per (repo, prId). ADR 0001: one gateway
- * process — in-process queue replaces distributed CAS+compensation.
+ * Serialize provision/teardown/sweep control-plane drops per (repo, prId).
+ * ADR 0001: one gateway process — in-process queue is the concurrency design.
  * ponytail: global Map; upgrade to shared lock if multi-process ever lands.
  */
 const previewLocks = new Map<string, Promise<void>>();
 
-function withPreviewLock<T>(
+export function withPreviewLock<T>(
   repo: string,
   prId: number,
   fn: () => Promise<T>,
@@ -163,26 +163,28 @@ async function writeProvisioningIntent(
   return updated;
 }
 
+/**
+ * @param markErrorOnFailure — true only when this critical section wrote
+ *   provisioning intent (establish). Ensure/retry leaves status alone.
+ */
 async function createAndSnapshot(
   deps: LifecycleDeps,
-  repo: string,
-  prId: number,
-  dbName: string,
+  row: PreviewRow,
+  markErrorOnFailure: boolean,
 ): Promise<Result<PreviewSnapshot>> {
   try {
-    await deps.previewDb.createDatabase(dbName);
+    await deps.previewDb.createDatabase(row.dbName);
   } catch {
-    await markPreviewError(deps.db, repo, prId);
+    if (markErrorOnFailure) {
+      await markPreviewError(
+        deps.db,
+        row.canonicalRepoId,
+        row.prId,
+      );
+    }
     return { ok: false, status: 500, error: "preview_db_create_failed" };
   }
-
-  const after = await getPreviewRow(deps.db, repo, prId);
-  if (!after) {
-    return { ok: false, status: 500, error: "preview_row_missing" };
-  }
-  const afterStatus = parsePreviewStatus(after.status);
-  if (!afterStatus.ok) return afterStatus;
-  return { ok: true, value: toSnapshot(after, afterStatus.value) };
+  return { ok: true, value: toSnapshot(row, "provisioning") };
 }
 
 async function provisionUnlocked(
@@ -193,8 +195,7 @@ async function provisionUnlocked(
   let row = await getPreviewRow(deps.db, input.repo, input.prId);
 
   if (!row) {
-    // Belt-and-suspenders for retries/crashes; lock already serializes peers.
-    await deps.db
+    const [inserted] = await deps.db
       .insert(previews)
       .values({
         canonicalRepoId: input.repo,
@@ -204,14 +205,12 @@ async function provisionUnlocked(
         hostname: input.hostname,
         status: "provisioning",
       })
-      .onConflictDoNothing({
-        target: [previews.canonicalRepoId, previews.prId],
-      });
-
-    row = await getPreviewRow(deps.db, input.repo, input.prId);
-    if (!row) {
+      .returning();
+    if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
+    row = inserted;
+    return createAndSnapshot(deps, row, true);
   }
 
   const status = parsePreviewStatus(row.status);
@@ -225,21 +224,11 @@ async function provisionUnlocked(
         input,
         requestedDbName,
       );
-      return createAndSnapshot(
-        deps,
-        input.repo,
-        input.prId,
-        intent.dbName,
-      );
+      return createAndSnapshot(deps, intent, true);
     }
     case "provisioning":
-      // Option B: always retry CREATE with existing identity.
-      return createAndSnapshot(
-        deps,
-        input.repo,
-        input.prId,
-        row.dbName,
-      );
+      // Option B: retry CREATE; do not poison a prior success with error.
+      return createAndSnapshot(deps, row, false);
     case "removing":
       return {
         ok: false,

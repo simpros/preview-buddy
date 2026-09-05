@@ -26,7 +26,7 @@ const previewDb = createPostgresPreviewDb({
 });
 
 startServer({ config, db, previewDb });
-startGatewaySweep({ config, db });
+startGatewaySweep({ config, db, previewDb });
 console.log(
   `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
 );
