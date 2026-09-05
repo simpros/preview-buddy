@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { ensureAdminToken } from "../auth/store.ts";
 import {
   bindPreviewApp,
+  type PreviewAppOps,
   type ReplacePreviewAppDeps,
 } from "../app-deployment/replace.ts";
 import {
@@ -45,6 +46,18 @@ const defaultReplaceDeps: Omit<ReplacePreviewAppDeps, "docker"> = {
   previewPortDefault: 8080,
 };
 
+/** Shared bind for HTTP/sweep tests — same PG/network/port bag as createTestApp. */
+export function bindTestPreviewApp(
+  docker: PreviewDocker,
+  replaceDeps?: Partial<Omit<ReplacePreviewAppDeps, "docker">>,
+): PreviewAppOps {
+  return bindPreviewApp({
+    docker,
+    ...defaultReplaceDeps,
+    ...replaceDeps,
+  });
+}
+
 export async function createTestDb(): Promise<TestDb> {
   const dir = mkdtempSync(join(tmpdir(), "pb-auth-"));
   const { sql, db } = connectState(join(dir, "state.db"));
@@ -73,11 +86,7 @@ export async function createTestApp(
   const adminToken = opts.adminToken ?? "test-admin-token";
   const previewDb = opts.previewDb ?? createFakePreviewDb();
   const docker = opts.docker ?? createFakeDockerClient();
-  const appOps = bindPreviewApp({
-    docker,
-    ...defaultReplaceDeps,
-    ...opts.replaceDeps,
-  });
+  const appOps = bindTestPreviewApp(docker, opts.replaceDeps);
   const { db, cleanup } = await createTestDb();
   await ensureAdminToken(db, adminToken);
   return {

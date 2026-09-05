@@ -580,6 +580,40 @@ describe("POST /v1/deploy", () => {
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
   });
 
+  test("provisioning resume with slug change returns identity conflict", async () => {
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "myapp",
+      dbName: "prev_myapp_pr42",
+      hostname: "pr-42.myapp.preview.example.com",
+      status: "provisioning",
+    });
+    const res = await postDeploy(
+      deployToken,
+      deployBody({
+        slug: "other",
+        hostname: "pr-42.other.preview.example.com",
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: "preview_identity_conflict" });
+
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.slug).toBe("myapp");
+    expect(row?.dbName).toBe("prev_myapp_pr42");
+    expect(row?.status).toBe("provisioning");
+    expect(row?.hostname).toBe("pr-42.myapp.preview.example.com");
+    expect(fakePreviewDb!.created).toEqual([]);
+  });
+
   test("ready redeploy with hostname-only change keeps slug/db generation", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const { deployToken } = await setup();

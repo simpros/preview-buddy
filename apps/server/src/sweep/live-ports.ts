@@ -1,6 +1,5 @@
 import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import type { ForgeClient } from "../forge/client.ts";
-import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
@@ -19,9 +18,8 @@ import type {
 export type LiveSweepDeps = {
   db: StateDb;
   previewDb: PreviewDb;
-  docker: PreviewDocker;
-  /** Same bound ops as HTTP — remove only for control-plane + orphan cleanup. */
-  app: Pick<PreviewAppOps, "remove">;
+  /** Same bound ops as HTTP — list + remove for catalog and cleanup. */
+  app: Pick<PreviewAppOps, "list" | "remove">;
   forge: ForgeClient;
   ttlHours: number;
   log?: SweepPorts["log"];
@@ -88,7 +86,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         ({ slug, prId, dbName }) => ({ slug, prId, dbName }),
       ),
     listPreviewContainers: async () =>
-      (await deps.docker.listPreviewContainers()).map(({ slug, prId }) => ({
+      (await deps.app.list()).map(({ slug, prId }) => ({
         slug,
         prId,
       })),

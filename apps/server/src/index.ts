@@ -53,7 +53,7 @@ const app = bindPreviewApp({
 });
 
 startServer({ config, db, previewDb, app });
-startGatewaySweep({ config, db, previewDb, docker, app });
+startGatewaySweep({ config, db, previewDb, app });
 console.log(
   `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
 );

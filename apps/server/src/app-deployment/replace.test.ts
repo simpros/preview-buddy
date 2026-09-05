@@ -129,5 +129,6 @@ describe("bindPreviewApp", () => {
     expect(docker.pulls).toEqual(["img:1"]);
     await app.remove("myapp", 1);
     expect(docker.removed).toContain("pb-myapp-pr-1");
+    expect(await app.list()).toEqual([]);
   });
 });

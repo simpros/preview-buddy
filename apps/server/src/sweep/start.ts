@@ -1,7 +1,6 @@
 import type { PreviewAppOps } from "../app-deployment/replace.ts";
 import { createForgeClient } from "../forge/client.ts";
 import type { Config } from "../config.ts";
-import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
@@ -12,8 +11,7 @@ export function startGatewaySweep(deps: {
   config: Config;
   db: StateDb;
   previewDb: PreviewDb;
-  docker: PreviewDocker;
-  app: Pick<PreviewAppOps, "remove">;
+  app: PreviewAppOps;
 }): SweepTimerHandle {
   const forge = createForgeClient({
     forge: deps.config.forge,
@@ -22,7 +20,6 @@ export function startGatewaySweep(deps: {
   const ports = createLiveSweepPorts({
     db: deps.db,
     previewDb: deps.previewDb,
-    docker: deps.docker,
     app: deps.app,
     forge,
     ttlHours: deps.config.ttlHours,

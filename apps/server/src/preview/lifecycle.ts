@@ -370,10 +370,9 @@ async function provisionUnlocked(
       return bringUpNew(deps, intent, attachInput, false);
     }
     case "provisioning":
-      // Crash window only: CREATE may be unfinished. Do not rewrite identity
-      // (slug/dbName) mid-flight — retry ensure + attach on the claimed row.
-      return resumeProvisioning(deps, row, attachInput);
-    case "ready":
+    case "ready": {
+      // Live claim: refuse slug/dbName rewrite mid-flight / on replace.
+      // Hostname/image may still change when identity matches.
       if (!dbIdentityMatches(row, input, requestedDbName)) {
         return {
           ok: false,
@@ -381,8 +380,11 @@ async function provisionUnlocked(
           error: "preview_identity_conflict",
         };
       }
-      // Replace app; hostname/image may change; keep slug/dbName + generation.
-      return attachAppContainer(deps, row, attachInput, false);
+      if (status.value === "ready") {
+        return attachAppContainer(deps, row, attachInput, false);
+      }
+      return resumeProvisioning(deps, row, attachInput);
+    }
     case "removing":
       return {
         ok: false,
@@ -470,9 +472,9 @@ async function teardownUnlocked(
  * - removed: rewrite identity, CREATE, start/replace app, advance to ready
  * - error + same slug/dbName: ensure DB + attach without burning generation
  * - error + new slug/dbName: rewrite intent, then bring-up
- * - provisioning: retry CREATE (stuck-create recovery), then start app → ready
+ * - provisioning + same slug/dbName: retry CREATE, then start app → ready
  * - ready + same slug/dbName: replace app (hostname/image may change)
- * - ready + slug/dbName mismatch: 409 preview_identity_conflict
+ * - provisioning|ready + slug/dbName mismatch: 409 preview_identity_conflict
  * - removing: 409
  *
  * Registry pull runs outside the preview lock so a hung pull cannot stall

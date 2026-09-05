@@ -1,5 +1,5 @@
 import { traefikLabels } from "./labels.ts";
-import type { PreviewDocker } from "../docker/port.ts";
+import type { CatalogContainer, PreviewDocker } from "../docker/port.ts";
 import { previewContainerName } from "../preview/naming.ts";
 
 export type AppDeployPg = {
@@ -36,6 +36,8 @@ export type PreviewAppOps = {
     input: ReplacePreviewAppInput,
   ) => Promise<{ containerId: string }>;
   remove: (slug: string, prId: number) => Promise<void>;
+  /** Catalog of running pb-* containers (orphan sweep). */
+  list: () => Promise<CatalogContainer[]>;
 };
 
 export function bindPreviewApp(deps: ReplacePreviewAppDeps): PreviewAppOps {
@@ -46,6 +48,7 @@ export function bindPreviewApp(deps: ReplacePreviewAppDeps): PreviewAppOps {
       return { containerId };
     },
     remove: (slug, prId) => removePreviewApp(deps.docker, slug, prId),
+    list: () => deps.docker.listPreviewContainers(),
   };
 }
 

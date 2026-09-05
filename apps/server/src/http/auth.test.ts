@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
-import { bindPreviewApp } from "../app-deployment/replace.ts";
 import { ensureAdminToken, revokeToken } from "../auth/store.ts";
 import { hashToken } from "../auth/tokens.ts";
 import { createFakeDockerClient } from "../docker/fake.ts";
@@ -9,6 +8,7 @@ import { createFakePreviewDb } from "../preview-db/fake.ts";
 import { createRoutes } from "./routes.ts";
 import {
   bearer,
+  bindTestPreviewApp,
   createTestApp,
   createTestDb,
   postDeployToken,
@@ -279,17 +279,7 @@ describe("ensureAdminToken", () => {
     const app = createRoutes({
       db: testDb.db,
       previewDb: createFakePreviewDb(),
-      app: bindPreviewApp({
-        docker: createFakeDockerClient(),
-        pg: {
-          host: "postgres",
-          port: 5432,
-          user: "pb_preview",
-          password: "x",
-        },
-        networks: { traefik: "traefik", postgres: "postgres" },
-        previewPortDefault: 8080,
-      }),
+      app: bindTestPreviewApp(createFakeDockerClient()),
     });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {
