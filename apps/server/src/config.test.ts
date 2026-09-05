@@ -8,7 +8,9 @@ import {
 
 const TEST_REQUIRED_VALUES: Record<(typeof REQUIRED_ENV)[number], string> = {
   PB_PREVIEW_POSTGRES_URL: "postgres://admin:sekrit@localhost:5432/postgres",
+  PB_PG_HOST: "postgres",
   PB_PG_USER: "pb_preview",
+  PB_PG_PASSWORD: "preview-secret",
   PB_TRAEFIK_NETWORK: "traefik",
   PB_POSTGRES_NETWORK: "postgres",
   PB_REGISTRY_URL: "registry.example.com",
@@ -53,6 +55,9 @@ describe("loadConfig", () => {
     const config = loadConfig();
     expect(config.forge).toBe("github");
     expect(config.forgeToken).toBe("forge-token");
+    expect(config.previewPgHost).toBe("postgres");
+    expect(config.previewPgPassword).toBe("preview-secret");
+    expect(config.previewPgPort).toBe(OPTIONAL_ENV_DEFAULTS.PB_PG_PORT);
     expect(config.ttlHours).toBe(OPTIONAL_ENV_DEFAULTS.PB_TTL_HOURS);
     expect(config.sweepMinutes).toBe(OPTIONAL_ENV_DEFAULTS.PB_SWEEP_MINUTES);
     expect(config.previewPortDefault).toBe(
@@ -105,7 +110,10 @@ describe("loadConfig", () => {
   test("configSummary marks unset forge token", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
+      previewPgHost: "postgres",
+      previewPgPort: 5432,
       previewPgUser: "pb_preview",
+      previewPgPassword: "x",
       traefikNetwork: "traefik",
       postgresNetwork: "postgres",
       registryUrl: "ghcr.io",
@@ -125,7 +133,10 @@ describe("loadConfig", () => {
   test("configSummary redacts secrets", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin:sekrit@localhost:5432/postgres",
+      previewPgHost: "postgres",
+      previewPgPort: 5432,
       previewPgUser: "pb_preview",
+      previewPgPassword: "preview-secret",
       traefikNetwork: "traefik",
       postgresNetwork: "postgres",
       registryUrl: "registry.example.com",
@@ -141,6 +152,7 @@ describe("loadConfig", () => {
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
+    expect(summary.previewPgPassword).toBe("[set]");
     expect(summary.registryPassword).toBe("[set]");
     expect(summary.registryUser).toBe("puller");
     expect(summary.forge).toBe("github");
@@ -150,7 +162,10 @@ describe("loadConfig", () => {
   test("configSummary marks anonymous registry creds", () => {
     const summary = configSummary({
       previewPostgresUrl: "postgres://admin@localhost:5432/postgres",
+      previewPgHost: "postgres",
+      previewPgPort: 5432,
       previewPgUser: "pb_preview",
+      previewPgPassword: "x",
       traefikNetwork: "traefik",
       postgresNetwork: "postgres",
       registryUrl: "ghcr.io",

@@ -1,6 +1,13 @@
 import { and, eq, ne } from "drizzle-orm";
+import {
+  replacePreviewApp,
+  type AppDeployNetworks,
+  type AppDeployPg,
+} from "../app-deployment/replace.ts";
+import type { DockerClient } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
+import { previewContainerName } from "../preview/naming.ts";
 import { previewDbName } from "./names.ts";
 import type { PreviewDb } from "./port.ts";
 
@@ -10,7 +17,8 @@ function utcIsoNow(): string {
 
 /**
  * Preview lifecycle statuses known to this slice.
- * `ready` = DB exists (awaiting app slice). Keep `error` (not `failed`).
+ * `ready` = DB exists and app container started (health → running is a later slice).
+ * Keep `error` (not `failed`).
  */
 export type PreviewStatus =
   | "provisioning"
@@ -19,9 +27,18 @@ export type PreviewStatus =
   | "removed"
   | "error";
 
-export type LifecycleDeps = {
+export type TeardownDeps = {
   db: StateDb;
   previewDb: PreviewDb;
+  docker: DockerClient;
+};
+
+export type LifecycleDeps = TeardownDeps & {
+  appDeploy: {
+    pg: AppDeployPg;
+    networks: AppDeployNetworks;
+    previewPortDefault: number;
+  };
 };
 
 export type ProvisionInput = {
@@ -29,6 +46,7 @@ export type ProvisionInput = {
   prId: number;
   slug: string;
   hostname: string;
+  appImage: string;
 };
 
 export type TeardownInput = {
@@ -231,10 +249,12 @@ async function writeProvisioningIntent(
   return updated;
 }
 
-/** CREATE under dbName lock, then advance to ready. Caller handles CREATE failure. */
+/** CREATE under dbName lock, then start app container and advance to ready. */
 async function createThenReady(
   deps: LifecycleDeps,
   row: PreviewRow,
+  appImage: string,
+  hostname: string,
 ): Promise<Result<PreviewSnapshot>> {
   return withDbNameLock(row.dbName, async () => {
     try {
@@ -247,16 +267,67 @@ async function createThenReady(
       row.canonicalRepoId,
       row.prId,
     );
-    return { ok: true, value: toSnapshot(ready, "ready") };
+    return attachAppContainer(deps, ready, { hostname, appImage });
   });
+}
+
+async function attachAppContainer(
+  deps: LifecycleDeps,
+  row: PreviewRow,
+  input: { hostname: string; appImage: string },
+): Promise<Result<PreviewSnapshot>> {
+  try {
+    const { containerId } = await replacePreviewApp(
+      {
+        docker: deps.docker,
+        pg: deps.appDeploy.pg,
+        networks: deps.appDeploy.networks,
+        previewPortDefault: deps.appDeploy.previewPortDefault,
+      },
+      {
+        slug: row.slug,
+        prId: row.prId,
+        hostname: input.hostname,
+        image: input.appImage,
+        dbName: row.dbName,
+      },
+    );
+    const now = utcIsoNow();
+    const [updated] = await deps.db
+      .update(previews)
+      .set({
+        hostname: input.hostname,
+        appImage: input.appImage,
+        containerId,
+        status: "ready",
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(previews.canonicalRepoId, row.canonicalRepoId),
+          eq(previews.prId, row.prId),
+        ),
+      )
+      .returning();
+    if (!updated) {
+      throw new Error("preview_row_missing_on_app_attach");
+    }
+    return { ok: true, value: toSnapshot(updated, "ready") };
+  } catch {
+    await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
+    return { ok: false, status: 500, error: "preview_app_deploy_failed" };
+  }
 }
 
 async function establishDatabase(
   deps: LifecycleDeps,
   row: PreviewRow,
+  appImage: string,
+  hostname: string,
 ): Promise<Result<PreviewSnapshot>> {
-  const result = await createThenReady(deps, row);
-  if (!result.ok) {
+  const result = await createThenReady(deps, row, appImage, hostname);
+  // App attach marks error itself; only DB create failure needs it here.
+  if (!result.ok && result.error === "preview_db_create_failed") {
     await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
   }
   return result;
@@ -284,7 +355,12 @@ async function provisionUnlocked(
     if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
-    return establishDatabase(deps, inserted);
+    return establishDatabase(
+      deps,
+      inserted,
+      input.appImage,
+      input.hostname,
+    );
   }
 
   const status = parsePreviewStatus(row.status);
@@ -298,14 +374,27 @@ async function provisionUnlocked(
         input,
         requestedDbName,
       );
-      return establishDatabase(deps, intent);
+      return establishDatabase(
+        deps,
+        intent,
+        input.appImage,
+        input.hostname,
+      );
     }
     case "provisioning":
       // Crash window only: CREATE not finished. Do not rewrite identity.
-      return createThenReady(deps, row);
+      return createThenReady(
+        deps,
+        row,
+        input.appImage,
+        input.hostname,
+      );
     case "ready":
-      // Option A: DB intent complete — healthy redeploy is a snapshot no-op.
-      return { ok: true, value: toSnapshot(row, "ready") };
+      // Replace app container; keep database and identity (slug/db_name).
+      return attachAppContainer(deps, row, {
+        hostname: input.hostname,
+        appImage: input.appImage,
+      });
     case "removing":
       return {
         ok: false,
@@ -316,7 +405,7 @@ async function provisionUnlocked(
 }
 
 async function dropAndMarkRemoved(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   existing: PreviewRow,
 ): Promise<Result<TeardownSnapshot>> {
   const repo = existing.canonicalRepoId;
@@ -330,6 +419,15 @@ async function dropAndMarkRemoved(
     );
 
   return withDbNameLock(existing.dbName, async () => {
+    try {
+      await deps.docker.removeByName(
+        previewContainerName(existing.slug, existing.prId),
+      );
+    } catch {
+      await markPreviewError(deps.db, repo, prId);
+      return { ok: false, status: 500, error: "preview_app_remove_failed" };
+    }
+
     try {
       await deps.previewDb.dropDatabase(existing.dbName);
     } catch {
@@ -353,7 +451,7 @@ async function dropAndMarkRemoved(
 }
 
 async function teardownUnlocked(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   input: TeardownInput,
 ): Promise<Result<TeardownSnapshot>> {
   const existing = await getPreviewRow(deps.db, input.repo, input.prId);
@@ -379,10 +477,10 @@ async function teardownUnlocked(
 }
 
 /**
- * Ensure a preview DB exists for (repo, prId).
- * - removed/error: rewrite identity, CREATE, advance to ready
- * - provisioning: retry CREATE (stuck-create recovery), then ready
- * - ready: snapshot no-op
+ * Ensure a preview DB + app container exist for (repo, prId).
+ * - removed/error: rewrite identity, CREATE, start/replace app, advance to ready
+ * - provisioning: retry CREATE (stuck-create recovery), then start app → ready
+ * - ready: replace app container only (database kept)
  * - removing: 409
  */
 export function provisionPreview(
@@ -395,7 +493,7 @@ export function provisionPreview(
 }
 
 export function teardownPreview(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   input: TeardownInput,
 ): Promise<Result<TeardownSnapshot>> {
   return withPreviewLock(input.repo, input.prId, () =>
@@ -409,7 +507,7 @@ export function teardownPreview(
  * @returns true if the preview was removed; false if the plan was stale.
  */
 export function removePreview(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   input: RemovePreviewInput,
 ): Promise<Result<boolean>> {
   return withPreviewLock(input.repo, input.prId, async () => {
@@ -439,7 +537,7 @@ export function removePreview(
  * @returns true if DROP ran.
  */
 export function dropOrphanDatabase(
-  deps: LifecycleDeps,
+  deps: TeardownDeps,
   dbName: string,
 ): Promise<boolean> {
   return withDbNameLock(dbName, async () => {

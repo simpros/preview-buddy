@@ -1,11 +1,12 @@
 import type { ForgeClient } from "../forge/client.ts";
+import type { DockerClient } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import {
   dropOrphanDatabase,
   removePreview,
-  type LifecycleDeps,
+  type TeardownDeps,
 } from "../preview-db/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import type { ContainerPorts } from "../preview/containers.ts";
@@ -18,14 +19,19 @@ import type {
 export type LiveSweepDeps = {
   db: StateDb;
   previewDb: PreviewDb;
+  docker: DockerClient;
   containers: ContainerPorts;
   forge: ForgeClient;
   ttlHours: number;
   log?: SweepPorts["log"];
 };
 
-function lifecycleDeps(deps: LiveSweepDeps): LifecycleDeps {
-  return { db: deps.db, previewDb: deps.previewDb };
+function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
+  return {
+    db: deps.db,
+    previewDb: deps.previewDb,
+    docker: deps.docker,
+  };
 }
 
 async function removeControlPlane(
@@ -37,7 +43,7 @@ async function removeControlPlane(
 ): Promise<boolean> {
   // Control-plane remove stays under lifecycle locks; Docker is best-effort
   // after unlock so a hung container API cannot stall the preview/dbName queues.
-  const result = await removePreview(lifecycleDeps(deps), {
+  const result = await removePreview(teardownDeps(deps), {
     repo: deletion.canonicalRepoId,
     prId: deletion.prId,
     expectedDbName: deletion.dbName,
@@ -116,7 +122,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         case "sweep:orphan-db": {
           try {
             return await dropOrphanDatabase(
-              lifecycleDeps(deps),
+              teardownDeps(deps),
               deletion.dbName,
             );
           } catch (error) {

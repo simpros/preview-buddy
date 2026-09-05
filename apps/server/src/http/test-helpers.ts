@@ -2,8 +2,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { ensureAdminToken } from "../auth/store.ts";
+import {
+  createFakeDockerClient,
+  type FakeDockerClient,
+} from "../docker/fake.ts";
+import type { DockerClient } from "../docker/port.ts";
 import { connectState, type StateDb } from "../infrastructure/db/client.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
+import type { LifecycleDeps } from "../preview-db/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
@@ -18,7 +24,22 @@ export type TestApp = {
   db: StateDb;
   adminToken: string;
   previewDb: PreviewDb;
+  docker: DockerClient;
   cleanup: () => Promise<void>;
+};
+
+const defaultAppDeploy: LifecycleDeps["appDeploy"] = {
+  pg: {
+    host: "postgres",
+    port: 5432,
+    user: "pb_preview",
+    password: "preview-secret",
+  },
+  networks: {
+    traefik: "preview-buddy-traefik",
+    postgres: "preview-buddy-postgres",
+  },
+  previewPortDefault: 8080,
 };
 
 export async function createTestDb(): Promise<TestDb> {
@@ -35,19 +56,29 @@ export async function createTestDb(): Promise<TestDb> {
 }
 
 export async function createTestApp(
-  options: { adminToken?: string; previewDb?: PreviewDb } | string = {},
+  options:
+    | {
+        adminToken?: string;
+        previewDb?: PreviewDb;
+        docker?: DockerClient;
+        appDeploy?: LifecycleDeps["appDeploy"];
+      }
+    | string = {},
 ): Promise<TestApp> {
   const opts =
     typeof options === "string" ? { adminToken: options } : options;
   const adminToken = opts.adminToken ?? "test-admin-token";
   const previewDb = opts.previewDb ?? createFakePreviewDb();
+  const docker = opts.docker ?? createFakeDockerClient();
+  const appDeploy = opts.appDeploy ?? defaultAppDeploy;
   const { db, cleanup } = await createTestDb();
   await ensureAdminToken(db, adminToken);
   return {
-    app: createRoutes({ db, previewDb }),
+    app: createRoutes({ db, previewDb, docker, appDeploy }),
     db,
     adminToken,
     previewDb,
+    docker,
     cleanup,
   };
 }
@@ -72,3 +103,5 @@ export async function postDeployToken(
   );
   return { status: res.status, body: await res.json() };
 }
+
+export type { FakeDockerClient };

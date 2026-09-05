@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
+import { createFakeDockerClient } from "../docker/fake.ts";
 import { createTestDb } from "../http/test-helpers.ts";
 import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
@@ -65,6 +66,7 @@ describe("createLiveSweepPorts", () => {
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb,
       containers,
       forge: {
@@ -107,6 +109,7 @@ describe("createLiveSweepPorts", () => {
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
       }),
@@ -150,6 +153,7 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "prev_widgets_pr1", slug: "widgets", prId: 1 },
@@ -207,6 +211,7 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "prev_widgets_pr1", slug: "widgets", prId: 1 },
@@ -263,6 +268,7 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async () => {
@@ -315,6 +321,7 @@ describe("createLiveSweepPorts", () => {
     const logs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "prev_widgets_pr10", slug: "widgets", prId: 10 },
@@ -373,6 +380,7 @@ describe("createLiveSweepPorts", () => {
     const droppedDbs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async (dbName) => {
@@ -427,6 +435,7 @@ describe("createLiveSweepPorts", () => {
     const droppedDbs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async (dbName) => {
@@ -480,6 +489,7 @@ describe("createLiveSweepPorts", () => {
     let forgeCalls = 0;
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async (dbName) => {
@@ -535,6 +545,7 @@ describe("createLiveSweepPorts", () => {
     const droppedDbs: string[] = [];
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async (dbName) => {
@@ -565,6 +576,7 @@ describe("createLiveSweepPorts", () => {
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
+      docker: createFakeDockerClient(),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         dropDatabase: async () => {

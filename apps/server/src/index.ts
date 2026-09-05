@@ -1,5 +1,6 @@
 import { ensureAdminToken } from "./auth/store.ts";
 import { configSummary, loadConfig } from "./config.ts";
+import { createDockerEngineClient } from "./docker/engine.ts";
 import { startServer } from "./http/app.ts";
 import { connectState } from "./infrastructure/db/client.ts";
 import { createPostgresPreviewDb } from "./preview-db/postgres.ts";
@@ -25,8 +26,18 @@ const previewDb = createPostgresPreviewDb({
   previewRole: config.previewPgUser,
 });
 
-startServer({ config, db, previewDb });
-startGatewaySweep({ config, db, previewDb });
+const docker = createDockerEngineClient({
+  registryAuth:
+    config.registryUser === ""
+      ? undefined
+      : {
+          username: config.registryUser,
+          password: config.registryPassword,
+        },
+});
+
+startServer({ config, db, previewDb, docker });
+startGatewaySweep({ config, db, previewDb, docker });
 console.log(
   `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
 );

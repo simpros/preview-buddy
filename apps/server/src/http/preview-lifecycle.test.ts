@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
+import {
+  createFakeDockerClient,
+  type FakeDockerClient,
+} from "../docker/fake.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import {
@@ -15,20 +19,24 @@ import {
 
 const REPO = "https://github.com/org/repo";
 const OTHER_REPO = "https://github.com/org/other";
+const APP_IMAGE = "ghcr.io/org/myapp:sha-abc";
 
 let testApp: TestApp | undefined;
 let fakePreviewDb: FakePreviewDb | undefined;
+let fakeDocker: FakeDockerClient | undefined;
 
 afterEach(async () => {
   setSystemTime();
   await testApp?.cleanup();
   testApp = undefined;
   fakePreviewDb = undefined;
+  fakeDocker = undefined;
 });
 
 async function setup(options?: {
   createDatabase?: (dbName: string) => Promise<void>;
   dropDatabase?: (dbName: string) => Promise<void>;
+  exposedPorts?: Record<string, number | null>;
 }) {
   fakePreviewDb = createFakePreviewDb();
   if (options?.createDatabase) {
@@ -37,7 +45,13 @@ async function setup(options?: {
   if (options?.dropDatabase) {
     fakePreviewDb.dropDatabase = options.dropDatabase;
   }
-  testApp = await createTestApp({ previewDb: fakePreviewDb });
+  fakeDocker = createFakeDockerClient({
+    exposedPorts: options?.exposedPorts ?? { [APP_IMAGE]: 3000 },
+  });
+  testApp = await createTestApp({
+    previewDb: fakePreviewDb,
+    docker: fakeDocker,
+  });
   const { body } = await postDeployToken(testApp, {
     canonical_repo_id: REPO,
     slug: "myapp",
@@ -51,6 +65,7 @@ function deployBody(overrides: Record<string, unknown> = {}) {
     pr_id: 42,
     slug: "myapp",
     hostname: "pr-42.myapp.preview.example.com",
+    app_image: APP_IMAGE,
     ...overrides,
   };
 }
@@ -140,10 +155,30 @@ describe("POST /v1/deploy", () => {
       dbName: "prev_myapp_pr42",
       hostname: "pr-42.myapp.preview.example.com",
       status: "ready",
-      containerId: null,
+      appImage: APP_IMAGE,
+      containerId: "fake-1",
     });
     expect(row!.updatedAt).toMatch(/Z$/);
     expect(parseUnambiguousUtcMs(row!.updatedAt)).not.toBeNull();
+    expect(fakeDocker!.creates).toHaveLength(1);
+    expect(fakeDocker!.creates[0]).toMatchObject({
+      name: "pb-myapp-pr-42",
+      image: APP_IMAGE,
+      env: [
+        "PGHOST=postgres",
+        "PGPORT=5432",
+        "PGUSER=pb_preview",
+        "PGPASSWORD=preview-secret",
+        "PGDATABASE=prev_myapp_pr42",
+      ],
+      networkNames: ["preview-buddy-traefik", "preview-buddy-postgres"],
+    });
+    expect(fakeDocker!.creates[0]!.labels).toEqual({
+      "traefik.enable": "true",
+      "traefik.http.routers.pb-myapp-pr-42.rule":
+        "Host(`pr-42.myapp.preview.example.com`)",
+      "traefik.http.services.pb-myapp-pr-42.loadbalancer.server.port": "3000",
+    });
   });
 
   test("deploy token cannot deploy for a different canonical repo", async () => {
@@ -157,21 +192,45 @@ describe("POST /v1/deploy", () => {
     expect(fakePreviewDb!.created).toEqual([]);
   });
 
-  test("re-deploy while ready is a no-op (keeps identity, no CREATE)", async () => {
-    const { deployToken } = await setup();
+  test("re-deploy replaces app container and keeps database", async () => {
+    const { deployToken } = await setup({
+      exposedPorts: {
+        [APP_IMAGE]: 3000,
+        "ghcr.io/org/myapp:sha-def": 3000,
+      },
+    });
     await postDeploy(deployToken, deployBody());
     const res = await postDeploy(
       deployToken,
-      deployBody({ slug: "other", hostname: "ignored.example.com" }),
+      deployBody({
+        app_image: "ghcr.io/org/myapp:sha-def",
+        hostname: "pr-42.myapp.preview.example.com",
+      }),
     );
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       slug: "myapp",
       db_name: "prev_myapp_pr42",
-      hostname: "pr-42.myapp.preview.example.com",
       status: "ready",
     });
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
+    expect(fakeDocker!.creates.map((c) => c.image)).toEqual([
+      APP_IMAGE,
+      "ghcr.io/org/myapp:sha-def",
+    ]);
+    expect(fakeDocker!.removed.filter((n) => n === "pb-myapp-pr-42")).toEqual([
+      "pb-myapp-pr-42",
+      "pb-myapp-pr-42",
+    ]);
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(row?.appImage).toBe("ghcr.io/org/myapp:sha-def");
+    expect(row?.containerId).toBe("fake-2");
   });
 
   test("retries createDatabase when stuck in provisioning with no DB", async () => {

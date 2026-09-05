@@ -1,8 +1,9 @@
 import { createForgeClient } from "../forge/client.ts";
 import type { Config } from "../config.ts";
+import { dockerAsContainerPorts } from "../docker/engine.ts";
+import type { DockerClient } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
-import { createDockerRemover } from "../preview/containers.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
 import { runSweepPass } from "./reconcile.ts";
 import { startSweepTimer, type SweepTimerHandle } from "./timer.ts";
@@ -11,15 +12,17 @@ export function startGatewaySweep(deps: {
   config: Config;
   db: StateDb;
   previewDb: PreviewDb;
+  docker: DockerClient;
 }): SweepTimerHandle {
   const forge = createForgeClient({
     forge: deps.config.forge,
     token: deps.config.forgeToken,
   });
-  const containers = createDockerRemover();
+  const containers = dockerAsContainerPorts(deps.docker);
   const ports = createLiveSweepPorts({
     db: deps.db,
     previewDb: deps.previewDb,
+    docker: deps.docker,
     containers,
     forge,
     ttlHours: deps.config.ttlHours,
