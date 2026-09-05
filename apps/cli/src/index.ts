@@ -1,8 +1,7 @@
 #!/usr/bin/env bun
 import { createApiClient } from "@preview-buddy/api-client";
-import { resolveGatewayUrl } from "./gateway-url.ts";
 
-const baseUrl = resolveGatewayUrl();
+const baseUrl = process.env.PBUDDY_URL?.trim() || "http://127.0.0.1:7331";
 const [command = "health"] = process.argv.slice(2);
 
 const client = createApiClient(baseUrl);
