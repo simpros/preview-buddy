@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { authPlugin, requireAdmin, requireAuth } from "../auth/middleware.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
+import type { ContainerPorts } from "../preview/containers.ts";
 import {
   createDeployToken,
   createDeployTokenBody,
@@ -9,10 +10,12 @@ import {
   revokeToken,
 } from "./admin-tokens.ts";
 import { deploy, deployBody, teardown, teardownBody } from "./deploy.ts";
+import { doctor, drop, dropBody, listPreviews } from "./introspection.ts";
 
 export type RouteDeps = {
   db: StateDb;
   previewDb: PreviewDb;
+  containers: ContainerPorts;
 };
 
 function stubNotImplemented({
@@ -26,6 +29,11 @@ function stubNotImplemented({
 
 export function createRoutes(deps: RouteDeps) {
   const lifecycle = { db: deps.db, previewDb: deps.previewDb };
+  const introspection = {
+    db: deps.db,
+    previewDb: deps.previewDb,
+    containers: deps.containers,
+  };
   return new Elysia()
     .get("/healthz", () => ({ ok: true }))
     .group("/v1", (v1) =>
@@ -41,18 +49,16 @@ export function createRoutes(deps: RouteDeps) {
             })
             .delete("/tokens/:id", revokeToken(deps.db)),
         )
-        .group("/previews", (g) =>
-          g
-            .onBeforeHandle(requireAdmin)
-            .all("/", stubNotImplemented)
-            .all("/*", stubNotImplemented),
-        )
-        .group("/doctor", (g) =>
-          g
-            .onBeforeHandle(requireAdmin)
-            .all("/", stubNotImplemented)
-            .all("/*", stubNotImplemented),
-        )
+        .get("/previews", listPreviews(deps.db), {
+          beforeHandle: requireAdmin,
+        })
+        .get("/doctor", doctor(introspection), {
+          beforeHandle: requireAdmin,
+        })
+        .post("/drop", drop(introspection), {
+          beforeHandle: requireAdmin,
+          body: dropBody,
+        })
         .post("/deploy", deploy(lifecycle), { body: deployBody })
         .post("/teardown", teardown(lifecycle), { body: teardownBody })
         .all("/*", stubNotImplemented),

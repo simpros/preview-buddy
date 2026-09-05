@@ -87,12 +87,17 @@ async function dropSettled(
   return succeeded;
 }
 
-function planOrphans(
+export type OrphanDeletion = Extract<
+  SweepDeletion,
+  { reason: "sweep:orphan-db" | "sweep:orphan-container" }
+>;
+
+export function planOrphans(
   previewKeys: Set<string>,
   catalog: CatalogDbRef[],
   containers: PreviewRef[],
-): SweepDeletion[] {
-  const out: SweepDeletion[] = [];
+): OrphanDeletion[] {
+  const out: OrphanDeletion[] = [];
   for (const db of catalog) {
     if (previewKeys.has(`${db.slug}:${db.prId}`)) continue;
     out.push({
@@ -111,6 +116,48 @@ function planOrphans(
     });
   }
   return out;
+}
+
+/** Doctor/API orphan shape — adapter lives next to the planner, not in HTTP. */
+export type OrphanFinding =
+  | {
+      kind: "orphan-db";
+      slug: string;
+      pr_id: number;
+      db_name: string;
+    }
+  | {
+      kind: "orphan-container";
+      slug: string;
+      pr_id: number;
+    };
+
+export function planOrphanFindings(
+  previewKeys: Set<string>,
+  catalog: CatalogDbRef[],
+  containers: PreviewRef[],
+): OrphanFinding[] {
+  return planOrphans(previewKeys, catalog, containers).map((deletion) => {
+    switch (deletion.reason) {
+      case "sweep:orphan-db":
+        return {
+          kind: "orphan-db" as const,
+          slug: deletion.slug,
+          pr_id: deletion.prId,
+          db_name: deletion.dbName,
+        };
+      case "sweep:orphan-container":
+        return {
+          kind: "orphan-container" as const,
+          slug: deletion.slug,
+          pr_id: deletion.prId,
+        };
+      default: {
+        const _exhaustive: never = deletion;
+        throw new Error(`unexpected orphan reason: ${JSON.stringify(_exhaustive)}`);
+      }
+    }
+  });
 }
 
 export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> {

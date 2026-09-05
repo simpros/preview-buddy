@@ -28,6 +28,7 @@ function lifecycleDeps(deps: LiveSweepDeps): LifecycleDeps {
   return { db: deps.db, previewDb: deps.previewDb };
 }
 
+/** Soft-remove under lock, then best-effort Docker remove after unlock. */
 async function removeControlPlane(
   deps: LiveSweepDeps,
   deletion: Extract<
@@ -35,7 +36,7 @@ async function removeControlPlane(
     { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
   >,
 ): Promise<boolean> {
-  // Control-plane remove stays under lifecycle locks; Docker is best-effort
+  // Control-plane mutation stays under lifecycle locks; Docker is best-effort
   // after unlock so a hung container API cannot stall the preview/dbName queues.
   const result = await removePreview(lifecycleDeps(deps), {
     repo: deletion.canonicalRepoId,
@@ -55,7 +56,7 @@ async function removeControlPlane(
       prId: deletion.prId,
     });
   } catch (error) {
-    // Leave for the next orphan-container pass; DB is already gone.
+    // Leave for doctor / next orphan-container pass; DB is already gone.
     deps.log?.(
       `sweep remove container failed: ${String(error)}`,
       deletion,
