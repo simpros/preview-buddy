@@ -12,7 +12,7 @@ export type ContainerCreateSpec = {
   /** `KEY=VALUE` entries — app containers get only the five PG* vars. */
   env: string[];
   labels: Record<string, string>;
-  /** Attach in order; first is the primary network at create time. */
+  /** All networks attached via create-time EndpointsConfig. */
   networkNames: string[];
 };
 

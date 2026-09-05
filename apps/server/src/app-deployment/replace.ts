@@ -18,7 +18,6 @@ export type ReplacePreviewAppDeps = {
   docker: PreviewDocker;
   pg: AppDeployPg;
   networks: AppDeployNetworks;
-  previewPortDefault: number;
 };
 
 export type ReplacePreviewAppInput = {
@@ -27,20 +26,34 @@ export type ReplacePreviewAppInput = {
   hostname: string;
   image: string;
   dbName: string;
+  /** Resolved by preparePreviewImage (pull + inspect) outside the preview lock. */
+  port: number;
 };
 
 /**
+ * Registry pull + EXPOSE inspect. Call outside the preview lock so a hung
+ * registry cannot stall teardown for the same (repo, prId).
+ */
+export async function preparePreviewImage(
+  docker: PreviewDocker,
+  image: string,
+  previewPortDefault: number,
+): Promise<number> {
+  await docker.pullImage(image);
+  const exposed = await docker.firstExposedPort(image);
+  return exposed ?? previewPortDefault;
+}
+
+/**
  * Replace (or first-start) the preview app container for one PR.
- * Pulls the image, force-removes any prior container with the stable name,
- * then creates+starts with dual-network attach, Traefik labels, and PG* env only.
+ * Force-removes any prior container with the stable name, then creates+starts
+ * with dual-network attach, Traefik labels, and PG* env only.
+ * Caller must already have pulled via preparePreviewImage.
  */
 export async function replacePreviewApp(
   deps: ReplacePreviewAppDeps,
   input: ReplacePreviewAppInput,
 ): Promise<{ containerId: string; port: number }> {
-  await deps.docker.pullImage(input.image);
-  const exposed = await deps.docker.firstExposedPort(input.image);
-  const port = exposed ?? deps.previewPortDefault;
   const name = previewContainerName(input.slug, input.prId);
   await deps.docker.removeByName(name);
   const { id } = await deps.docker.createAndStart({
@@ -56,9 +69,9 @@ export async function replacePreviewApp(
     labels: traefikLabels({
       routerName: name,
       hostname: input.hostname,
-      port,
+      port: input.port,
     }),
     networkNames: [deps.networks.traefik, deps.networks.postgres],
   });
-  return { containerId: id, port };
+  return { containerId: id, port: input.port };
 }

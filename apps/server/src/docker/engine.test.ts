@@ -37,7 +37,7 @@ describe("firstExposedPortFromInspect", () => {
 });
 
 describe("createDockerEngineClient", () => {
-  test("createAndStart posts create, connects extra network, starts", async () => {
+  test("createAndStart posts create with all EndpointsConfig, then starts", async () => {
     const calls: { url: string; method: string; body?: string }[] = [];
     const docker = createDockerEngineClient({
       fetch: async (input, init) => {
@@ -48,9 +48,6 @@ describe("createDockerEngineClient", () => {
         calls.push({ url, method, body });
         if (url.includes("/containers/create")) {
           return new Response(JSON.stringify({ Id: "cid-1" }), { status: 201 });
-        }
-        if (url.includes("/networks/") && url.includes("/connect")) {
-          return new Response(null, { status: 200 });
         }
         if (url.includes("/start")) {
           return new Response(null, { status: 204 });
@@ -69,16 +66,52 @@ describe("createDockerEngineClient", () => {
     expect(id).toBe("cid-1");
     expect(calls.map((c) => c.method + " " + c.url)).toEqual([
       "POST http://localhost/containers/create?name=pb-myapp-pr-1",
-      "POST http://localhost/networks/postgres/connect",
       "POST http://localhost/containers/cid-1/start",
     ]);
     const createBody = JSON.parse(calls[0]!.body!);
-    expect(createBody.HostConfig.NetworkMode).toBe("traefik");
+    expect(createBody.HostConfig).toBeUndefined();
     expect(createBody.NetworkingConfig.EndpointsConfig).toEqual({
       traefik: {},
       postgres: {},
     });
     expect(createBody.Env).toEqual(["PGHOST=postgres"]);
+  });
+
+  test("createAndStart removes half-built container when start fails", async () => {
+    const calls: string[] = [];
+    const docker = createDockerEngineClient({
+      fetch: async (input, init) => {
+        const url = String(input);
+        calls.push(`${init?.method ?? "GET"} ${url}`);
+        if (url.includes("/containers/create")) {
+          return new Response(JSON.stringify({ Id: "cid-fail" }), {
+            status: 201,
+          });
+        }
+        if (url.includes("/start")) {
+          return new Response("cannot start", { status: 500 });
+        }
+        if (url.includes("/containers/") && init?.method === "DELETE") {
+          return new Response(null, { status: 204 });
+        }
+        return new Response("unexpected", { status: 500 });
+      },
+    });
+
+    await expect(
+      docker.createAndStart({
+        name: "pb-myapp-pr-9",
+        image: "img:1",
+        env: [],
+        labels: {},
+        networkNames: ["traefik"],
+      }),
+    ).rejects.toThrow(/Docker start .* failed: 500/);
+    expect(calls).toEqual([
+      "POST http://localhost/containers/create?name=pb-myapp-pr-9",
+      "POST http://localhost/containers/cid-fail/start",
+      "DELETE http://localhost/containers/pb-myapp-pr-9?force=true",
+    ]);
   });
 
   test("removeByName treats 404 as success", async () => {

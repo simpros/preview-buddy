@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createFakeDockerClient } from "../docker/fake.ts";
-import { replacePreviewApp } from "./replace.ts";
+import { preparePreviewImage, replacePreviewApp } from "./replace.ts";
 
 const baseDeps = {
   pg: {
@@ -13,14 +13,36 @@ const baseDeps = {
     traefik: "preview-buddy-traefik",
     postgres: "preview-buddy-postgres",
   },
-  previewPortDefault: 8080,
 };
 
-describe("replacePreviewApp", () => {
-  test("pulls, removes prior container, creates with PG* env, dual networks, Traefik labels", async () => {
+describe("preparePreviewImage", () => {
+  test("pulls and returns EXPOSE port", async () => {
     const docker = createFakeDockerClient({
       exposedPorts: { "ghcr.io/org/app:sha": 3000 },
     });
+    const port = await preparePreviewImage(
+      docker,
+      "ghcr.io/org/app:sha",
+      8080,
+    );
+    expect(port).toBe(3000);
+    expect(docker.pulls).toEqual(["ghcr.io/org/app:sha"]);
+  });
+
+  test("falls back to default when image has no EXPOSE", async () => {
+    const docker = createFakeDockerClient();
+    const port = await preparePreviewImage(
+      docker,
+      "ghcr.io/org/app:noexpose",
+      8080,
+    );
+    expect(port).toBe(8080);
+  });
+});
+
+describe("replacePreviewApp", () => {
+  test("removes prior container, creates with PG* env, dual networks, Traefik labels", async () => {
+    const docker = createFakeDockerClient();
 
     const result = await replacePreviewApp(
       { docker, ...baseDeps },
@@ -30,11 +52,12 @@ describe("replacePreviewApp", () => {
         hostname: "pr-42.myapp.preview.example.com",
         image: "ghcr.io/org/app:sha",
         dbName: "prev_myapp_pr42",
+        port: 3000,
       },
     );
 
     expect(result).toEqual({ containerId: "fake-1", port: 3000 });
-    expect(docker.pulls).toEqual(["ghcr.io/org/app:sha"]);
+    expect(docker.pulls).toEqual([]);
     expect(docker.removed).toEqual(["pb-myapp-pr-42"]);
     expect(docker.creates).toHaveLength(1);
     const created = docker.creates[0]!;
@@ -59,7 +82,7 @@ describe("replacePreviewApp", () => {
     });
   });
 
-  test("uses PB_PREVIEW_PORT_DEFAULT when image has no EXPOSE", async () => {
+  test("uses caller-provided port for Traefik labels", async () => {
     const docker = createFakeDockerClient();
     const result = await replacePreviewApp(
       { docker, ...baseDeps },
@@ -69,6 +92,7 @@ describe("replacePreviewApp", () => {
         hostname: "pr-7.example.com",
         image: "ghcr.io/org/app:noexpose",
         dbName: "prev_myapp_pr7",
+        port: 8080,
       },
     );
     expect(result.port).toBe(8080);
@@ -80,14 +104,13 @@ describe("replacePreviewApp", () => {
   });
 
   test("replace removes then creates again under the same name", async () => {
-    const docker = createFakeDockerClient({
-      exposedPorts: { "img:v1": 80, "img:v2": 80 },
-    });
+    const docker = createFakeDockerClient();
     const input = {
       slug: "widgets",
       prId: 3,
       hostname: "pr-3.widgets.example.com",
       dbName: "prev_widgets_pr3",
+      port: 80,
     };
     await replacePreviewApp(
       { docker, ...baseDeps },

@@ -82,6 +82,17 @@ export function createDockerEngineClient(
     });
   }
 
+  async function removeByName(name: string): Promise<void> {
+    const res = await engine(
+      `/containers/${encodeURIComponent(name)}?force=true`,
+      { method: "DELETE" },
+    );
+    if (res.status !== 204 && res.status !== 404) {
+      const body = await res.text();
+      throw new Error(`Docker remove ${name} failed: ${res.status} ${body}`);
+    }
+  }
+
   return {
     async pullImage(image) {
       const { fromImage, tag } = splitImageRef(image);
@@ -114,22 +125,12 @@ export function createDockerEngineClient(
       return firstExposedPortFromInspect((await res.json()) as ImageInspect);
     },
 
-    async removeByName(name) {
-      const res = await engine(
-        `/containers/${encodeURIComponent(name)}?force=true`,
-        { method: "DELETE" },
-      );
-      if (res.status !== 204 && res.status !== 404) {
-        const body = await res.text();
-        throw new Error(`Docker remove ${name} failed: ${res.status} ${body}`);
-      }
-    },
+    removeByName,
 
     async createAndStart(spec: ContainerCreateSpec) {
       if (spec.networkNames.length === 0) {
         throw new Error("createAndStart requires at least one network");
       }
-      const [primary, ...rest] = spec.networkNames;
       const endpoints: Record<string, Record<string, never>> = {};
       for (const n of spec.networkNames) {
         endpoints[n!] = {};
@@ -143,9 +144,6 @@ export function createDockerEngineClient(
             Image: spec.image,
             Env: spec.env,
             Labels: spec.labels,
-            HostConfig: {
-              NetworkMode: primary,
-            },
             NetworkingConfig: {
               EndpointsConfig: endpoints,
             },
@@ -160,34 +158,27 @@ export function createDockerEngineClient(
       }
       const { Id: id } = (await createRes.json()) as { Id: string };
 
-      for (const network of rest) {
-        const connectRes = await engine(
-          `/networks/${encodeURIComponent(network!)}/connect`,
-          {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ Container: id }),
-          },
+      try {
+        const startRes = await engine(
+          `/containers/${encodeURIComponent(id)}/start`,
+          { method: "POST" },
         );
-        if (!connectRes.ok) {
-          const body = await connectRes.text();
+        if (!startRes.ok && startRes.status !== 304) {
+          const body = await startRes.text();
           throw new Error(
-            `Docker connect ${spec.name} to ${network} failed: ${connectRes.status} ${body}`,
+            `Docker start ${spec.name} failed: ${startRes.status} ${body}`,
           );
         }
+        return { id };
+      } catch (err) {
+        // Half-built named container blocks the next replace; best-effort scrub.
+        try {
+          await removeByName(spec.name);
+        } catch {
+          // ignore — surface the original start failure
+        }
+        throw err;
       }
-
-      const startRes = await engine(
-        `/containers/${encodeURIComponent(id)}/start`,
-        { method: "POST" },
-      );
-      if (!startRes.ok && startRes.status !== 304) {
-        const body = await startRes.text();
-        throw new Error(
-          `Docker start ${spec.name} failed: ${startRes.status} ${body}`,
-        );
-      }
-      return { id };
     },
 
     async listPreviewContainers() {

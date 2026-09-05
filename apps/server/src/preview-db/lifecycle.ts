@@ -1,5 +1,6 @@
 import { and, eq, ne } from "drizzle-orm";
 import {
+  preparePreviewImage,
   replacePreviewApp,
   type AppDeployNetworks,
   type AppDeployPg,
@@ -224,37 +225,18 @@ async function writeProvisioningIntent(
   return updated;
 }
 
-/**
- * CREATE under dbName lock only, then replace app outside that lock
- * (still under the preview lock). One control-plane write to ready.
- */
-async function createThenReady(
+/** CREATE under dbName lock only. Callers decide error vs leave-provisioning. */
+async function ensureDatabase(
   deps: LifecycleDeps,
   row: PreviewRow,
-  appImage: string,
-  hostname: string,
-  onDbCreateFail: "error" | "leave",
-): Promise<Result<PreviewSnapshot>> {
-  const created = await withDbNameLock(row.dbName, async (): Promise<
-    Result<true>
-  > => {
+): Promise<Result<true>> {
+  return withDbNameLock(row.dbName, async () => {
     try {
       await deps.previewDb.createDatabase(row.dbName);
       return { ok: true, value: true };
     } catch {
       return { ok: false, status: 500, error: "preview_db_create_failed" };
     }
-  });
-  if (!created.ok) {
-    if (onDbCreateFail === "error") {
-      await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
-    }
-    return created;
-  }
-  return attachAppContainer(deps, row, {
-    hostname,
-    appImage,
-    mintGeneration: true,
   });
 }
 
@@ -264,8 +246,7 @@ async function attachAppContainer(
   input: {
     hostname: string;
     appImage: string;
-    /** Mint createdAt when DB+app first become live (not on ready redeploy). */
-    mintGeneration: boolean;
+    port: number;
   },
 ): Promise<Result<PreviewSnapshot>> {
   try {
@@ -274,7 +255,6 @@ async function attachAppContainer(
         docker: deps.docker,
         pg: deps.appDeploy.pg,
         networks: deps.appDeploy.networks,
-        previewPortDefault: deps.appDeploy.previewPortDefault,
       },
       {
         slug: row.slug,
@@ -282,9 +262,12 @@ async function attachAppContainer(
         hostname: input.hostname,
         image: input.appImage,
         dbName: row.dbName,
+        port: input.port,
       },
     );
     const now = utcIsoNow();
+    // Mint generation when DB+app first become live; keep TTL on ready redeploy.
+    const mintGeneration = row.status !== "ready";
     const [updated] = await deps.db
       .update(previews)
       .set({
@@ -292,7 +275,7 @@ async function attachAppContainer(
         appImage: input.appImage,
         containerId,
         status: "ready",
-        ...(input.mintGeneration ? { createdAt: now } : {}),
+        ...(mintGeneration ? { createdAt: now } : {}),
         updatedAt: now,
       })
       .where(
@@ -315,6 +298,7 @@ async function attachAppContainer(
 async function provisionUnlocked(
   deps: LifecycleDeps,
   input: ProvisionInput,
+  port: number,
 ): Promise<Result<PreviewSnapshot>> {
   const requestedDbName = previewDbName(input.slug, input.prId);
   let row = await getPreviewRow(deps.db, input.repo, input.prId);
@@ -334,13 +318,16 @@ async function provisionUnlocked(
     if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
-    return createThenReady(
-      deps,
-      inserted,
-      input.appImage,
-      input.hostname,
-      "error",
-    );
+    const ensured = await ensureDatabase(deps, inserted);
+    if (!ensured.ok) {
+      await markPreviewError(deps.db, inserted.canonicalRepoId, inserted.prId);
+      return ensured;
+    }
+    return attachAppContainer(deps, inserted, {
+      hostname: input.hostname,
+      appImage: input.appImage,
+      port,
+    });
   }
 
   const status = parsePreviewStatus(row.status);
@@ -354,30 +341,34 @@ async function provisionUnlocked(
         input,
         requestedDbName,
       );
-      return createThenReady(
-        deps,
-        intent,
-        input.appImage,
-        input.hostname,
-        "error",
-      );
+      const ensured = await ensureDatabase(deps, intent);
+      if (!ensured.ok) {
+        await markPreviewError(deps.db, intent.canonicalRepoId, intent.prId);
+        return ensured;
+      }
+      return attachAppContainer(deps, intent, {
+        hostname: input.hostname,
+        appImage: input.appImage,
+        port,
+      });
     }
-    case "provisioning":
+    case "provisioning": {
       // Crash window only: CREATE not finished. Do not rewrite identity.
       // Leave status provisioning on CREATE failure so retry stays possible.
-      return createThenReady(
-        deps,
-        row,
-        input.appImage,
-        input.hostname,
-        "leave",
-      );
+      const ensured = await ensureDatabase(deps, row);
+      if (!ensured.ok) return ensured;
+      return attachAppContainer(deps, row, {
+        hostname: input.hostname,
+        appImage: input.appImage,
+        port,
+      });
+    }
     case "ready":
       // Replace app container; keep database and identity (slug/db_name).
       return attachAppContainer(deps, row, {
         hostname: input.hostname,
         appImage: input.appImage,
-        mintGeneration: false,
+        port,
       });
     case "removing":
       return {
@@ -402,14 +393,16 @@ async function dropAndMarkRemoved(
       and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
     );
 
-  // Container remove outside dbName lock (still under preview lock).
+  // Best-effort container remove outside dbName lock (still under preview lock).
+  // Leftover pb-* containers are reclaimed by orphan-container sweep.
   try {
     await deps.docker.removeByName(
       previewContainerName(existing.slug, existing.prId),
     );
   } catch {
-    await markPreviewError(deps.db, repo, prId);
-    return { ok: false, status: 500, error: "preview_app_remove_failed" };
+    console.warn(
+      `preview container remove failed for ${existing.slug} pr=${prId}; continuing with DROP`,
+    );
   }
 
   return withDbNameLock(existing.dbName, async () => {
@@ -467,13 +460,37 @@ async function teardownUnlocked(
  * - provisioning: retry CREATE (stuck-create recovery), then start app → ready
  * - ready: replace app container only (database kept)
  * - removing: 409
+ *
+ * Registry pull runs outside the preview lock so a hung pull cannot stall
+ * teardown for the same (repo, prId).
  */
-export function provisionPreview(
+export async function provisionPreview(
   deps: LifecycleDeps,
   input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
+  let port: number;
+  try {
+    port = await preparePreviewImage(
+      deps.docker,
+      input.appImage,
+      deps.appDeploy.previewPortDefault,
+    );
+  } catch {
+    return withPreviewLock(input.repo, input.prId, async () => {
+      const row = await getPreviewRow(deps.db, input.repo, input.prId);
+      if (
+        row &&
+        row.status !== "removed" &&
+        row.status !== "removing"
+      ) {
+        await markPreviewError(deps.db, input.repo, input.prId);
+      }
+      return { ok: false, status: 500, error: "preview_app_deploy_failed" };
+    });
+  }
+
   return withPreviewLock(input.repo, input.prId, () =>
-    provisionUnlocked(deps, input),
+    provisionUnlocked(deps, input, port),
   );
 }
 
