@@ -57,7 +57,6 @@ function teardownBody(overrides: Record<string, unknown> = {}) {
   return {
     canonical_repo_id: REPO,
     pr_id: 42,
-    slug: "myapp",
     ...overrides,
   };
 }
@@ -154,7 +153,7 @@ describe("POST /v1/deploy", () => {
     expect(fakePreviewDb!.created).toEqual([]);
   });
 
-  test("re-deploy keeps existing database", async () => {
+  test("re-deploy keeps existing identity while retrying CREATE", async () => {
     const { deployToken } = await setup();
     await postDeploy(deployToken, deployBody());
     const res = await postDeploy(
@@ -166,6 +165,31 @@ describe("POST /v1/deploy", () => {
       slug: "myapp",
       db_name: "prev_myapp_pr42",
       hostname: "pr-42.myapp.preview.example.com",
+      status: "provisioning",
+    });
+    // provisioning always retries CREATE (idempotent in postgres adapter)
+    expect(fakePreviewDb!.created).toEqual([
+      "prev_myapp_pr42",
+      "prev_myapp_pr42",
+    ]);
+  });
+
+  test("retries createDatabase when stuck in provisioning with no DB", async () => {
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "myapp",
+      dbName: "prev_myapp_pr42",
+      hostname: "pr-42.myapp.preview.example.com",
+      status: "provisioning",
+    });
+    expect(fakePreviewDb!.created).toEqual([]);
+
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      db_name: "prev_myapp_pr42",
       status: "provisioning",
     });
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
@@ -228,6 +252,21 @@ describe("POST /v1/deploy", () => {
     expect(res.body).toMatchObject({ status: "provisioning" });
     expect(fakePreviewDb!.created).toEqual(["prev_myapp_pr42"]);
   });
+
+  test("parallel first deploys do not 500", async () => {
+    const { deployToken } = await setup();
+    const body = deployBody();
+    const [a, b] = await Promise.all([
+      postDeploy(deployToken, body),
+      postDeploy(deployToken, body),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(fakePreviewDb!.created.length).toBeGreaterThanOrEqual(1);
+    expect(fakePreviewDb!.created.every((n) => n === "prev_myapp_pr42")).toBe(
+      true,
+    );
+  });
 });
 
 describe("POST /v1/teardown", () => {
@@ -249,13 +288,12 @@ describe("POST /v1/teardown", () => {
     expect(row?.status).toBe("removed");
   });
 
-  test("accepts body without hostname", async () => {
+  test("accepts body with only repo and pr_id", async () => {
     const { deployToken } = await setup();
     await postDeploy(deployToken, deployBody());
     const res = await postTeardown(deployToken, {
       canonical_repo_id: REPO,
       pr_id: 42,
-      slug: "myapp",
     });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true, status: "removed" });
@@ -279,13 +317,11 @@ describe("POST /v1/teardown", () => {
     expect(fakePreviewDb!.dropped).toEqual([]);
   });
 
-  test("rejects invalid slug before SQL", async () => {
+  test("rejects invalid pr_id", async () => {
     const { deployToken } = await setup();
-    const res = await postTeardown(
-      deployToken,
-      teardownBody({ slug: "Bad!" }),
-    );
+    const res = await postTeardown(deployToken, teardownBody({ pr_id: 0 }));
     expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: "invalid_pr_id" });
     expect(fakePreviewDb!.dropped).toEqual([]);
   });
 
