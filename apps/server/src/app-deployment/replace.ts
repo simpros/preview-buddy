@@ -1,5 +1,5 @@
 import { traefikLabels } from "./labels.ts";
-import type { DockerClient } from "../docker/port.ts";
+import type { PreviewDocker } from "../docker/port.ts";
 import { previewContainerName } from "../preview/naming.ts";
 
 export type AppDeployPg = {
@@ -15,7 +15,7 @@ export type AppDeployNetworks = {
 };
 
 export type ReplacePreviewAppDeps = {
-  docker: DockerClient;
+  docker: PreviewDocker;
   pg: AppDeployPg;
   networks: AppDeployNetworks;
   previewPortDefault: number;

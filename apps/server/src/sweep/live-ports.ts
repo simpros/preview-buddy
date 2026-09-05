@@ -1,5 +1,5 @@
 import type { ForgeClient } from "../forge/client.ts";
-import type { DockerClient } from "../docker/port.ts";
+import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
@@ -9,7 +9,7 @@ import {
   type TeardownDeps,
 } from "../preview-db/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
-import type { ContainerPorts } from "../preview/containers.ts";
+import { previewContainerName } from "../preview/naming.ts";
 import type {
   SweepDeletion,
   SweepPorts,
@@ -19,8 +19,7 @@ import type {
 export type LiveSweepDeps = {
   db: StateDb;
   previewDb: PreviewDb;
-  docker: DockerClient;
-  containers: ContainerPorts;
+  docker: PreviewDocker;
   forge: ForgeClient;
   ttlHours: number;
   log?: SweepPorts["log"];
@@ -41,8 +40,8 @@ async function removeControlPlane(
     { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
   >,
 ): Promise<boolean> {
-  // Control-plane remove stays under lifecycle locks; Docker is best-effort
-  // after unlock so a hung container API cannot stall the preview/dbName queues.
+  // Lifecycle owns Docker teardown under the preview lock (dbName lock is
+  // SQL-only). Failures surface as incomplete teardown for the next pass.
   const result = await removePreview(teardownDeps(deps), {
     repo: deletion.canonicalRepoId,
     prId: deletion.prId,
@@ -53,21 +52,7 @@ async function removeControlPlane(
     deps.log?.(`sweep drop database failed: ${result.error}`, deletion);
     throw new Error(`teardown incomplete: ${deletion.dbName}`);
   }
-  if (!result.value) return false;
-
-  try {
-    await deps.containers.remove({
-      slug: deletion.slug,
-      prId: deletion.prId,
-    });
-  } catch (error) {
-    // Leave for the next orphan-container pass; DB is already gone.
-    deps.log?.(
-      `sweep remove container failed: ${String(error)}`,
-      deletion,
-    );
-  }
-  return true;
+  return result.value;
 }
 
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
@@ -101,7 +86,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         ({ slug, prId, dbName }) => ({ slug, prId, dbName }),
       ),
     listPreviewContainers: async () =>
-      (await deps.containers.listPreviewContainers()).map(({ slug, prId }) => ({
+      (await deps.docker.listPreviewContainers()).map(({ slug, prId }) => ({
         slug,
         prId,
       })),
@@ -135,10 +120,9 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         }
         case "sweep:orphan-container": {
           try {
-            await deps.containers.remove({
-              slug: deletion.slug,
-              prId: deletion.prId,
-            });
+            await deps.docker.removeByName(
+              previewContainerName(deletion.slug, deletion.prId),
+            );
             return true;
           } catch (error) {
             deps.log?.(

@@ -6,7 +6,7 @@ import {
   createFakeDockerClient,
   type FakeDockerClient,
 } from "../docker/fake.ts";
-import type { DockerClient } from "../docker/port.ts";
+import type { PreviewDocker } from "../docker/port.ts";
 import { connectState, type StateDb } from "../infrastructure/db/client.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import type { LifecycleDeps } from "../preview-db/lifecycle.ts";
@@ -24,7 +24,7 @@ export type TestApp = {
   db: StateDb;
   adminToken: string;
   previewDb: PreviewDb;
-  docker: DockerClient;
+  docker: PreviewDocker;
   cleanup: () => Promise<void>;
 };
 
@@ -60,7 +60,7 @@ export async function createTestApp(
     | {
         adminToken?: string;
         previewDb?: PreviewDb;
-        docker?: DockerClient;
+        docker?: PreviewDocker;
         appDeploy?: LifecycleDeps["appDeploy"];
       }
     | string = {},

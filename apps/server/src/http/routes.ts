@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import { authPlugin, requireAdmin, requireAuth } from "../auth/middleware.ts";
-import type { DockerClient } from "../docker/port.ts";
+import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
 import type { LifecycleDeps } from "../preview-db/lifecycle.ts";
@@ -15,7 +15,7 @@ import { deploy, deployBody, teardown, teardownBody } from "./deploy.ts";
 export type RouteDeps = {
   db: StateDb;
   previewDb: PreviewDb;
-  docker: DockerClient;
+  docker: PreviewDocker;
   appDeploy: LifecycleDeps["appDeploy"];
 };
 

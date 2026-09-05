@@ -17,10 +17,11 @@ export type ContainerCreateSpec = {
 };
 
 /**
- * Docker engine seam for app-deployment and sweep.
+ * Preview-scoped Docker seam for app-deployment and sweep.
+ * Includes catalog listing filtered to `pb-*` preview names.
  * Tests use a fake; production uses the unix-socket engine client.
  */
-export type DockerClient = {
+export type PreviewDocker = {
   pullImage(image: string): Promise<void>;
   /** First EXPOSE port from the image config, or null if none. */
   firstExposedPort(image: string): Promise<number | null>;

@@ -2,10 +2,10 @@ import { parsePreviewContainerName } from "../preview/naming.ts";
 import type {
   CatalogContainer,
   ContainerCreateSpec,
-  DockerClient,
+  PreviewDocker,
 } from "./port.ts";
 
-export type FakeDockerClient = DockerClient & {
+export type FakeDockerClient = PreviewDocker & {
   pulls: string[];
   creates: ContainerCreateSpec[];
   removed: string[];

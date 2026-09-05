@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
-import { createFakeDockerClient } from "../docker/fake.ts";
+import {
+  createFakeDockerClient,
+  type FakeDockerClient,
+} from "../docker/fake.ts";
 import { createTestDb } from "../http/test-helpers.ts";
 import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
-import type { ContainerPorts } from "../preview/containers.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
 import { runSweepPass } from "./reconcile.ts";
 
@@ -48,7 +50,7 @@ describe("createLiveSweepPorts", () => {
     });
 
     const droppedDbs: string[] = [];
-    const removedContainers: string[] = [];
+    const docker = createFakeDockerClient();
     const previewDb = stubPreviewDb({
       listPreviewDatabases: async () => [
         { dbName: "prev_widgets_pr10", slug: "widgets", prId: 10 },
@@ -57,18 +59,11 @@ describe("createLiveSweepPorts", () => {
         droppedDbs.push(dbName);
       },
     });
-    const containers: ContainerPorts = {
-      listPreviewContainers: async () => [],
-      remove: async ({ slug, prId }) => {
-        removedContainers.push(`${slug}:${prId}`);
-      },
-    };
 
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      docker: createFakeDockerClient(),
+      docker,
       previewDb,
-      containers,
       forge: {
         listOpenPrIds: async () => [],
       },
@@ -79,7 +74,7 @@ describe("createLiveSweepPorts", () => {
     const result = await runSweepPass(ports);
     expect(result.forgeRepoFailures).toEqual([]);
     expect(droppedDbs).toEqual(["prev_widgets_pr10"]);
-    expect(removedContainers).toEqual(["widgets:10"]);
+    expect(docker.removed).toEqual(["pb-widgets-pr-10"]);
 
     const rows = await testDb.db.select().from(previews);
     expect(rows).toHaveLength(1);
@@ -113,10 +108,6 @@ describe("createLiveSweepPorts", () => {
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [1] },
       ttlHours: 72,
     });
@@ -162,10 +153,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [1] },
       ttlHours: 72,
       log: (message) => {
@@ -220,10 +207,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [1] },
       ttlHours: 1,
       log: (message) => {
@@ -275,10 +258,6 @@ describe("createLiveSweepPorts", () => {
           throw new Error("postgres busy");
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [] },
       ttlHours: 72,
       log: (message) => {
@@ -296,7 +275,7 @@ describe("createLiveSweepPorts", () => {
     expect(rows[0]?.containerId).toBe("ctr-10");
   });
 
-  test("container remove failure after DROP leaves removed (orphan-container later)", async () => {
+  test("container remove failure aborts before DROP (retryable)", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
@@ -319,9 +298,14 @@ describe("createLiveSweepPorts", () => {
 
     const droppedDbs: string[] = [];
     const logs: string[] = [];
+    const docker: FakeDockerClient = createFakeDockerClient();
+    docker.removeByName = async () => {
+      throw new Error("docker boom");
+    };
+
     const ports = createLiveSweepPorts({
       db: testDb.db,
-      docker: createFakeDockerClient(),
+      docker,
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "prev_widgets_pr10", slug: "widgets", prId: 10 },
@@ -330,12 +314,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {
-          throw new Error("docker boom");
-        },
-      },
       forge: { listOpenPrIds: async () => [] },
       ttlHours: 72,
       log: (message) => {
@@ -345,14 +323,13 @@ describe("createLiveSweepPorts", () => {
 
     const result = await runSweepPass(ports);
     expect(result.forgeRepoFailures).toEqual([]);
-    expect(droppedDbs).toEqual(["prev_widgets_pr10"]);
-    expect(logs.some((m) => m.includes("sweep remove container failed"))).toBe(
-      true,
-    );
+    expect(result.deletions).toEqual([]);
+    expect(droppedDbs).toEqual([]);
+    expect(logs.some((m) => m.includes("sweep drop failed"))).toBe(true);
 
     const rows = await testDb.db.select().from(previews);
-    expect(rows[0]?.status).toBe("removed");
-    expect(rows[0]?.containerId).toBeNull();
+    expect(rows[0]?.status).toBe("error");
+    expect(rows[0]?.containerId).toBe("ctr-10");
   });
 
   test("aborts stale TTL plan after redeploy rewrote dbName", async () => {
@@ -387,10 +364,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [42] },
       ttlHours: 72,
     });
@@ -442,10 +415,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [42] },
       ttlHours: 72,
     });
@@ -496,10 +465,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: {
         listOpenPrIds: async () => {
           forgeCalls += 1;
@@ -552,10 +517,6 @@ describe("createLiveSweepPorts", () => {
           droppedDbs.push(dbName);
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [42] },
       ttlHours: 72,
     });
@@ -583,10 +544,6 @@ describe("createLiveSweepPorts", () => {
           throw new Error("postgres busy");
         },
       }),
-      containers: {
-        listPreviewContainers: async () => [],
-        remove: async () => {},
-      },
       forge: { listOpenPrIds: async () => [] },
       ttlHours: 72,
       log: () => {},

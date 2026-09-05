@@ -4,6 +4,7 @@ import {
   firstExposedPortFromInspect,
   splitImageRef,
 } from "./engine.ts";
+import { previewContainerName } from "../preview/naming.ts";
 
 describe("splitImageRef", () => {
   test("splits tag after last colon past slash", () => {
@@ -102,5 +103,69 @@ describe("createDockerEngineClient", () => {
         "base64",
       ),
     );
+  });
+
+  test("lists preview containers from Docker catalog", async () => {
+    const docker = createDockerEngineClient({
+      fetch: async (input) => {
+        expect(String(input)).toContain("/containers/json?");
+        expect(String(input)).toContain("all=true");
+        return new Response(
+          JSON.stringify([
+            { Id: "id-7", Names: ["/pb-widgets-pr-7"] },
+            { Id: "id-other", Names: ["/unrelated"] },
+            { Id: "id-8", Names: ["/pb-widgets-pr-8", "/alias"] },
+          ]),
+          { status: 200 },
+        );
+      },
+    });
+
+    expect(await docker.listPreviewContainers()).toEqual([
+      {
+        containerId: "id-7",
+        containerName: "pb-widgets-pr-7",
+        slug: "widgets",
+        prId: 7,
+      },
+      {
+        containerId: "id-8",
+        containerName: "pb-widgets-pr-8",
+        slug: "widgets",
+        prId: 8,
+      },
+    ]);
+  });
+
+  test("removeByName uses deterministic preview container name", async () => {
+    const calls: string[] = [];
+    const docker = createDockerEngineClient({
+      fetch: async (input) => {
+        calls.push(String(input));
+        return new Response(null, { status: 204 });
+      },
+    });
+
+    await docker.removeByName(previewContainerName("widgets", 7));
+    expect(calls).toEqual([
+      `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
+    ]);
+  });
+
+  test("removeByName rejects when deterministic name hard-fails", async () => {
+    const calls: string[] = [];
+    const docker = createDockerEngineClient({
+      fetch: async (input) => {
+        calls.push(String(input));
+        return new Response("engine error", { status: 500 });
+      },
+    });
+
+    await expect(
+      docker.removeByName(previewContainerName("widgets", 7)),
+    ).rejects.toThrow(/Docker remove .* failed: 500/);
+    expect(calls).toEqual([
+      `http://localhost/containers/${previewContainerName("widgets", 7)}?force=true`,
+    ]);
   });
 });

@@ -1,11 +1,8 @@
-import {
-  parsePreviewContainerName,
-  previewContainerName,
-} from "../preview/naming.ts";
+import { parsePreviewContainerName } from "../preview/naming.ts";
 import type {
   CatalogContainer,
   ContainerCreateSpec,
-  DockerClient,
+  PreviewDocker,
 } from "./port.ts";
 
 export type DockerEngineOptions = {
@@ -67,10 +64,10 @@ function firstExposedPortFromInspect(inspect: ImageInspect): number | null {
   return null;
 }
 
-/** Docker Engine API client over the unix socket. */
+/** Docker Engine API client over the unix socket (preview-scoped). */
 export function createDockerEngineClient(
   options: DockerEngineOptions = {},
-): DockerClient {
+): PreviewDocker {
   const socketPath = options.socketPath ?? "/var/run/docker.sock";
   const fetchImpl = options.fetch ?? fetch;
   const registryAuthHeader = encodeRegistryAuth(options.registryAuth);
@@ -220,18 +217,6 @@ export function createDockerEngineClient(
       }
       return out;
     },
-  };
-}
-
-/** Adapt DockerClient to the sweep ContainerPorts shape. */
-export function dockerAsContainerPorts(docker: DockerClient): {
-  listPreviewContainers: DockerClient["listPreviewContainers"];
-  remove: (opts: { slug: string; prId: number }) => Promise<void>;
-} {
-  return {
-    listPreviewContainers: () => docker.listPreviewContainers(),
-    remove: ({ slug, prId }) =>
-      docker.removeByName(previewContainerName(slug, prId)),
   };
 }
 

@@ -4,7 +4,7 @@ import {
   type AppDeployNetworks,
   type AppDeployPg,
 } from "../app-deployment/replace.ts";
-import type { DockerClient } from "../docker/port.ts";
+import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { previewContainerName } from "../preview/naming.ts";
@@ -30,7 +30,7 @@ export type PreviewStatus =
 export type TeardownDeps = {
   db: StateDb;
   previewDb: PreviewDb;
-  docker: DockerClient;
+  docker: PreviewDocker;
 };
 
 export type LifecycleDeps = TeardownDeps & {
@@ -191,31 +191,6 @@ async function markPreviewError(
     );
 }
 
-async function markReady(
-  db: StateDb,
-  repo: string,
-  prId: number,
-): Promise<PreviewRow> {
-  const now = utcIsoNow();
-  const [updated] = await db
-    .update(previews)
-    .set({
-      status: "ready",
-      // Mint generation when the DB becomes live (covers stuck-provisioning
-      // recovery that skips writeProvisioningIntent).
-      createdAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
-    )
-    .returning();
-  if (!updated) {
-    throw new Error("preview_row_missing_on_ready");
-  }
-  return updated;
-}
-
 async function writeProvisioningIntent(
   deps: LifecycleDeps,
   input: ProvisionInput,
@@ -249,32 +224,49 @@ async function writeProvisioningIntent(
   return updated;
 }
 
-/** CREATE under dbName lock, then start app container and advance to ready. */
+/**
+ * CREATE under dbName lock only, then replace app outside that lock
+ * (still under the preview lock). One control-plane write to ready.
+ */
 async function createThenReady(
   deps: LifecycleDeps,
   row: PreviewRow,
   appImage: string,
   hostname: string,
+  onDbCreateFail: "error" | "leave",
 ): Promise<Result<PreviewSnapshot>> {
-  return withDbNameLock(row.dbName, async () => {
+  const created = await withDbNameLock(row.dbName, async (): Promise<
+    Result<true>
+  > => {
     try {
       await deps.previewDb.createDatabase(row.dbName);
+      return { ok: true, value: true };
     } catch {
       return { ok: false, status: 500, error: "preview_db_create_failed" };
     }
-    const ready = await markReady(
-      deps.db,
-      row.canonicalRepoId,
-      row.prId,
-    );
-    return attachAppContainer(deps, ready, { hostname, appImage });
+  });
+  if (!created.ok) {
+    if (onDbCreateFail === "error") {
+      await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
+    }
+    return created;
+  }
+  return attachAppContainer(deps, row, {
+    hostname,
+    appImage,
+    mintGeneration: true,
   });
 }
 
 async function attachAppContainer(
   deps: LifecycleDeps,
   row: PreviewRow,
-  input: { hostname: string; appImage: string },
+  input: {
+    hostname: string;
+    appImage: string;
+    /** Mint createdAt when DB+app first become live (not on ready redeploy). */
+    mintGeneration: boolean;
+  },
 ): Promise<Result<PreviewSnapshot>> {
   try {
     const { containerId } = await replacePreviewApp(
@@ -300,6 +292,7 @@ async function attachAppContainer(
         appImage: input.appImage,
         containerId,
         status: "ready",
+        ...(input.mintGeneration ? { createdAt: now } : {}),
         updatedAt: now,
       })
       .where(
@@ -317,20 +310,6 @@ async function attachAppContainer(
     await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
     return { ok: false, status: 500, error: "preview_app_deploy_failed" };
   }
-}
-
-async function establishDatabase(
-  deps: LifecycleDeps,
-  row: PreviewRow,
-  appImage: string,
-  hostname: string,
-): Promise<Result<PreviewSnapshot>> {
-  const result = await createThenReady(deps, row, appImage, hostname);
-  // App attach marks error itself; only DB create failure needs it here.
-  if (!result.ok && result.error === "preview_db_create_failed") {
-    await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
-  }
-  return result;
 }
 
 async function provisionUnlocked(
@@ -355,11 +334,12 @@ async function provisionUnlocked(
     if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
-    return establishDatabase(
+    return createThenReady(
       deps,
       inserted,
       input.appImage,
       input.hostname,
+      "error",
     );
   }
 
@@ -374,26 +354,30 @@ async function provisionUnlocked(
         input,
         requestedDbName,
       );
-      return establishDatabase(
+      return createThenReady(
         deps,
         intent,
         input.appImage,
         input.hostname,
+        "error",
       );
     }
     case "provisioning":
       // Crash window only: CREATE not finished. Do not rewrite identity.
+      // Leave status provisioning on CREATE failure so retry stays possible.
       return createThenReady(
         deps,
         row,
         input.appImage,
         input.hostname,
+        "leave",
       );
     case "ready":
       // Replace app container; keep database and identity (slug/db_name).
       return attachAppContainer(deps, row, {
         hostname: input.hostname,
         appImage: input.appImage,
+        mintGeneration: false,
       });
     case "removing":
       return {
@@ -418,16 +402,17 @@ async function dropAndMarkRemoved(
       and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
     );
 
-  return withDbNameLock(existing.dbName, async () => {
-    try {
-      await deps.docker.removeByName(
-        previewContainerName(existing.slug, existing.prId),
-      );
-    } catch {
-      await markPreviewError(deps.db, repo, prId);
-      return { ok: false, status: 500, error: "preview_app_remove_failed" };
-    }
+  // Container remove outside dbName lock (still under preview lock).
+  try {
+    await deps.docker.removeByName(
+      previewContainerName(existing.slug, existing.prId),
+    );
+  } catch {
+    await markPreviewError(deps.db, repo, prId);
+    return { ok: false, status: 500, error: "preview_app_remove_failed" };
+  }
 
+  return withDbNameLock(existing.dbName, async () => {
     try {
       await deps.previewDb.dropDatabase(existing.dbName);
     } catch {
