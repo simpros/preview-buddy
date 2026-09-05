@@ -28,7 +28,7 @@ const previewDb = createPostgresPreviewDb({
 const containers = createDockerRemover();
 
 startServer({ config, db, previewDb, containers });
-startGatewaySweep({ config, db, previewDb });
+startGatewaySweep({ config, db, previewDb, containers });
 console.log(
   `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
 );
