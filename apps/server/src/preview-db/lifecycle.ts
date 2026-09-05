@@ -1,6 +1,7 @@
 import { and, eq, ne } from "drizzle-orm";
 import {
   preparePreviewImage,
+  removePreviewApp,
   replacePreviewApp,
   type AppDeployNetworks,
   type AppDeployPg,
@@ -8,7 +9,6 @@ import {
 import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
-import { previewContainerName } from "../preview/naming.ts";
 import { previewDbName } from "./names.ts";
 import type { PreviewDb } from "./port.ts";
 
@@ -295,12 +295,48 @@ async function attachAppContainer(
   }
 }
 
+type AttachInput = {
+  hostname: string;
+  appImage: string;
+  port: number;
+};
+
+/** Fresh / recovered identity: CREATE failure → error; else attach. */
+async function bringUpNew(
+  deps: LifecycleDeps,
+  row: PreviewRow,
+  attachInput: AttachInput,
+): Promise<Result<PreviewSnapshot>> {
+  const ensured = await ensureDatabase(deps, row);
+  if (!ensured.ok) {
+    await markPreviewError(deps.db, row.canonicalRepoId, row.prId);
+    return ensured;
+  }
+  return attachAppContainer(deps, row, attachInput);
+}
+
+/** Stuck-create resume: leave provisioning on CREATE failure; else attach. */
+async function resumeProvisioning(
+  deps: LifecycleDeps,
+  row: PreviewRow,
+  attachInput: AttachInput,
+): Promise<Result<PreviewSnapshot>> {
+  const ensured = await ensureDatabase(deps, row);
+  if (!ensured.ok) return ensured;
+  return attachAppContainer(deps, row, attachInput);
+}
+
 async function provisionUnlocked(
   deps: LifecycleDeps,
   input: ProvisionInput,
   port: number,
 ): Promise<Result<PreviewSnapshot>> {
   const requestedDbName = previewDbName(input.slug, input.prId);
+  const attachInput: AttachInput = {
+    hostname: input.hostname,
+    appImage: input.appImage,
+    port,
+  };
   let row = await getPreviewRow(deps.db, input.repo, input.prId);
 
   if (!row) {
@@ -318,16 +354,7 @@ async function provisionUnlocked(
     if (!inserted) {
       return { ok: false, status: 500, error: "preview_row_missing" };
     }
-    const ensured = await ensureDatabase(deps, inserted);
-    if (!ensured.ok) {
-      await markPreviewError(deps.db, inserted.canonicalRepoId, inserted.prId);
-      return ensured;
-    }
-    return attachAppContainer(deps, inserted, {
-      hostname: input.hostname,
-      appImage: input.appImage,
-      port,
-    });
+    return bringUpNew(deps, inserted, attachInput);
   }
 
   const status = parsePreviewStatus(row.status);
@@ -341,35 +368,14 @@ async function provisionUnlocked(
         input,
         requestedDbName,
       );
-      const ensured = await ensureDatabase(deps, intent);
-      if (!ensured.ok) {
-        await markPreviewError(deps.db, intent.canonicalRepoId, intent.prId);
-        return ensured;
-      }
-      return attachAppContainer(deps, intent, {
-        hostname: input.hostname,
-        appImage: input.appImage,
-        port,
-      });
+      return bringUpNew(deps, intent, attachInput);
     }
-    case "provisioning": {
+    case "provisioning":
       // Crash window only: CREATE not finished. Do not rewrite identity.
-      // Leave status provisioning on CREATE failure so retry stays possible.
-      const ensured = await ensureDatabase(deps, row);
-      if (!ensured.ok) return ensured;
-      return attachAppContainer(deps, row, {
-        hostname: input.hostname,
-        appImage: input.appImage,
-        port,
-      });
-    }
+      return resumeProvisioning(deps, row, attachInput);
     case "ready":
       // Replace app container; keep database and identity (slug/db_name).
-      return attachAppContainer(deps, row, {
-        hostname: input.hostname,
-        appImage: input.appImage,
-        port,
-      });
+      return attachAppContainer(deps, row, attachInput);
     case "removing":
       return {
         ok: false,
@@ -396,9 +402,7 @@ async function dropAndMarkRemoved(
   // Best-effort container remove outside dbName lock (still under preview lock).
   // Leftover pb-* containers are reclaimed by orphan-container sweep.
   try {
-    await deps.docker.removeByName(
-      previewContainerName(existing.slug, existing.prId),
-    );
+    await removePreviewApp(deps.docker, existing.slug, existing.prId);
   } catch {
     console.warn(
       `preview container remove failed for ${existing.slug} pr=${prId}; continuing with DROP`,
@@ -476,17 +480,9 @@ export async function provisionPreview(
       deps.appDeploy.previewPortDefault,
     );
   } catch {
-    return withPreviewLock(input.repo, input.prId, async () => {
-      const row = await getPreviewRow(deps.db, input.repo, input.prId);
-      if (
-        row &&
-        row.status !== "removed" &&
-        row.status !== "removing"
-      ) {
-        await markPreviewError(deps.db, input.repo, input.prId);
-      }
-      return { ok: false, status: 500, error: "preview_app_deploy_failed" };
-    });
+    // Preflight only — do not poison a live ready/provisioning row.
+    // Attach under the lock marks error when replace actually fails.
+    return { ok: false, status: 500, error: "preview_app_deploy_failed" };
   }
 
   return withPreviewLock(input.repo, input.prId, () =>

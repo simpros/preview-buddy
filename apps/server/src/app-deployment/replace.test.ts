@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { createFakeDockerClient } from "../docker/fake.ts";
-import { preparePreviewImage, replacePreviewApp } from "./replace.ts";
+import {
+  preparePreviewImage,
+  removePreviewApp,
+  replacePreviewApp,
+} from "./replace.ts";
 
 const baseDeps = {
   pg: {
@@ -37,6 +41,14 @@ describe("preparePreviewImage", () => {
       8080,
     );
     expect(port).toBe(8080);
+  });
+});
+
+describe("removePreviewApp", () => {
+  test("removes the stable preview container name", async () => {
+    const docker = createFakeDockerClient();
+    await removePreviewApp(docker, "myapp", 42);
+    expect(docker.removed).toEqual(["pb-myapp-pr-42"]);
   });
 });
 

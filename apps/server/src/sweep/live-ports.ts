@@ -1,4 +1,5 @@
 import type { ForgeClient } from "../forge/client.ts";
+import { removePreviewApp } from "../app-deployment/replace.ts";
 import type { PreviewDocker } from "../docker/port.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
@@ -9,7 +10,6 @@ import {
   type TeardownDeps,
 } from "../preview-db/lifecycle.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
-import { previewContainerName } from "../preview/naming.ts";
 import type {
   SweepDeletion,
   SweepPorts,
@@ -120,8 +120,10 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         }
         case "sweep:orphan-container": {
           try {
-            await deps.docker.removeByName(
-              previewContainerName(deletion.slug, deletion.prId),
+            await removePreviewApp(
+              deps.docker,
+              deletion.slug,
+              deletion.prId,
             );
             return true;
           } catch (error) {

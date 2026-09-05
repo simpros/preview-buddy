@@ -44,6 +44,15 @@ export async function preparePreviewImage(
   return exposed ?? previewPortDefault;
 }
 
+/** Force-remove the preview app container for one PR (idempotent via Engine). */
+export async function removePreviewApp(
+  docker: PreviewDocker,
+  slug: string,
+  prId: number,
+): Promise<void> {
+  await docker.removeByName(previewContainerName(slug, prId));
+}
+
 /**
  * Replace (or first-start) the preview app container for one PR.
  * Force-removes any prior container with the stable name, then creates+starts
@@ -55,7 +64,7 @@ export async function replacePreviewApp(
   input: ReplacePreviewAppInput,
 ): Promise<{ containerId: string; port: number }> {
   const name = previewContainerName(input.slug, input.prId);
-  await deps.docker.removeByName(name);
+  await removePreviewApp(deps.docker, input.slug, input.prId);
   const { id } = await deps.docker.createAndStart({
     name,
     image: input.image,

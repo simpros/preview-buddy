@@ -64,6 +64,36 @@ function firstExposedPortFromInspect(inspect: ImageInspect): number | null {
   return null;
 }
 
+/**
+ * Engine `/images/create` often returns HTTP 200 and encodes failure as
+ * `{"error":...}` / `errorDetail` lines in the NDJSON progress body.
+ */
+function assertPullStreamOk(body: string, image: string): void {
+  for (const line of body.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (!obj || typeof obj !== "object") continue;
+    const row = obj as {
+      error?: unknown;
+      errorDetail?: { message?: unknown };
+    };
+    const message =
+      (typeof row.error === "string" && row.error) ||
+      (typeof row.errorDetail?.message === "string" &&
+        row.errorDetail.message) ||
+      null;
+    if (message) {
+      throw new Error(`Docker pull ${image} failed: ${message}`);
+    }
+  }
+}
+
 /** Docker Engine API client over the unix socket (preview-scoped). */
 export function createDockerEngineClient(
   options: DockerEngineOptions = {},
@@ -106,10 +136,11 @@ export function createDockerEngineClient(
         headers,
       });
       // Drain the progress stream body so the pull completes.
-      await res.text();
+      const body = await res.text();
       if (!res.ok) {
         throw new Error(`Docker pull ${image} failed: ${res.status}`);
       }
+      assertPullStreamOk(body, image);
     },
 
     async firstExposedPort(image) {
@@ -211,4 +242,4 @@ export function createDockerEngineClient(
   };
 }
 
-export { firstExposedPortFromInspect, splitImageRef };
+export { assertPullStreamOk, firstExposedPortFromInspect, splitImageRef };

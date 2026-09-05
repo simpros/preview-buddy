@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  assertPullStreamOk,
   createDockerEngineClient,
   firstExposedPortFromInspect,
   splitImageRef,
@@ -33,6 +34,35 @@ describe("firstExposedPortFromInspect", () => {
 
   test("returns null when no EXPOSE", () => {
     expect(firstExposedPortFromInspect({ Config: {} })).toBeNull();
+  });
+});
+
+describe("assertPullStreamOk", () => {
+  test("accepts progress lines without error", () => {
+    expect(() =>
+      assertPullStreamOk(
+        '{"status":"Pulling from org/app"}\n{"status":"Digest: sha256:abc"}\n',
+        "img:tag",
+      ),
+    ).not.toThrow();
+  });
+
+  test("throws on error field in NDJSON body", () => {
+    expect(() =>
+      assertPullStreamOk(
+        '{"status":"Pulling"}\n{"error":"pull access denied","errorDetail":{"message":"denied"}}\n',
+        "private:tag",
+      ),
+    ).toThrow(/Docker pull private:tag failed: pull access denied/);
+  });
+
+  test("throws on errorDetail.message when error string missing", () => {
+    expect(() =>
+      assertPullStreamOk(
+        '{"errorDetail":{"message":"manifest unknown"}}\n',
+        "missing:tag",
+      ),
+    ).toThrow(/Docker pull missing:tag failed: manifest unknown/);
   });
 });
 
@@ -135,6 +165,19 @@ describe("createDockerEngineClient", () => {
       Buffer.from(JSON.stringify({ username: "u", password: "p" })).toString(
         "base64",
       ),
+    );
+  });
+
+  test("pullImage throws when progress stream encodes an error", async () => {
+    const docker = createDockerEngineClient({
+      fetch: async () =>
+        new Response(
+          '{"status":"Pulling"}\n{"error":"pull access denied"}\n',
+          { status: 200 },
+        ),
+    });
+    await expect(docker.pullImage("ghcr.io/org/private:tag")).rejects.toThrow(
+      /Docker pull ghcr.io\/org\/private:tag failed: pull access denied/,
     );
   });
 

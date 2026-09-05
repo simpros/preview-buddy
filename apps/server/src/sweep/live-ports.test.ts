@@ -275,7 +275,7 @@ describe("createLiveSweepPorts", () => {
     expect(rows[0]?.containerId).toBe("ctr-10");
   });
 
-  test("container remove failure aborts before DROP (retryable)", async () => {
+  test("container remove failure is best-effort; DROP still proceeds", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
@@ -297,7 +297,6 @@ describe("createLiveSweepPorts", () => {
     });
 
     const droppedDbs: string[] = [];
-    const logs: string[] = [];
     const docker: FakeDockerClient = createFakeDockerClient();
     docker.removeByName = async () => {
       throw new Error("docker boom");
@@ -316,20 +315,26 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [] },
       ttlHours: 72,
-      log: (message) => {
-        logs.push(message);
-      },
+      log: () => {},
     });
 
     const result = await runSweepPass(ports);
     expect(result.forgeRepoFailures).toEqual([]);
-    expect(result.deletions).toEqual([]);
-    expect(droppedDbs).toEqual([]);
-    expect(logs.some((m) => m.includes("sweep drop failed"))).toBe(true);
+    expect(result.deletions).toEqual([
+      {
+        reason: "sweep:pr-not-open",
+        canonicalRepoId: "https://github.com/acme/widgets",
+        prId: 10,
+        slug: "widgets",
+        dbName: "prev_widgets_pr10",
+        createdAt: "2026-09-02T12:00:00.000Z",
+      },
+    ]);
+    expect(droppedDbs).toEqual(["prev_widgets_pr10"]);
 
     const rows = await testDb.db.select().from(previews);
-    expect(rows[0]?.status).toBe("error");
-    expect(rows[0]?.containerId).toBe("ctr-10");
+    expect(rows[0]?.status).toBe("removed");
+    expect(rows[0]?.containerId).toBeNull();
   });
 
   test("aborts stale TTL plan after redeploy rewrote dbName", async () => {
