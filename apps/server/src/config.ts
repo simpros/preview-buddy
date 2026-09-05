@@ -1,8 +1,11 @@
+import { FORGE_KINDS, type ForgeKind } from "./forge/client.ts";
+
 export const REQUIRED_ENV = [
   "PB_PREVIEW_POSTGRES_URL",
   "PB_TRAEFIK_NETWORK",
   "PB_POSTGRES_NETWORK",
   "PB_REGISTRY_URL",
+  "PB_FORGE",
 ] as const;
 
 export const OPTIONAL_ENV_DEFAULTS = {
@@ -22,6 +25,10 @@ export type Config = {
   registryUser: string;
   /** Empty string = anonymous registry pull. */
   registryPassword: string;
+  /** Sweep-only forge API token (not used for cloning). Empty until a sweep forge call. */
+  forge: ForgeKind;
+  /** Empty string allowed at boot; forge API calls fail if still unset. */
+  forgeToken: string;
   adminToken?: string;
   ttlHours: number;
   sweepMinutes: number;
@@ -68,6 +75,12 @@ export function loadConfig(): Config {
   }
 
   const adminTokenRaw = process.env.PB_ADMIN_TOKEN?.trim();
+  const forgeRaw = requiredEnv("PB_FORGE").toLowerCase();
+  if (!FORGE_KINDS.includes(forgeRaw as ForgeKind)) {
+    throw new Error(
+      `Invalid PB_FORGE: must be one of ${FORGE_KINDS.join(", ")}`,
+    );
+  }
 
   return {
     previewPostgresUrl: requiredEnv("PB_PREVIEW_POSTGRES_URL"),
@@ -76,6 +89,8 @@ export function loadConfig(): Config {
     registryUrl: requiredEnv("PB_REGISTRY_URL"),
     registryUser: optionalEnv("PB_REGISTRY_USER"),
     registryPassword: optionalEnv("PB_REGISTRY_PASSWORD"),
+    forge: forgeRaw as ForgeKind,
+    forgeToken: optionalEnv("PB_FORGE_TOKEN"),
     adminToken: adminTokenRaw === "" ? undefined : adminTokenRaw,
     ttlHours: parsePositiveInt(
       "PB_TTL_HOURS",
@@ -113,6 +128,8 @@ export function configSummary(config: Config): Record<string, string | number> {
     registryUrl: config.registryUrl,
     registryUser: config.registryUser === "" ? "[anonymous]" : config.registryUser,
     registryPassword: config.registryPassword === "" ? "[anonymous]" : "[set]",
+    forge: config.forge,
+    forgeToken: config.forgeToken === "" ? "[unset]" : "[set]",
     ttlHours: config.ttlHours,
     sweepMinutes: config.sweepMinutes,
     previewPortDefault: config.previewPortDefault,

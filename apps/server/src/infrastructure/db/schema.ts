@@ -1,6 +1,9 @@
 import { sql } from "drizzle-orm";
 import { integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+/** SQLite DEFAULT that emits unambiguous UTC ISO-8601 with Z (Date.parse-safe). */
+const utcIsoNow = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
+
 export const previews = sqliteTable(
   "previews",
   {
@@ -14,10 +17,10 @@ export const previews = sqliteTable(
     status: text("status").notNull(),
     createdAt: text("created_at")
       .notNull()
-      .default(sql`(datetime('now'))`),
+      .default(utcIsoNow),
     updatedAt: text("updated_at")
       .notNull()
-      .default(sql`(datetime('now'))`),
+      .default(utcIsoNow),
     seededAt: text("seeded_at"),
   },
   (table) => [
@@ -30,7 +33,7 @@ export const repos = sqliteTable("repos", {
   slug: text("slug").notNull(),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(utcIsoNow),
 });
 
 export const apiTokens = sqliteTable("api_tokens", {
@@ -39,6 +42,6 @@ export const apiTokens = sqliteTable("api_tokens", {
   canonicalRepoId: text("canonical_repo_id"),
   createdAt: text("created_at")
     .notNull()
-    .default(sql`(datetime('now'))`),
+    .default(utcIsoNow),
   revokedAt: text("revoked_at"),
 });
