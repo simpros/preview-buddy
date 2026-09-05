@@ -5,6 +5,10 @@ import { ensureAdminToken } from "../auth/store.ts";
 import { connectState, type StateDb } from "../infrastructure/db/client.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import type { PreviewDb } from "../preview-db/port.ts";
+import {
+  createFakeContainers,
+  type FakeContainers,
+} from "../preview/fake.ts";
 import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
 
@@ -18,6 +22,7 @@ export type TestApp = {
   db: StateDb;
   adminToken: string;
   previewDb: PreviewDb;
+  containers: FakeContainers;
   cleanup: () => Promise<void>;
 };
 
@@ -35,19 +40,27 @@ export async function createTestDb(): Promise<TestDb> {
 }
 
 export async function createTestApp(
-  options: { adminToken?: string; previewDb?: PreviewDb } | string = {},
+  options:
+    | {
+        adminToken?: string;
+        previewDb?: PreviewDb;
+        containers?: FakeContainers;
+      }
+    | string = {},
 ): Promise<TestApp> {
   const opts =
     typeof options === "string" ? { adminToken: options } : options;
   const adminToken = opts.adminToken ?? "test-admin-token";
   const previewDb = opts.previewDb ?? createFakePreviewDb();
+  const containers = opts.containers ?? createFakeContainers();
   const { db, cleanup } = await createTestDb();
   await ensureAdminToken(db, adminToken);
   return {
-    app: createRoutes({ db, previewDb }),
+    app: createRoutes({ db, previewDb, containers }),
     db,
     adminToken,
     previewDb,
+    containers,
     cleanup,
   };
 }
