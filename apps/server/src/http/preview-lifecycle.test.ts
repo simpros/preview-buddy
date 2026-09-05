@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
+import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import {
   createFakePreviewDb,
@@ -140,6 +141,8 @@ describe("POST /v1/deploy", () => {
       status: "provisioning",
       containerId: null,
     });
+    expect(row!.updatedAt).toMatch(/Z$/);
+    expect(parseUnambiguousUtcMs(row!.updatedAt)).not.toBeNull();
   });
 
   test("deploy token cannot deploy for a different canonical repo", async () => {
@@ -267,6 +270,50 @@ describe("POST /v1/deploy", () => {
       true,
     );
   });
+
+  test("deploy while removing returns 409", async () => {
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "myapp",
+      dbName: "prev_myapp_pr42",
+      hostname: "pr-42.myapp.preview.example.com",
+      status: "removing",
+    });
+    const res = await postDeploy(deployToken, deployBody());
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: "preview_teardown_in_progress" });
+    expect(fakePreviewDb!.created).toEqual([]);
+  });
+
+  test("concurrent reprovision from error keeps a single db name", async () => {
+    const { deployToken } = await setup();
+    await testApp!.db.insert(previews).values({
+      canonicalRepoId: REPO,
+      prId: 42,
+      slug: "old",
+      dbName: "prev_old_pr42",
+      hostname: "old.example.com",
+      status: "error",
+    });
+    const [a, b] = await Promise.all([
+      postDeploy(deployToken, deployBody({ slug: "alpha" })),
+      postDeploy(deployToken, deployBody({ slug: "beta" })),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    const names = new Set(fakePreviewDb!.created);
+    expect(names.size).toBe(1);
+    const [row] = await testApp!.db
+      .select()
+      .from(previews)
+      .where(
+        and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
+      )
+      .limit(1);
+    expect(names.has(row!.dbName)).toBe(true);
+  });
 });
 
 describe("POST /v1/teardown", () => {
@@ -286,6 +333,8 @@ describe("POST /v1/teardown", () => {
       )
       .limit(1);
     expect(row?.status).toBe("removed");
+    expect(row!.updatedAt).toMatch(/Z$/);
+    expect(parseUnambiguousUtcMs(row!.updatedAt)).not.toBeNull();
   });
 
   test("accepts body with only repo and pr_id", async () => {
