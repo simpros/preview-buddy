@@ -21,10 +21,12 @@ jobs:
 
       - name: Install pbuddy
         run: |
-          # Pin to a tag/SHA when releases exist; unpinned HEAD is a temporary seam.
-          git clone --depth 1 https://github.com/simpros/preview-buddy.git "$RUNNER_TEMP/preview-buddy"
+          # Pin to the published git tag (matches package version / image tag).
+          git clone --depth 1 --branch v0.1.0 \
+            https://github.com/simpros/preview-buddy.git "$RUNNER_TEMP/preview-buddy"
           cd "$RUNNER_TEMP/preview-buddy" && bun install
           # Run the CLI from the workspace so @preview-buddy/api-client resolves.
+          # Equivalent local path after clone: `bun run pbuddy`.
           mkdir -p "$RUNNER_TEMP/bin"
           printf '%s\n' '#!/usr/bin/env bash' \
             "exec bun \"$RUNNER_TEMP/preview-buddy/apps/cli/src/index.ts\" \"\$@\"" \
