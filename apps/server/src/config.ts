@@ -17,6 +17,13 @@ export const OPTIONAL_ENV_DEFAULTS = {
   PB_PORT: 7331,
 } as const;
 
+/** Optional string keys `loadConfig` reads (blank → ""). */
+export const OPTIONAL_STRING_ENV = [
+  "PB_REGISTRY_USER",
+  "PB_REGISTRY_PASSWORD",
+  "PB_FORGE_TOKEN",
+] as const;
+
 export type Config = {
   previewPostgresUrl: string;
   previewPgUser: string;
@@ -61,7 +68,9 @@ function requiredEnv(key: (typeof REQUIRED_ENV)[number]): string {
 }
 
 /** Trimmed env value; missing or blank → "". */
-function optionalEnv(key: string): string {
+function optionalStringEnv(
+  key: (typeof OPTIONAL_STRING_ENV)[number],
+): string {
   return process.env[key]?.trim() ?? "";
 }
 
@@ -76,6 +85,7 @@ export function loadConfig(): Config {
     );
   }
 
+  // Empty → undefined (unlike OPTIONAL_STRING_ENV blank → "").
   const adminTokenRaw = process.env.PB_ADMIN_TOKEN?.trim();
   const forgeRaw = requiredEnv("PB_FORGE").toLowerCase();
   if (!FORGE_KINDS.includes(forgeRaw as ForgeKind)) {
@@ -90,10 +100,10 @@ export function loadConfig(): Config {
     traefikNetwork: requiredEnv("PB_TRAEFIK_NETWORK"),
     postgresNetwork: requiredEnv("PB_POSTGRES_NETWORK"),
     registryUrl: requiredEnv("PB_REGISTRY_URL"),
-    registryUser: optionalEnv("PB_REGISTRY_USER"),
-    registryPassword: optionalEnv("PB_REGISTRY_PASSWORD"),
+    registryUser: optionalStringEnv("PB_REGISTRY_USER"),
+    registryPassword: optionalStringEnv("PB_REGISTRY_PASSWORD"),
     forge: forgeRaw as ForgeKind,
-    forgeToken: optionalEnv("PB_FORGE_TOKEN"),
+    forgeToken: optionalStringEnv("PB_FORGE_TOKEN"),
     adminToken: adminTokenRaw === "" ? undefined : adminTokenRaw,
     ttlHours: parsePositiveInt(
       "PB_TTL_HOURS",

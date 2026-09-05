@@ -123,8 +123,8 @@ The **canonical** workflow is
 [`examples/adopting-repo/.github/workflows/preview-buddy.yml`](../examples/adopting-repo/.github/workflows/preview-buddy.yml)
 — copy it rather than pasting fragments from this guide. It covers:
 
-1. Install `pbuddy` from a workspace clone (keeps `@preview-buddy/api-client`
-   resolution; pin a tag/SHA when releases exist).
+1. Install `pbuddy` from a workspace clone pinned to tag `v0.1.0` (keeps
+   `@preview-buddy/api-client` resolution; same as `bun run pbuddy` in-repo).
 2. Build and push app + seed images tagged with `${{ github.sha }}`.
 3. `pbuddy deploy -i … -s …`, capture `preview_url=` from `deploy.log`, comment
    on the PR.
