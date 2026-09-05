@@ -4,7 +4,6 @@ import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import {
   dropOrphanDatabase,
-  purgePreview,
   removePreview,
   type LifecycleDeps,
 } from "../preview-db/lifecycle.ts";
@@ -16,90 +15,20 @@ import type {
   SweepPreview,
 } from "./reconcile.ts";
 
-export type PreviewResourceDeps = {
+export type LiveSweepDeps = {
   db: StateDb;
   previewDb: PreviewDb;
   containers: ContainerPorts;
+  forge: ForgeClient;
+  ttlHours: number;
   log?: SweepPorts["log"];
 };
 
-export type LiveSweepDeps = PreviewResourceDeps & {
-  forge: ForgeClient;
-  ttlHours: number;
-};
-
-function lifecycleDeps(deps: PreviewResourceDeps): LifecycleDeps {
+function lifecycleDeps(deps: LiveSweepDeps): LifecycleDeps {
   return { db: deps.db, previewDb: deps.previewDb };
 }
 
-/**
- * Shared destroy path: lifecycle remove (tombstone or purge) under lock,
- * then best-effort Docker remove after unlock (same as sweep).
- */
-export async function destroyPreviewResources(
-  deps: PreviewResourceDeps,
-  target:
-    | {
-        disposition: "tombstone";
-        repo: string;
-        prId: number;
-        slug: string;
-        expectedDbName: string;
-        expectedCreatedAt: string;
-        /** Optional sweep deletion for log context. */
-        deletion?: SweepDeletion;
-      }
-    | {
-        disposition: "purge";
-        repo: string;
-        prId: number;
-      },
-): Promise<
-  { ok: true; removed: boolean } | { ok: false; status: number; error: string }
-> {
-  // Control-plane mutation stays under lifecycle locks; Docker is best-effort
-  // after unlock so a hung container API cannot stall the preview/dbName queues.
-  let slug: string;
-  let prId: number;
-  let logDeletion: SweepDeletion | undefined;
-
-  if (target.disposition === "tombstone") {
-    logDeletion = target.deletion;
-    const result = await removePreview(lifecycleDeps(deps), {
-      repo: target.repo,
-      prId: target.prId,
-      expectedDbName: target.expectedDbName,
-      expectedCreatedAt: target.expectedCreatedAt,
-    });
-    if (!result.ok) return result;
-    if (!result.value) return { ok: true, removed: false };
-    slug = target.slug;
-    prId = target.prId;
-  } else {
-    const result = await purgePreview(lifecycleDeps(deps), {
-      repo: target.repo,
-      prId: target.prId,
-    });
-    if (!result.ok) return result;
-    if (result.value.slug === undefined || result.value.prId === undefined) {
-      return { ok: true, removed: false };
-    }
-    slug = result.value.slug;
-    prId = result.value.prId;
-  }
-
-  try {
-    await deps.containers.remove({ slug, prId });
-  } catch (error) {
-    // Leave for doctor / next orphan-container pass; DB is already gone.
-    deps.log?.(
-      `sweep remove container failed: ${String(error)}`,
-      logDeletion,
-    );
-  }
-  return { ok: true, removed: true };
-}
-
+/** Soft-remove under lock, then best-effort Docker remove after unlock. */
 async function removeControlPlane(
   deps: LiveSweepDeps,
   deletion: Extract<
@@ -107,20 +36,33 @@ async function removeControlPlane(
     { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
   >,
 ): Promise<boolean> {
-  const result = await destroyPreviewResources(deps, {
-    disposition: "tombstone",
+  // Control-plane mutation stays under lifecycle locks; Docker is best-effort
+  // after unlock so a hung container API cannot stall the preview/dbName queues.
+  const result = await removePreview(lifecycleDeps(deps), {
     repo: deletion.canonicalRepoId,
     prId: deletion.prId,
-    slug: deletion.slug,
     expectedDbName: deletion.dbName,
     expectedCreatedAt: deletion.createdAt,
-    deletion,
   });
   if (!result.ok) {
     deps.log?.(`sweep drop database failed: ${result.error}`, deletion);
     throw new Error(`teardown incomplete: ${deletion.dbName}`);
   }
-  return result.removed;
+  if (!result.value) return false;
+
+  try {
+    await deps.containers.remove({
+      slug: deletion.slug,
+      prId: deletion.prId,
+    });
+  } catch (error) {
+    // Leave for doctor / next orphan-container pass; DB is already gone.
+    deps.log?.(
+      `sweep remove container failed: ${String(error)}`,
+      deletion,
+    );
+  }
+  return true;
 }
 
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
