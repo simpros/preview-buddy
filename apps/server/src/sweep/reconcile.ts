@@ -16,6 +16,8 @@ export type SweepPreview = {
   prId: number;
   slug: string;
   dbName: string;
+  /** Raw createdAt string — generation token for under-lock revalidation. */
+  createdAt: string;
   /** null = unparsable createdAt; skip TTL, still protect orphans / forge. */
   createdAtMs: number | null;
   status: string;
@@ -28,6 +30,8 @@ export type SweepDeletion =
       prId: number;
       slug: string;
       dbName: string;
+      /** Generation at plan time — drop aborts if provision refreshed it. */
+      createdAt: string;
     }
   | { reason: "sweep:orphan-db"; slug: string; prId: number; dbName: string }
   | {
@@ -151,6 +155,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
         prId: preview.prId,
         slug: preview.slug,
         dbName: preview.dbName,
+        createdAt: preview.createdAt,
       });
     } else {
       remainingPreviews.push(preview);
@@ -198,6 +203,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
       prId: preview.prId,
       slug: preview.slug,
       dbName: preview.dbName,
+      createdAt: preview.createdAt,
     });
   }
 
