@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { previewDbName } from "./names.ts";
@@ -53,6 +53,31 @@ type Result<T> =
 
 type PreviewRow = typeof previews.$inferSelect;
 
+/**
+ * Serialize provision/teardown per (repo, prId). ADR 0001: one gateway
+ * process — in-process queue replaces distributed CAS+compensation.
+ * ponytail: global Map; upgrade to shared lock if multi-process ever lands.
+ */
+const previewLocks = new Map<string, Promise<void>>();
+
+function withPreviewLock<T>(
+  repo: string,
+  prId: number,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const key = `${repo}\0${prId}`;
+  const prev = previewLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  previewLocks.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return run;
+}
+
 function parsePreviewStatus(status: string): Result<PreviewStatus> {
   switch (status) {
     case "provisioning":
@@ -95,34 +120,24 @@ function toSnapshot(
   };
 }
 
-/** Mark error only from the status we expect; ignore lost races. */
 async function markPreviewError(
   db: StateDb,
   repo: string,
   prId: number,
-  from: PreviewStatus[],
 ): Promise<void> {
   await db
     .update(previews)
     .set({ status: "error", updatedAt: utcIsoNow() })
     .where(
-      and(
-        eq(previews.canonicalRepoId, repo),
-        eq(previews.prId, prId),
-        inArray(previews.status, from),
-      ),
+      and(eq(previews.canonicalRepoId, repo), eq(previews.prId, prId)),
     );
 }
 
-/**
- * CAS rewrite of identity from removed|error → provisioning.
- * Returns the new row, or null if another writer won the race.
- */
-async function casWriteProvisioningIntent(
+async function writeProvisioningIntent(
   deps: LifecycleDeps,
   input: ProvisionInput,
   dbName: string,
-): Promise<PreviewRow | null> {
+): Promise<PreviewRow> {
   const [updated] = await deps.db
     .update(previews)
     .set({
@@ -139,43 +154,25 @@ async function casWriteProvisioningIntent(
       and(
         eq(previews.canonicalRepoId, input.repo),
         eq(previews.prId, input.prId),
-        inArray(previews.status, ["removed", "error"]),
       ),
     )
     .returning();
-  return updated ?? null;
+  if (!updated) {
+    throw new Error("preview_row_missing_on_intent_write");
+  }
+  return updated;
 }
 
-/**
- * CREATE only while status is still provisioning; re-read for the response.
- * If teardown won mid-flight, best-effort DROP our CREATE and 409.
- */
-async function createDbForRow(
+async function createAndSnapshot(
   deps: LifecycleDeps,
   repo: string,
   prId: number,
+  dbName: string,
 ): Promise<Result<PreviewSnapshot>> {
-  const before = await getPreviewRow(deps.db, repo, prId);
-  if (!before) {
-    return { ok: false, status: 500, error: "preview_row_missing" };
-  }
-  const beforeStatus = parsePreviewStatus(before.status);
-  if (!beforeStatus.ok) return beforeStatus;
-  if (beforeStatus.value !== "provisioning") {
-    if (beforeStatus.value === "removing") {
-      return {
-        ok: false,
-        status: 409,
-        error: "preview_teardown_in_progress",
-      };
-    }
-    return { ok: false, status: 409, error: "preview_conflict" };
-  }
-
   try {
-    await deps.previewDb.createDatabase(before.dbName);
+    await deps.previewDb.createDatabase(dbName);
   } catch {
-    await markPreviewError(deps.db, repo, prId, ["provisioning"]);
+    await markPreviewError(deps.db, repo, prId);
     return { ok: false, status: 500, error: "preview_db_create_failed" };
   }
 
@@ -185,61 +182,64 @@ async function createDbForRow(
   }
   const afterStatus = parsePreviewStatus(after.status);
   if (!afterStatus.ok) return afterStatus;
-
-  if (afterStatus.value !== "provisioning") {
-    // Teardown (or other writer) won after our CREATE — undo catalog orphan.
-    try {
-      await deps.previewDb.dropDatabase(before.dbName);
-    } catch {
-      // best-effort; control plane already diverged
-    }
-    if (afterStatus.value === "removing" || afterStatus.value === "removed") {
-      return {
-        ok: false,
-        status: 409,
-        error: "preview_teardown_in_progress",
-      };
-    }
-    return { ok: false, status: 409, error: "preview_conflict" };
-  }
-
   return { ok: true, value: toSnapshot(after, afterStatus.value) };
 }
 
-async function continueProvision(
+async function provisionUnlocked(
   deps: LifecycleDeps,
   input: ProvisionInput,
-  requestedDbName: string,
-  status: PreviewStatus,
 ): Promise<Result<PreviewSnapshot>> {
-  switch (status) {
+  const requestedDbName = previewDbName(input.slug, input.prId);
+  let row = await getPreviewRow(deps.db, input.repo, input.prId);
+
+  if (!row) {
+    // Belt-and-suspenders for retries/crashes; lock already serializes peers.
+    await deps.db
+      .insert(previews)
+      .values({
+        canonicalRepoId: input.repo,
+        prId: input.prId,
+        slug: input.slug,
+        dbName: requestedDbName,
+        hostname: input.hostname,
+        status: "provisioning",
+      })
+      .onConflictDoNothing({
+        target: [previews.canonicalRepoId, previews.prId],
+      });
+
+    row = await getPreviewRow(deps.db, input.repo, input.prId);
+    if (!row) {
+      return { ok: false, status: 500, error: "preview_row_missing" };
+    }
+  }
+
+  const status = parsePreviewStatus(row.status);
+  if (!status.ok) return status;
+
+  switch (status.value) {
     case "removed":
     case "error": {
-      const cas = await casWriteProvisioningIntent(
+      const intent = await writeProvisioningIntent(
         deps,
         input,
         requestedDbName,
       );
-      if (!cas) {
-        // Lost CAS — re-read and dispatch on the winner's state.
-        const again = await getPreviewRow(deps.db, input.repo, input.prId);
-        if (!again) {
-          return { ok: false, status: 500, error: "preview_row_missing" };
-        }
-        const againStatus = parsePreviewStatus(again.status);
-        if (!againStatus.ok) return againStatus;
-        return continueProvision(
-          deps,
-          input,
-          requestedDbName,
-          againStatus.value,
-        );
-      }
-      return createDbForRow(deps, input.repo, input.prId);
+      return createAndSnapshot(
+        deps,
+        input.repo,
+        input.prId,
+        intent.dbName,
+      );
     }
     case "provisioning":
       // Option B: always retry CREATE with existing identity.
-      return createDbForRow(deps, input.repo, input.prId);
+      return createAndSnapshot(
+        deps,
+        input.repo,
+        input.prId,
+        row.dbName,
+      );
     case "removing":
       return {
         ok: false,
@@ -249,51 +249,7 @@ async function continueProvision(
   }
 }
 
-/**
- * Ensure a preview DB exists for (repo, prId).
- * - removed/error: CAS rewrite identity, then CREATE
- * - provisioning: retry CREATE with existing identity (stuck-create recovery)
- * - removing: 409 (teardown owns the row)
- */
-export async function provisionPreview(
-  deps: LifecycleDeps,
-  input: ProvisionInput,
-): Promise<Result<PreviewSnapshot>> {
-  const requestedDbName = previewDbName(input.slug, input.prId);
-  let row = await getPreviewRow(deps.db, input.repo, input.prId);
-
-  if (row) {
-    const status = parsePreviewStatus(row.status);
-    if (!status.ok) return status;
-    return continueProvision(deps, input, requestedDbName, status.value);
-  }
-
-  // First insert — ignore conflict so parallel deploys never 500.
-  await deps.db
-    .insert(previews)
-    .values({
-      canonicalRepoId: input.repo,
-      prId: input.prId,
-      slug: input.slug,
-      dbName: requestedDbName,
-      hostname: input.hostname,
-      status: "provisioning",
-    })
-    .onConflictDoNothing({
-      target: [previews.canonicalRepoId, previews.prId],
-    });
-
-  row = await getPreviewRow(deps.db, input.repo, input.prId);
-  if (!row) {
-    return { ok: false, status: 500, error: "preview_row_missing" };
-  }
-
-  const status = parsePreviewStatus(row.status);
-  if (!status.ok) return status;
-  return continueProvision(deps, input, requestedDbName, status.value);
-}
-
-export async function teardownPreview(
+async function teardownUnlocked(
   deps: LifecycleDeps,
   input: TeardownInput,
 ): Promise<Result<TeardownSnapshot>> {
@@ -306,56 +262,65 @@ export async function teardownPreview(
   const status = parsePreviewStatus(existing.status);
   if (!status.ok) return status;
 
-  if (status.value === "removed") {
-    return { ok: true, value: { ok: true, status: "removed" } };
+  switch (status.value) {
+    case "removed":
+      return { ok: true, value: { ok: true, status: "removed" } };
+    case "provisioning":
+    case "error":
+    case "removing":
+      break;
   }
 
-  // CAS mark removing before DDL so stuck teardowns are detectable / retryable.
-  const [marked] = await deps.db
+  await deps.db
     .update(previews)
     .set({ status: "removing", updatedAt: utcIsoNow() })
     .where(
       and(
         eq(previews.canonicalRepoId, input.repo),
         eq(previews.prId, input.prId),
-        inArray(previews.status, ["provisioning", "error", "removing"]),
       ),
-    )
-    .returning();
-
-  if (!marked) {
-    // CAS set is every non-removed status; failure means already removed.
-    return { ok: true, value: { ok: true, status: "removed" } };
-  }
-
-  const dbName = marked.dbName;
+    );
 
   try {
-    await deps.previewDb.dropDatabase(dbName);
+    await deps.previewDb.dropDatabase(existing.dbName);
   } catch {
-    await markPreviewError(deps.db, input.repo, input.prId, ["removing"]);
+    await markPreviewError(deps.db, input.repo, input.prId);
     return { ok: false, status: 500, error: "preview_db_drop_failed" };
   }
 
-  const [removed] = await deps.db
+  await deps.db
     .update(previews)
     .set({ status: "removed", updatedAt: utcIsoNow() })
     .where(
       and(
         eq(previews.canonicalRepoId, input.repo),
         eq(previews.prId, input.prId),
-        eq(previews.status, "removing"),
       ),
-    )
-    .returning();
-
-  if (!removed) {
-    const again = await getPreviewRow(deps.db, input.repo, input.prId);
-    if (again?.status === "removed") {
-      return { ok: true, value: { ok: true, status: "removed" } };
-    }
-    // Lost race after DROP — still report success; catalog is clean.
-  }
+    );
 
   return { ok: true, value: { ok: true, status: "removed" } };
+}
+
+/**
+ * Ensure a preview DB exists for (repo, prId).
+ * - removed/error: rewrite identity, then CREATE
+ * - provisioning: retry CREATE with existing identity (stuck-create recovery)
+ * - removing: 409 (teardown owns the row)
+ */
+export function provisionPreview(
+  deps: LifecycleDeps,
+  input: ProvisionInput,
+): Promise<Result<PreviewSnapshot>> {
+  return withPreviewLock(input.repo, input.prId, () =>
+    provisionUnlocked(deps, input),
+  );
+}
+
+export function teardownPreview(
+  deps: LifecycleDeps,
+  input: TeardownInput,
+): Promise<Result<TeardownSnapshot>> {
+  return withPreviewLock(input.repo, input.prId, () =>
+    teardownUnlocked(deps, input),
+  );
 }
