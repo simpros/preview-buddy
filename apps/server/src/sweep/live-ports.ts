@@ -35,31 +35,33 @@ async function removeControlPlane(
     { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
   >,
 ): Promise<boolean> {
+  // Control-plane remove stays under lifecycle locks; Docker is best-effort
+  // after unlock so a hung container API cannot stall the preview/dbName queues.
   const result = await removePreview(lifecycleDeps(deps), {
     repo: deletion.canonicalRepoId,
     prId: deletion.prId,
     expectedDbName: deletion.dbName,
     expectedCreatedAt: deletion.createdAt,
-    also: async (row) => {
-      try {
-        await deps.containers.remove({
-          slug: row.slug,
-          prId: row.prId,
-        });
-      } catch (error) {
-        deps.log?.(
-          `sweep remove container failed: ${String(error)}`,
-          deletion,
-        );
-        throw error;
-      }
-    },
   });
   if (!result.ok) {
     deps.log?.(`sweep drop database failed: ${result.error}`, deletion);
     throw new Error(`teardown incomplete: ${deletion.dbName}`);
   }
-  return result.value;
+  if (!result.value) return false;
+
+  try {
+    await deps.containers.remove({
+      slug: deletion.slug,
+      prId: deletion.prId,
+    });
+  } catch (error) {
+    // Leave for the next orphan-container pass; DB is already gone.
+    deps.log?.(
+      `sweep remove container failed: ${String(error)}`,
+      deletion,
+    );
+  }
+  return true;
 }
 
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
