@@ -13,7 +13,7 @@ export type PreviewVolumeIssue =
   | { code: "volume_collides_db_path"; index: number; path: string };
 
 function normalizeContainerPath(path: string): string {
-  return path.length > 1 ? path.replace(/\/+$/, "") : path;
+  return path.replace(/\/+$/, "") || "/";
 }
 
 function hasDotDotSegment(path: string): boolean {

@@ -33,12 +33,7 @@ export type SweepDeletion =
     }
   | { reason: "sweep:orphan-db"; slug: string; prId: number; dbName: string }
   | {
-      reason: "sweep:orphan-container";
-      slug: string;
-      prId: number;
-    }
-  | {
-      reason: "sweep:orphan-data-volume";
+      reason: "sweep:orphan-container" | "sweep:orphan-data-volume";
       slug: string;
       prId: number;
     };
@@ -137,11 +132,7 @@ function keyedRefs(
     const key = `${ref.slug}:${ref.prId}`;
     if (previewKeys.has(key) || seen.has(key)) continue;
     seen.add(key);
-    if (reason === "sweep:orphan-container") {
-      out.push({ reason, slug: ref.slug, prId: ref.prId });
-    } else {
-      out.push({ reason, slug: ref.slug, prId: ref.prId });
-    }
+    out.push({ reason, slug: ref.slug, prId: ref.prId });
   }
   return out;
 }

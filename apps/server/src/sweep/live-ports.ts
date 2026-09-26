@@ -95,12 +95,8 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
       try {
         return await dropDeletion(deps, deletion);
       } catch (error) {
-        deps.log?.(
-          `sweep drop failed (${deletion.reason}): ${String(error)}`,
-          deletion,
-        );
         throw new Error(
-          `teardown incomplete: ${deletion.slug}:${deletion.prId}`,
+          `teardown incomplete: ${deletion.slug}:${deletion.prId}: ${String(error)}`,
         );
       }
     },

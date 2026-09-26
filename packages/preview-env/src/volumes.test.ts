@@ -81,13 +81,15 @@ describe("parsePreviewVolumes", () => {
   });
 
   test("rejects the root mount", () => {
-    const parsed = parsePreviewVolumes(["/"]);
-    expect(parsed.ok).toBe(false);
-    if (!parsed.ok) {
-      expect(parsed.issue.code).toBe("volume_is_root");
-      expect(
-        previewVolumeIssueMessage("preview.volumes", parsed.issue),
-      ).toContain("preview.volumes[0]");
+    for (const raw of ["/", "//", "///"]) {
+      const parsed = parsePreviewVolumes([raw]);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.issue.code).toBe("volume_is_root");
+        expect(
+          previewVolumeIssueMessage("preview.volumes", parsed.issue),
+        ).toContain("preview.volumes[0]");
+      }
     }
   });
 
