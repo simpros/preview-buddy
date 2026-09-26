@@ -11,6 +11,7 @@ import { createPostgresPreviewDb } from "./preview-db/postgres.ts";
 import { createRoutingPreviewDb } from "./preview-db/routing.ts";
 import { createSqlitePreviewDb } from "./preview-db/sqlite.ts";
 import type { PreviewMaterializationCtx } from "./preview/runtime.ts";
+import { bindPreviewDataVolumes } from "./preview/data-volumes.ts";
 import { runMigrations } from "./scripts/migrate.ts";
 import { startGatewaySweep } from "./sweep/start.ts";
 
@@ -76,9 +77,10 @@ const app = bindPreviewOps({
   previewPortDefault: config.previewPortDefault,
   seedTimeoutMs: config.seedTimeout * 1000,
 });
+const dataVolumes = bindPreviewDataVolumes(docker);
 
-startServer({ config, db, previewDb, app, materialization });
-startGatewaySweep({ config, db, previewDb, app });
+startServer({ config, db, previewDb, app, dataVolumes, materialization });
+startGatewaySweep({ config, db, previewDb, app, dataVolumes });
 console.log(
   `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
 );

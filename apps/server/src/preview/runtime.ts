@@ -16,7 +16,7 @@ import { mailConnectionEnv } from "../app-deployment/mail-env.ts";
 import type { MailConfig } from "../config.ts";
 import { pgConnectionEnv, type AppDeployPg } from "../app-deployment/pg-env.ts";
 import { previewDbName } from "../preview-db/names.ts";
-import { sqliteVolumeName } from "./naming.ts";
+import { dataVolumeName, sqliteVolumeName } from "./naming.ts";
 
 /**
  * Materialization inputs. Postgres is present only when the gateway
@@ -95,12 +95,18 @@ export function resolvePreviewPlan(
     prId: number;
     connectionEnv?: PreviewEnvMap;
     mail?: MailSpec;
+    /** Opt-in per-preview app-data container paths (`preview.volumes`). */
+    dataVolumePaths?: string[];
     /** Test override; deploy omits it so identity resolves in one place. */
     dbName?: string | null;
     /** Resolved by the deploy boundary via resolveDbRoles; required here. */
     roles: DbRolesMode;
   },
 ): PreviewDbPlan {
+  const appDataVolumes = (input.dataVolumePaths ?? []).map(
+    (path, index) =>
+      `${dataVolumeName(input.slug, input.prId, index)}:${path}`,
+  );
   const dbName =
     input.dbName !== undefined
       ? input.dbName
@@ -132,7 +138,7 @@ export function resolvePreviewPlan(
       dbName,
       roles,
       gatewayEnv: [],
-      volumes: [],
+      volumes: appDataVolumes,
       appNetworks: [ctx.traefikNetwork],
       seedNetworks: [],
     });
@@ -146,7 +152,10 @@ export function resolvePreviewPlan(
       gatewayEnv: [
         `${target}=${sqliteDatabaseUrl(input.spec.path, input.spec.file)}`,
       ],
-      volumes: [`${sqliteVolumeName(input.slug, input.prId)}:${input.spec.path}`],
+      volumes: [
+        `${sqliteVolumeName(input.slug, input.prId)}:${input.spec.path}`,
+        ...appDataVolumes,
+      ],
       appNetworks: [ctx.traefikNetwork],
       // Seed needs no postgres data; traefik is the network that always exists.
       seedNetworks: [ctx.traefikNetwork],
@@ -168,7 +177,7 @@ export function resolvePreviewPlan(
     gatewayEnv: [
       ...pgConnectionEnv(postgres.pg, dbName, input.connectionEnv, roles),
     ],
-    volumes: [],
+    volumes: appDataVolumes,
     appNetworks: [ctx.traefikNetwork, postgres.network],
     seedNetworks: [postgres.network],
   });

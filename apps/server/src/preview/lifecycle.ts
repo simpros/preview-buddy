@@ -428,6 +428,14 @@ async function destroyPreviewRow(
     );
   }
 
+  try {
+    await deps.dataVolumes.removeDataVolumes(existing.slug, existing.prId);
+  } catch {
+    console.warn(
+      `preview data volume remove failed for ${existing.slug} pr=${prId}; continuing with DROP`,
+    );
+  }
+
   // Previews without a named resource skip the catalog lock and drop call;
   // a named resource holds the lock through DROP and finalize.
   async function finalizeDestroy(): Promise<Result<TeardownSnapshot>> {
@@ -572,18 +580,52 @@ export function removePreview(
   });
 }
 
+/** Shared claim-check-then-act unit behind both orphan droppers. */
+async function dropUnlessClaimed(
+  hasClaimant: () => Promise<boolean>,
+  remove: () => Promise<void>,
+): Promise<boolean> {
+  if (await hasClaimant()) return false;
+  await remove();
+  return true;
+}
+
 export function dropOrphanDatabase(
   deps: TeardownDeps,
   dbName: string,
 ): Promise<boolean> {
-  return withDbNameLock(dbName, async () => {
-    const [claim] = await deps.db
-      .select()
-      .from(previews)
-      .where(and(eq(previews.dbName, dbName), ne(previews.status, "removed")))
-      .limit(1);
-    if (claim) return false;
-    await deps.previewDb.forDrop(undefined).dropDatabase(dbName);
-    return true;
-  });
+  return withDbNameLock(dbName, () =>
+    dropUnlessClaimed(
+      () =>
+        deps.db
+          .select()
+          .from(previews)
+          .where(and(eq(previews.dbName, dbName), ne(previews.status, "removed")))
+          .limit(1)
+          .then(([claim]) => claim !== undefined),
+      () => deps.previewDb.forDrop(undefined).dropDatabase(dbName),
+    ),
+  );
+}
+
+export function dropOrphanDataVolume(
+  deps: TeardownDeps,
+  preview: { slug: string; prId: number },
+): Promise<boolean> {
+  return dropUnlessClaimed(
+    () =>
+      deps.db
+        .select()
+        .from(previews)
+        .where(
+          and(
+            eq(previews.slug, preview.slug),
+            eq(previews.prId, preview.prId),
+            ne(previews.status, "removed"),
+          ),
+        )
+        .limit(1)
+        .then(([claim]) => claim !== undefined),
+    () => deps.dataVolumes.removeDataVolumes(preview.slug, preview.prId),
+  );
 }

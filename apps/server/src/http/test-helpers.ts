@@ -20,6 +20,7 @@ import type { PreviewDocker } from "../docker/port.ts";
 import { connectState, type StateDb } from "../infrastructure/db/client.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
@@ -144,6 +145,7 @@ export async function createTestApp(
       db,
       previewDb,
       app: appOps,
+      dataVolumes: bindPreviewDataVolumes(docker),
       materialization,
     }),
     db,

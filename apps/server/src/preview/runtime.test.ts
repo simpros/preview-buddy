@@ -227,4 +227,32 @@ describe("resolvePreviewPlan", () => {
       }).dbName,
     ).toBeNull();
   });
+
+  test("preview.volumes mounts one named volume per entry on postgres", () => {
+    expect(
+      plan(defaultDbSpec(), { dataVolumePaths: ["/data/documents"] }),
+    ).toMatchObject({
+      provider: "postgres",
+      volumes: ["sprout-myapp-pr-42-data-0:/data/documents"],
+    });
+  });
+
+  test("preview.volumes appends after the sqlite volume with stable indexes", () => {
+    expect(
+      plan(SQLITE_DB, { dataVolumePaths: ["/cache", "/work"] }),
+    ).toMatchObject({
+      provider: "sqlite",
+      volumes: [
+        "sprout-myapp-pr-42-sqlite:/data",
+        "sprout-myapp-pr-42-data-0:/cache",
+        "sprout-myapp-pr-42-data-1:/work",
+      ],
+    });
+  });
+
+  test("absent preview.volumes mounts nothing extra", () => {
+    expect(plan(defaultDbSpec())).toMatchObject({
+      volumes: [],
+    });
+  });
 });

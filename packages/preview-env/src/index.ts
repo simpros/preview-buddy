@@ -75,8 +75,11 @@ export {
 } from "./db.ts";
 
 export {
+  dataVolumeName,
+  parseDataVolumeName,
   parseSqliteVolumeName,
   sqliteVolumeName,
+  type DataVolumeRef,
 } from "./naming.ts";
 
 export {
@@ -92,6 +95,12 @@ export {
   type PreviewServiceSpec,
   type ServiceFields,
 } from "./services.ts";
+
+export {
+  parsePreviewVolumes,
+  previewVolumeIssueMessage,
+  type PreviewVolumeIssue,
+} from "./volumes.ts";
 
 export {
   DEFAULT_MAIL_FROM_DOMAIN,

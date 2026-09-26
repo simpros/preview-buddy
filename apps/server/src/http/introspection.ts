@@ -12,6 +12,7 @@ import {
   presentListedPreview,
   type ListedPreview,
 } from "../preview/snapshot.ts";
+import type { DataVolumeRef } from "@sprout/preview-env";
 import { validatePrId } from "../preview-db/names.ts";
 import { planOrphans } from "../sweep/reconcile.ts";
 
@@ -26,6 +27,11 @@ export type DoctorOrphan =
     }
   | {
       kind: "orphan-container";
+      slug: string;
+      pr_id: number;
+    }
+  | {
+      kind: "orphan-data-volume";
       slug: string;
       pr_id: number;
     };
@@ -148,12 +154,13 @@ export function drop(deps: IntrospectionDeps) {
   };
 }
 
-function toDoctorOrphans(
-  previewKeys: Set<string>,
-  catalog: { slug: string; prId: number; dbName: string }[],
-  containers: { slug: string; prId: number }[],
-): DoctorOrphan[] {
-  return planOrphans(previewKeys, catalog, containers).map((deletion) => {
+function toDoctorOrphans(input: {
+  previewKeys: Set<string>;
+  catalog: { slug: string; prId: number; dbName: string }[];
+  containers: { slug: string; prId: number }[];
+  dataVolumes: DataVolumeRef[];
+}): DoctorOrphan[] {
+  return planOrphans(input).map((deletion) => {
     switch (deletion.reason) {
       case "sweep:orphan-db":
         return {
@@ -165,6 +172,12 @@ function toDoctorOrphans(
       case "sweep:orphan-container":
         return {
           kind: "orphan-container" as const,
+          slug: deletion.slug,
+          pr_id: deletion.prId,
+        };
+      case "sweep:orphan-data-volume":
+        return {
+          kind: "orphan-data-volume" as const,
           slug: deletion.slug,
           pr_id: deletion.prId,
         };
@@ -189,11 +202,12 @@ async function collectDoctorFindings(deps: IntrospectionDeps): Promise<{
     .where(ne(previews.status, "removed"));
   const previewKeys = new Set<string>(rows.map((r) => `${r.slug}:${r.prId}`));
 
-  const [pingResult, catalogResult, containersResult] =
+  const [pingResult, catalogResult, containersResult, dataVolumesResult] =
     await Promise.allSettled([
       deps.previewDb.ping(),
       deps.previewDb.listPreviewDatabases(),
       deps.app.list(),
+      deps.dataVolumes.listDataVolumes(),
     ]);
 
   const postgres: "ok" | "unreachable" =
@@ -207,15 +221,22 @@ async function collectDoctorFindings(deps: IntrospectionDeps): Promise<{
       : [];
 
   const docker: "ok" | "unreachable" =
-    containersResult.status === "fulfilled" ? "ok" : "unreachable";
+    containersResult.status === "fulfilled" &&
+    dataVolumesResult.status === "fulfilled"
+      ? "ok"
+      : "unreachable";
   const containers =
     containersResult.status === "fulfilled"
       ? containersResult.value.map(({ slug, prId }) => ({ slug, prId }))
+      : [];
+  const dataVolumes =
+    dataVolumesResult.status === "fulfilled"
+      ? dataVolumesResult.value
       : [];
 
   return {
     postgres,
     docker,
-    orphans: toDoctorOrphans(previewKeys, catalog, containers),
+    orphans: toDoctorOrphans({ previewKeys, catalog, containers, dataVolumes }),
   };
 }

@@ -6,6 +6,7 @@ import {
 import { bindTestPreviewApp, createTestDb } from "../http/test-helpers.ts";
 import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
 import { runSweepPass } from "./reconcile.ts";
 
@@ -74,6 +75,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb,
       forge: {
         listOpenPrIds: async () => [],
@@ -117,6 +119,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
       }),
@@ -158,6 +161,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "sprout_widgets_pr1", slug: "widgets", prId: 1 },
@@ -211,6 +215,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "sprout_widgets_pr1", slug: "widgets", prId: 1 },
@@ -263,6 +268,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: () => ({
@@ -318,6 +324,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "sprout_widgets_pr10", slug: "widgets", prId: 10 },
@@ -374,6 +381,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -423,6 +431,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -472,6 +481,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -523,6 +533,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -541,6 +552,78 @@ describe("createLiveSweepPorts", () => {
     expect(droppedDbs).toEqual([]);
   });
 
+  test("orphan drop aborts when a live row claims the data volume", async () => {
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    await testDb.db.insert(repos).values({
+      canonicalId: "https://github.com/acme/widgets",
+      slug: "widgets",
+    });
+    await testDb.db.insert(previews).values({
+      canonicalRepoId: "https://github.com/acme/widgets",
+      prId: 42,
+      slug: "widgets",
+      dbName: null,
+      hostname: "pr-42.example.com",
+      containerId: null,
+      status: "provisioning",
+      createdAt: "2026-09-03T12:00:00.000Z",
+      updatedAt: "2026-09-03T12:00:00.000Z",
+    });
+
+    const docker = createFakeDockerClient();
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [],
+      }),
+      forge: { listOpenPrIds: async () => [42] },
+      ttlHours: 72,
+    });
+
+    const removed = await ports.drop({
+      reason: "sweep:orphan-data-volume",
+      slug: "widgets",
+      prId: 42,
+    });
+    expect(removed).toBe(false);
+    expect(docker.volumesRemoved).toEqual([]);
+  });
+
+  test("orphan drop removes the data volume once its row is gone", async () => {
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    const docker = createFakeDockerClient();
+    docker.volumes.add("sprout-widgets-pr-42-data-0");
+    docker.volumes.add("sprout-widgets-pr-42-data-1");
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [],
+      }),
+      forge: { listOpenPrIds: async () => [] },
+      ttlHours: 72,
+    });
+
+    const removed = await ports.drop({
+      reason: "sweep:orphan-data-volume",
+      slug: "widgets",
+      prId: 42,
+    });
+    expect(removed).toBe(true);
+    expect(docker.volumesRemoved).toEqual([
+      "sprout-widgets-pr-42-data-0",
+      "sprout-widgets-pr-42-data-1",
+    ]);
+    expect([...docker.volumes]).toEqual([]);
+  });
+
   test("throws on orphan teardown when a resource step fails", async () => {
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
@@ -549,6 +632,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: () => ({
@@ -569,6 +653,6 @@ describe("createLiveSweepPorts", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr42",
       }),
-    ).rejects.toThrow("teardown incomplete: sprout_widgets_pr42");
+    ).rejects.toThrow("teardown incomplete: widgets:42");
   });
 });

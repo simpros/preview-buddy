@@ -9,10 +9,12 @@ import {
   type SweepPorts,
   type SweepPreview,
 } from "./reconcile.ts";
+import type { DataVolumeRef } from "@sprout/preview-env";
 
 function memoryPorts(seed: {
   previews?: SweepPreview[];
   catalog?: CatalogDbRef[] | Error;
+  dataVolumes?: DataVolumeRef[] | Error;
   containers?: PreviewRef[] | Error;
   openPrs?: Record<string, number[] | Error>;
   dropErrorFor?: (deletion: SweepDeletion) => Error | undefined;
@@ -28,6 +30,7 @@ function memoryPorts(seed: {
   const logs: string[] = [];
   const previews = seed.previews ?? [];
   const catalog = seed.catalog ?? [];
+  const dataVolumes = seed.dataVolumes ?? [];
   const containers = seed.containers ?? [];
   const openPrs = seed.openPrs ?? {};
 
@@ -36,6 +39,10 @@ function memoryPorts(seed: {
     listCatalogDatabases: async () => {
       if (catalog instanceof Error) throw catalog;
       return [...catalog];
+    },
+    listDataVolumes: async () => {
+      if (dataVolumes instanceof Error) throw dataVolumes;
+      return [...dataVolumes];
     },
     listPreviewContainers: async () => {
       if (containers instanceof Error) throw containers;
@@ -166,6 +173,66 @@ describe("runSweepPass", () => {
       },
     ]);
     expect(logs).toContain("deleted (sweep:orphan-container)");
+  });
+
+  test("dedupes orphan data volumes to one deletion per preview", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const { ports, deletions, logs } = memoryPorts({
+      previews: [],
+      dataVolumes: [
+        {
+          name: "sprout-widgets-pr-42-data-0",
+          slug: "widgets",
+          prId: 42,
+        },
+        {
+          name: "sprout-widgets-pr-42-data-1",
+          slug: "widgets",
+          prId: 42,
+        },
+      ],
+    });
+
+    await runSweepPass(ports);
+    expect(deletions).toEqual([
+      {
+        reason: "sweep:orphan-data-volume",
+        prId: 42,
+        slug: "widgets",
+      },
+    ]);
+    expect(logs).toContain("deleted (sweep:orphan-data-volume)");
+  });
+
+  test("keeps data volumes owned by a live preview", async () => {
+    setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
+    const { ports, deletions } = memoryPorts({
+      previews: [
+        {
+          canonicalRepoId: "https://github.com/acme/widgets",
+          prId: 3,
+          slug: "widgets",
+          dbName: "sprout_widgets_pr3",
+          createdAt: "2026-09-02T12:00:00.000Z",
+          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          status: "running",
+        },
+      ],
+      catalog: [{ dbName: "sprout_widgets_pr3", slug: "widgets", prId: 3 }],
+      dataVolumes: [
+        {
+          name: "sprout-widgets-pr-3-data-0",
+          slug: "widgets",
+          prId: 3,
+        },
+      ],
+      containers: [{ slug: "widgets", prId: 3 }],
+      openPrs: { "https://github.com/acme/widgets": [3] },
+    });
+
+    const result = await runSweepPass(ports);
+    expect(result.forgeRepoFailures).toEqual([]);
+    expect(deletions).toEqual([]);
   });
 
   test("dedupes multi-container catalog to one orphan-container per preview", async () => {
