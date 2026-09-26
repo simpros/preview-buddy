@@ -22,6 +22,7 @@ import {
   type MailSpec,
   type PreviewEnvMap,
   type PreviewLabels,
+  type PreviewVolumeIssue,
   type ServiceFields,
 } from "@sprout/preview-env";
 import { hostnameIssueMessage } from "./hostname.ts";
@@ -387,9 +388,10 @@ function parsePreviewVolumesField(
 ): Result<string[] | undefined> {
   const parsed = parsePreviewVolumes(raw, dbPath ? { dbPath } : {});
   if (parsed.ok) return parsed;
+  const issue: PreviewVolumeIssue = parsed.issue;
   return {
     ok: false,
-    error: previewVolumeIssueMessage("preview.volumes", parsed.issue),
+    error: previewVolumeIssueMessage("preview.volumes", issue),
   };
 }
 

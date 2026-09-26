@@ -16,7 +16,50 @@ import { run } from "./harness/exec.ts";
 const enabled = process.env.SPROUT_E2E_MANAGED === "1";
 
 const VOLUME_PATH = "/data/documents";
-const IMAGE_TAG = "sprout-e2e/data-volumes-nonroot:latest";
+
+// The gateway always pulls the app image before bring-up, so a local-only
+// tag could never deploy (the pull fails and the preview stays failed).
+// The test serves its custom image through a throwaway loopback registry —
+// same daemon, no daemon config — mirroring the build→push→deploy flow.
+const REGISTRY_CONTAINER = "sprout-e2e-data-volumes-registry";
+const REGISTRY_ADDR = "127.0.0.1:5000";
+const IMAGE_TAG = `${REGISTRY_ADDR}/sprout-e2e/data-volumes-nonroot:latest`;
+
+async function ensureRegistry(): Promise<void> {
+  await run(["docker", "rm", "-f", REGISTRY_CONTAINER], {
+    allowFailure: true,
+  });
+  await run([
+    "docker",
+    "run",
+    "-d",
+    "--rm",
+    "--name",
+    REGISTRY_CONTAINER,
+    "-p",
+    `${REGISTRY_ADDR}:5000`,
+    "registry:2",
+  ]);
+  const deadline = Date.now() + 60_000;
+  for (;;) {
+    try {
+      const res = await fetch(`http://${REGISTRY_ADDR}/v2/`);
+      if (res.ok) return;
+    } catch {
+      // Registry still starting; fall through to retry.
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(`e2e registry ${REGISTRY_ADDR} not ready within 60s`);
+    }
+    await Bun.sleep(1_000);
+  }
+}
+
+async function stopRegistry(): Promise<void> {
+  await run(["docker", "rm", "-f", REGISTRY_CONTAINER], {
+    allowFailure: true,
+  });
+}
 
 async function pollRunning(
   client: ReturnType<typeof createApiClient>,
@@ -47,13 +90,14 @@ async function pollRunning(
  * neither creates the path in the image nor chowns it in the entrypoint
  * gets a root-owned directory its runtime user cannot write.
  */
-async function buildNonRootImage(): Promise<string> {
+async function buildAndPushNonRootImage(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "sprout-e2e-data-volumes-"));
   await writeFile(
     join(dir, "Dockerfile"),
     `FROM nginx:alpine\nRUN mkdir -p ${VOLUME_PATH} && chown nobody:nogroup ${VOLUME_PATH}\n`,
   );
   await run(["docker", "build", "-t", IMAGE_TAG, dir]);
+  await run(["docker", "push", IMAGE_TAG]);
   return IMAGE_TAG;
 }
 
@@ -81,7 +125,7 @@ function deployInput(
 }
 
 describe.skipIf(!enabled)("preview app-data volumes", () => {
-  test("non-root write survives replace, reset wipes, teardown removes", async () => {
+  async function runDataVolumesFlow(): Promise<void> {
     const admin = createApiClient(e2eConfig.gatewayUrl, {
       headers: { authorization: `Bearer ${e2eConfig.adminToken}` },
     });
@@ -99,7 +143,7 @@ describe.skipIf(!enabled)("preview app-data volumes", () => {
     const hostname = `pr-${prId}.e2e-data-volumes.preview.example.com`;
     const volume = dataVolumeName(e2eConfig.slug, prId, 0);
     const name = previewAppContainerName(e2eConfig.slug, prId);
-    const appImage = await buildNonRootImage();
+    const appImage = await buildAndPushNonRootImage();
 
     const deployed = await client.v1.deploy.post(
       deployInput(prId, hostname, appImage),
@@ -169,5 +213,14 @@ describe.skipIf(!enabled)("preview app-data volumes", () => {
       expect(torn.status).toBe(200);
     }
     expect(await volumeExists(volume)).toBe(false);
+  }
+
+  test("non-root write survives replace, reset wipes, teardown removes", async () => {
+    await ensureRegistry();
+    try {
+      await runDataVolumesFlow();
+    } finally {
+      await stopRegistry();
+    }
   });
 });

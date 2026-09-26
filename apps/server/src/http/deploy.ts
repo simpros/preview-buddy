@@ -25,6 +25,7 @@ import {
   type PreviewEnvMap,
   type PreviewLabels,
   type PreviewServiceSpec,
+  type PreviewVolumeIssue,
 } from "@sprout/preview-env";
 import { t } from "elysia";
 import { parseResetMarkerToken } from "@sprout/preview-db";
@@ -437,10 +438,11 @@ export function resolvePreviewVolumesRequest(
     spec.provider === "sqlite" ? { dbPath: spec.path } : {},
   );
   if (parsed.ok) return parsed;
+  const issue: PreviewVolumeIssue = parsed.issue;
   return {
     ok: false,
     error: "invalid_volumes",
-    detail: previewVolumeIssueMessage("preview.volumes", parsed.issue),
+    detail: previewVolumeIssueMessage("preview.volumes", issue),
   };
 }
 
