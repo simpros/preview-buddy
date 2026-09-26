@@ -1,3 +1,4 @@
+import type { DataVolumeRef } from "@sprout/preview-env";
 import { isForgeApiError } from "../forge/types.ts";
 
 export type SweepReason =
@@ -10,11 +11,6 @@ export type SweepReason =
 export type PreviewRef = { slug: string; prId: number };
 
 export type CatalogDbRef = PreviewRef & { dbName: string };
-
-export type CatalogDataVolumeRef = PreviewRef & {
-  volumeName: string;
-  index: number;
-};
 
 export type SweepPreview = {
   canonicalRepoId: string;
@@ -45,13 +41,13 @@ export type SweepDeletion =
       reason: "sweep:orphan-data-volume";
       slug: string;
       prId: number;
-      volumeName: string;
+      name: string;
     };
 
 export type SweepPorts = {
   listPreviews: () => Promise<SweepPreview[]>;
   listCatalogDatabases: () => Promise<CatalogDbRef[]>;
-  listDataVolumes: () => Promise<CatalogDataVolumeRef[]>;
+  listDataVolumes: () => Promise<DataVolumeRef[]>;
   listPreviewContainers: () => Promise<PreviewRef[]>;
   listOpenPrIds: (canonicalRepoId: string) => Promise<number[]>;
   /** True if resources were removed; false if the plan was stale. */
@@ -107,7 +103,7 @@ export function planOrphans(
   previewKeys: Set<string>,
   catalog: CatalogDbRef[],
   containers: PreviewRef[],
-  dataVolumes: CatalogDataVolumeRef[] = [],
+  dataVolumes: DataVolumeRef[] = [],
 ): OrphanDeletion[] {
   const out: OrphanDeletion[] = [];
   for (const db of catalog) {
@@ -136,7 +132,7 @@ export function planOrphans(
       reason: "sweep:orphan-data-volume",
       slug: volume.slug,
       prId: volume.prId,
-      volumeName: volume.volumeName,
+      name: volume.name,
     });
   }
   return out;

@@ -38,10 +38,7 @@ import type { PreviewDbPlan } from "./runtime.ts";
 export type TeardownDeps = {
   db: StateDb;
   previewDb: PreviewDbRouter;
-  app: Pick<
-    PreviewAppOps,
-    "remove" | "removeDataVolumes" | "removeDataVolume" | "listDataVolumes"
-  >;
+  app: Pick<PreviewAppOps, "remove" | "removeDataVolumes" | "removeDataVolume">;
 };
 
 export type LifecycleDeps = {

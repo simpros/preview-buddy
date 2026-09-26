@@ -36,7 +36,6 @@ describe("data volume naming", () => {
     expect(parseDataVolumeName(dataVolumeName("myapp", 42, 0))).toEqual({
       slug: "myapp",
       prId: 42,
-      index: 0,
     });
   });
 

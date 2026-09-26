@@ -541,6 +541,74 @@ describe("createLiveSweepPorts", () => {
     expect(droppedDbs).toEqual([]);
   });
 
+  test("orphan drop aborts when a live row claims the data volume", async () => {
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    await testDb.db.insert(repos).values({
+      canonicalId: "https://github.com/acme/widgets",
+      slug: "widgets",
+    });
+    await testDb.db.insert(previews).values({
+      canonicalRepoId: "https://github.com/acme/widgets",
+      prId: 42,
+      slug: "widgets",
+      dbName: null,
+      hostname: "pr-42.example.com",
+      containerId: null,
+      status: "provisioning",
+      createdAt: "2026-09-03T12:00:00.000Z",
+      updatedAt: "2026-09-03T12:00:00.000Z",
+    });
+
+    const docker = createFakeDockerClient();
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      app: bindTestPreviewApp(docker),
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [],
+      }),
+      forge: { listOpenPrIds: async () => [42] },
+      ttlHours: 72,
+    });
+
+    const removed = await ports.drop({
+      reason: "sweep:orphan-data-volume",
+      slug: "widgets",
+      prId: 42,
+      name: "sprout-widgets-pr-42-data-0",
+    });
+    expect(removed).toBe(false);
+    expect(docker.volumesRemoved).toEqual([]);
+  });
+
+  test("orphan drop removes the data volume once its row is gone", async () => {
+    const testDb = await createTestDb();
+    cleanup = testDb.cleanup;
+
+    const docker = createFakeDockerClient();
+    docker.volumes.add("sprout-widgets-pr-42-data-0");
+    const ports = createLiveSweepPorts({
+      db: testDb.db,
+      app: bindTestPreviewApp(docker),
+      previewDb: stubPreviewDb({
+        listPreviewDatabases: async () => [],
+      }),
+      forge: { listOpenPrIds: async () => [] },
+      ttlHours: 72,
+    });
+
+    const removed = await ports.drop({
+      reason: "sweep:orphan-data-volume",
+      slug: "widgets",
+      prId: 42,
+      name: "sprout-widgets-pr-42-data-0",
+    });
+    expect(removed).toBe(true);
+    expect(docker.volumesRemoved).toEqual(["sprout-widgets-pr-42-data-0"]);
+    expect([...docker.volumes]).toEqual([]);
+  });
+
   test("throws on orphan teardown when a resource step fails", async () => {
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;

@@ -1,4 +1,4 @@
-import type { HealthSpec } from "@sprout/preview-env";
+import type { DataVolumeRef, HealthSpec } from "@sprout/preview-env";
 import {
   defaultHealthProbe,
   pollHealth,
@@ -24,23 +24,16 @@ import {
 } from "./seed.ts";
 import type { CatalogContainer, PreviewDocker } from "../docker/port.ts";
 import {
+  parseDataVolumeName,
   previewContainerName,
   seedImageRunName,
 } from "../preview/naming.ts";
-import { parseDataVolumeName } from "@sprout/preview-env";
 
 export type { PreviewServiceSpec };
 
 export type LiveContainerLogs = {
   app: string | null;
   seed: string | null;
-};
-
-export type DataVolumeRef = {
-  name: string;
-  slug: string;
-  prId: number;
-  index: number;
 };
 
 export type PreviewAppOps = {
@@ -58,7 +51,6 @@ export type PreviewAppOps = {
   runSeed: (input: SeedImageInput) => Promise<SeedImageResult>;
   remove: (slug: string, prId: number) => Promise<void>;
   list: () => Promise<CatalogContainer[]>;
-  ensureDataVolumes: (names: string[]) => Promise<void>;
   removeDataVolumes: (slug: string, prId: number) => Promise<void>;
   removeDataVolume: (name: string) => Promise<void>;
   listDataVolumes: () => Promise<DataVolumeRef[]>;
@@ -125,11 +117,6 @@ export function bindPreviewOps(deps: BindPreviewOpsDeps): PreviewAppOps {
       ),
     remove: (slug, prId) => removePreviewFleet(deps.docker, slug, prId),
     list: () => deps.docker.listPreviewContainers(),
-    ensureDataVolumes: async (names) => {
-      for (const name of names) {
-        await deps.docker.createVolume(name);
-      }
-    },
     removeDataVolumes: async (slug, prId) => {
       const volumes = await deps.docker.listVolumes();
       const owned = volumes.filter((name) => {

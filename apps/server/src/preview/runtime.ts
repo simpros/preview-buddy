@@ -1,5 +1,4 @@
 import {
-  dataVolumeName,
   mailIntent,
   requiresDatabase,
   sqliteDatabaseUrl,
@@ -17,7 +16,7 @@ import { mailConnectionEnv } from "../app-deployment/mail-env.ts";
 import type { MailConfig } from "../config.ts";
 import { pgConnectionEnv, type AppDeployPg } from "../app-deployment/pg-env.ts";
 import { previewDbName } from "../preview-db/names.ts";
-import { sqliteVolumeName } from "./naming.ts";
+import { dataVolumeName, sqliteVolumeName } from "./naming.ts";
 
 /**
  * Materialization inputs. Postgres is present only when the gateway
@@ -48,7 +47,6 @@ export type PreviewDbPlan = {
   roles: DbRolesMode;
   gatewayEnv: string[];
   volumes: string[];
-  dataVolumeNames: string[];
   appNetworks: string[];
   seedNetworks: string[];
   mailFrom?: string;
@@ -109,14 +107,13 @@ export function resolvePreviewPlan(
     slug: string;
     prId: number;
     volumes?: string[];
-  }): Pick<PreviewDbPlan, "volumes" | "dataVolumeNames"> {
+  }): Pick<PreviewDbPlan, "volumes"> {
     const paths = volumeInput.volumes ?? [];
-    const dataVolumeNames = paths.map((_, index) =>
-      dataVolumeName(volumeInput.slug, volumeInput.prId, index),
-    );
     return {
-      volumes: dataVolumeNames.map((name, index) => `${name}:${paths[index]}`),
-      dataVolumeNames,
+      volumes: paths.map(
+        (path, index) =>
+          `${dataVolumeName(volumeInput.slug, volumeInput.prId, index)}:${path}`,
+      ),
     };
   }
   const dbName =
@@ -169,7 +166,6 @@ export function resolvePreviewPlan(
         `${sqliteVolumeName(input.slug, input.prId)}:${input.spec.path}`,
         ...data.volumes,
       ],
-      dataVolumeNames: data.dataVolumeNames,
       appNetworks: [ctx.traefikNetwork],
       // Seed needs no postgres data; traefik is the network that always exists.
       seedNetworks: [ctx.traefikNetwork],

@@ -86,13 +86,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
       (await deps.previewDb.listPreviewDatabases()).map(
         ({ slug, prId, dbName }) => ({ slug, prId, dbName }),
       ),
-    listDataVolumes: async () =>
-      (await deps.app.listDataVolumes()).map(({ name, slug, prId, index }) => ({
-        volumeName: name,
-        slug,
-        prId,
-        index,
-      })),
+    listDataVolumes: async () => await deps.app.listDataVolumes(),
     listPreviewContainers: async () =>
       (await deps.app.list()).map(({ slug, prId }) => ({
         slug,
@@ -142,7 +136,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         case "sweep:orphan-data-volume": {
           try {
             return await dropOrphanDataVolume(teardownDeps(deps), {
-              name: deletion.volumeName,
+              name: deletion.name,
               slug: deletion.slug,
               prId: deletion.prId,
             });
@@ -151,7 +145,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
               `sweep drop data volume failed: ${String(error)}`,
               deletion,
             );
-            throw new Error(`teardown incomplete: ${deletion.volumeName}`);
+            throw new Error(`teardown incomplete: ${deletion.name}`);
           }
         }
       }

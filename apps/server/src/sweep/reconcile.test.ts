@@ -3,18 +3,18 @@ import { createForgeClient } from "../forge/client.ts";
 import { forgeApiError } from "../forge/types.ts";
 import {
   runSweepPass,
-  type CatalogDataVolumeRef,
   type CatalogDbRef,
   type PreviewRef,
   type SweepDeletion,
   type SweepPorts,
   type SweepPreview,
 } from "./reconcile.ts";
+import type { DataVolumeRef } from "@sprout/preview-env";
 
 function memoryPorts(seed: {
   previews?: SweepPreview[];
   catalog?: CatalogDbRef[] | Error;
-  dataVolumes?: CatalogDataVolumeRef[] | Error;
+  dataVolumes?: DataVolumeRef[] | Error;
   containers?: PreviewRef[] | Error;
   openPrs?: Record<string, number[] | Error>;
   dropErrorFor?: (deletion: SweepDeletion) => Error | undefined;
@@ -181,16 +181,14 @@ describe("runSweepPass", () => {
       previews: [],
       dataVolumes: [
         {
-          volumeName: "sprout-widgets-pr-42-data-0",
+          name: "sprout-widgets-pr-42-data-0",
           slug: "widgets",
           prId: 42,
-          index: 0,
         },
         {
-          volumeName: "sprout-widgets-pr-42-data-1",
+          name: "sprout-widgets-pr-42-data-1",
           slug: "widgets",
           prId: 42,
-          index: 1,
         },
       ],
     });
@@ -201,13 +199,13 @@ describe("runSweepPass", () => {
         reason: "sweep:orphan-data-volume",
         prId: 42,
         slug: "widgets",
-        volumeName: "sprout-widgets-pr-42-data-0",
+        name: "sprout-widgets-pr-42-data-0",
       },
       {
         reason: "sweep:orphan-data-volume",
         prId: 42,
         slug: "widgets",
-        volumeName: "sprout-widgets-pr-42-data-1",
+        name: "sprout-widgets-pr-42-data-1",
       },
     ]);
     expect(logs).toContain("deleted (sweep:orphan-data-volume)");
@@ -230,10 +228,9 @@ describe("runSweepPass", () => {
       catalog: [{ dbName: "sprout_widgets_pr3", slug: "widgets", prId: 3 }],
       dataVolumes: [
         {
-          volumeName: "sprout-widgets-pr-3-data-0",
+          name: "sprout-widgets-pr-3-data-0",
           slug: "widgets",
           prId: 3,
-          index: 0,
         },
       ],
       containers: [{ slug: "widgets", prId: 3 }],

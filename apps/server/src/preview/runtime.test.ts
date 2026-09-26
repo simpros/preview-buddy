@@ -102,7 +102,6 @@ describe("resolvePreviewPlan", () => {
     expect(plan()).toMatchObject({
       provider: "postgres",
       volumes: [],
-      dataVolumeNames: [],
       appNetworks: ["sprout-traefik", "sprout-postgres"],
       seedNetworks: ["sprout-postgres"],
     });
@@ -131,7 +130,6 @@ describe("resolvePreviewPlan", () => {
     expect(plan(SQLITE_DB)).toMatchObject({
       provider: "sqlite",
       volumes: ["sprout-myapp-pr-42-sqlite:/data"],
-      dataVolumeNames: [],
       appNetworks: ["sprout-traefik"],
       seedNetworks: ["sprout-traefik"],
     });
@@ -155,7 +153,6 @@ describe("resolvePreviewPlan", () => {
       roles: "single",
       gatewayEnv: ["DATABASE_URL=file:/data/preview.db"],
       volumes: ["sprout-myapp-pr-42-sqlite:/data"],
-      dataVolumeNames: [],
       appNetworks: ["sprout-traefik"],
       seedNetworks: ["sprout-traefik"],
     });
@@ -191,7 +188,6 @@ describe("resolvePreviewPlan", () => {
       roles: "single",
       gatewayEnv: [],
       volumes: [],
-      dataVolumeNames: [],
       appNetworks: ["sprout-traefik"],
       seedNetworks: [],
     });
@@ -238,7 +234,6 @@ describe("resolvePreviewPlan", () => {
     ).toMatchObject({
       provider: "postgres",
       volumes: ["sprout-myapp-pr-42-data-0:/data/documents"],
-      dataVolumeNames: ["sprout-myapp-pr-42-data-0"],
     });
   });
 
@@ -252,17 +247,12 @@ describe("resolvePreviewPlan", () => {
         "sprout-myapp-pr-42-data-0:/data/documents",
         "sprout-myapp-pr-42-data-1:/cache",
       ],
-      dataVolumeNames: [
-        "sprout-myapp-pr-42-data-0",
-        "sprout-myapp-pr-42-data-1",
-      ],
     });
   });
 
   test("absent preview.volumes mounts nothing extra", () => {
     expect(plan(defaultDbSpec())).toMatchObject({
       volumes: [],
-      dataVolumeNames: [],
     });
   });
 });

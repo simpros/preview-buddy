@@ -22,14 +22,19 @@ export function parseSqliteVolumeName(
 
 const DATA_VOLUME_RE = /^sprout-([a-zA-Z0-9]+)-pr-(\d+)-data-(\d+)$/;
 
-export function parseDataVolumeName(
-  name: string,
-): { slug: string; prId: number; index: number } | null {
+/** Canonical app-data volume ref: the daemon name plus its preview owner. */
+export type DataVolumeRef = {
+  name: string;
+  slug: string;
+  prId: number;
+};
+
+export function parseDataVolumeName(name: string): Omit<DataVolumeRef, "name"> | null {
   const match = DATA_VOLUME_RE.exec(name);
   if (!match) return null;
   const prId = Number(match[2]);
   const index = Number(match[3]);
   if (!Number.isInteger(prId) || prId <= 0) return null;
   if (!Number.isInteger(index) || index < 0) return null;
-  return { slug: match[1]!, prId, index };
+  return { slug: match[1]!, prId };
 }

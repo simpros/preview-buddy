@@ -82,7 +82,7 @@ describe("POST /v1/deploy preview.volumes", () => {
     expect(fakeDocker!.creates[0]).not.toHaveProperty("volumes");
   });
 
-  test("bring-up creates the volume and mounts it on app, service, and seed", async () => {
+  test("bring-up mounts the volume on app, service, and seed without pre-creating it", async () => {
     const { deployToken } = await setup();
     const res = await postDeploy(
       deployToken,
@@ -94,7 +94,9 @@ describe("POST /v1/deploy preview.volumes", () => {
       }),
     );
     expect(res.settleStatus).toBe(200);
-    expect(fakeDocker!.volumesCreated).toEqual([DATA_VOLUME]);
+    // No explicit create: the daemon owns implicit creation on first mount.
+    expect(fakeDocker!.volumesCreated).toEqual([]);
+    expect([...fakeDocker!.volumes]).toEqual([DATA_VOLUME]);
     const byName = new Map(fakeDocker!.creates.map((c) => [c.name, c]));
     expect(byName.get("sprout-myapp-pr-42")?.volumes).toEqual([
       `${DATA_VOLUME}:/data/documents`,
@@ -164,7 +166,7 @@ describe("POST /v1/deploy preview.volumes", () => {
       deployBody({ volumes: ["/data/documents"] }),
     );
     expect(second.settleStatus).toBe(200);
-    expect(fakeDocker!.volumesCreated).toEqual([DATA_VOLUME, DATA_VOLUME]);
+    expect(fakeDocker!.volumesCreated).toEqual([]);
     expect([...fakeDocker!.volumes]).toEqual([DATA_VOLUME]);
   });
 

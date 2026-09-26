@@ -85,6 +85,15 @@ export function createFakeDockerClient(
     },
     async createAndStart(spec) {
       creates.push(spec);
+      // The daemon implicitly creates named volumes on first mount with the
+      // same empty-volume semantics as an explicit create; the fake mirrors
+      // that so lifecycle tests prove the mounts, not a pre-create call.
+      for (const bind of spec.volumes ?? []) {
+        const name = bind.split(":")[0]!;
+        if (name !== "" && !name.startsWith("/") && !name.startsWith(".")) {
+          volumes.add(name);
+        }
+      }
       const id = `fake-${nextId++}`;
       running.set(spec.name, { id, spec });
       const netIps = new Map<string, string>();

@@ -12,6 +12,7 @@ import {
   presentListedPreview,
   type ListedPreview,
 } from "../preview/snapshot.ts";
+import type { DataVolumeRef } from "@sprout/preview-env";
 import { validatePrId } from "../preview-db/names.ts";
 import { planOrphans } from "../sweep/reconcile.ts";
 
@@ -158,7 +159,7 @@ function toDoctorOrphans(
   previewKeys: Set<string>,
   catalog: { slug: string; prId: number; dbName: string }[],
   containers: { slug: string; prId: number }[],
-  dataVolumes: { slug: string; prId: number; volumeName: string; index: number }[] = [],
+  dataVolumes: DataVolumeRef[] = [],
 ): DoctorOrphan[] {
   return planOrphans(previewKeys, catalog, containers, dataVolumes).map((deletion) => {
     switch (deletion.reason) {
@@ -180,7 +181,7 @@ function toDoctorOrphans(
           kind: "orphan-data-volume" as const,
           slug: deletion.slug,
           pr_id: deletion.prId,
-          volume_name: deletion.volumeName,
+          volume_name: deletion.name,
         };
       default: {
         const _exhaustive: never = deletion;
@@ -232,12 +233,7 @@ async function collectDoctorFindings(deps: IntrospectionDeps): Promise<{
       : [];
   const dataVolumes =
     dataVolumesResult.status === "fulfilled"
-      ? dataVolumesResult.value.map(({ name, slug, prId, index }) => ({
-          volumeName: name,
-          slug,
-          prId,
-          index,
-        }))
+      ? dataVolumesResult.value
       : [];
 
   return {

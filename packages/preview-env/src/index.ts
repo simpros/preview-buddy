@@ -79,6 +79,7 @@ export {
   parseDataVolumeName,
   parseSqliteVolumeName,
   sqliteVolumeName,
+  type DataVolumeRef,
 } from "./naming.ts";
 
 export {
