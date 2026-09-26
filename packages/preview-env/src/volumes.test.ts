@@ -56,7 +56,11 @@ describe("parsePreviewVolumes", () => {
   });
 
   test("rejects collision with the sqlite db.path", () => {
-    const parsed = parsePreviewVolumes(["/data"], { dbPath: "/data" });
+    const parsed = parsePreviewVolumes(["/data"], {
+      provider: "sqlite",
+      path: "/data",
+      file: "app.db",
+    });
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) {
       expect(parsed.issue.code).toBe("volume_collides_db_path");
@@ -64,5 +68,53 @@ describe("parsePreviewVolumes", () => {
         previewVolumeIssueMessage("preview.volumes", parsed.issue),
       ).toContain("db.path");
     }
+  });
+
+  test("ignores db.path unless the provider is sqlite", () => {
+    expect(
+      parsePreviewVolumes(["/data"], {
+        provider: "postgres",
+        path: "/data",
+        file: "app.db",
+      }),
+    ).toEqual({ ok: true, value: ["/data"] });
+  });
+
+  test("rejects the root mount", () => {
+    const parsed = parsePreviewVolumes(["/"]);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.issue.code).toBe("volume_is_root");
+      expect(
+        previewVolumeIssueMessage("preview.volumes", parsed.issue),
+      ).toContain("preview.volumes[0]");
+    }
+  });
+
+  test("rejects nested entries in either order", () => {
+    for (const raw of [["/data", "/data/documents"], ["/data/documents", "/data"]]) {
+      const parsed = parsePreviewVolumes(raw);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.issue.code).toBe("volume_overlaps");
+      }
+    }
+  });
+
+  test("rejects db.path nesting in either direction", () => {
+    const child = parsePreviewVolumes(["/data/documents"], {
+      provider: "sqlite",
+      path: "/data",
+      file: "app.db",
+    });
+    expect(child.ok).toBe(false);
+    if (!child.ok) expect(child.issue.code).toBe("volume_collides_db_path");
+    const parent = parsePreviewVolumes(["/data"], {
+      provider: "sqlite",
+      path: "/data/db",
+      file: "app.db",
+    });
+    expect(parent.ok).toBe(false);
+    if (!parent.ok) expect(parent.issue.code).toBe("volume_collides_db_path");
   });
 });

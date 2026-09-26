@@ -1,4 +1,4 @@
-import type { DataVolumeRef, HealthSpec } from "@sprout/preview-env";
+import type { HealthSpec } from "@sprout/preview-env";
 import {
   defaultHealthProbe,
   pollHealth,
@@ -24,7 +24,6 @@ import {
 } from "./seed.ts";
 import type { CatalogContainer, PreviewDocker } from "../docker/port.ts";
 import {
-  parseDataVolumeName,
   previewContainerName,
   seedImageRunName,
 } from "../preview/naming.ts";
@@ -51,8 +50,6 @@ export type PreviewAppOps = {
   runSeed: (input: SeedImageInput) => Promise<SeedImageResult>;
   remove: (slug: string, prId: number) => Promise<void>;
   list: () => Promise<CatalogContainer[]>;
-  removeDataVolumes: (slug: string, prId: number) => Promise<void>;
-  listDataVolumes: () => Promise<DataVolumeRef[]>;
   liveLogs: (input: {
     slug: string;
     prId: number;
@@ -81,19 +78,6 @@ export async function fetchLiveContainerLogs(
     ),
   ]);
   return { app, seed };
-}
-
-/** Single ownership rule for app-data volumes; teardown and sweep share it. */
-async function listDataVolumeRefs(
-  docker: PreviewDocker,
-): Promise<DataVolumeRef[]> {
-  const out: DataVolumeRef[] = [];
-  for (const name of await docker.listVolumes()) {
-    const parsed = parseDataVolumeName(name);
-    if (!parsed) continue;
-    out.push({ name, ...parsed });
-  }
-  return out;
 }
 
 export function bindPreviewOps(deps: BindPreviewOpsDeps): PreviewAppOps {
@@ -129,14 +113,6 @@ export function bindPreviewOps(deps: BindPreviewOpsDeps): PreviewAppOps {
       ),
     remove: (slug, prId) => removePreviewFleet(deps.docker, slug, prId),
     list: () => deps.docker.listPreviewContainers(),
-    removeDataVolumes: async (slug, prId) => {
-      const refs = await listDataVolumeRefs(deps.docker);
-      const owned = refs.filter(
-        (ref) => ref.slug === slug && ref.prId === prId,
-      );
-      await Promise.all(owned.map((ref) => deps.docker.removeVolume(ref.name)));
-    },
-    listDataVolumes: () => listDataVolumeRefs(deps.docker),
     liveLogs: (input) => fetchLiveContainerLogs(deps.docker, input),
   };
 }

@@ -383,9 +383,9 @@ function parseLabels(
 
 function parsePreviewVolumesField(
   raw: unknown,
-  dbPath: string | undefined,
+  spec?: DbSpec,
 ): Result<string[]> {
-  const parsed = parsePreviewVolumes(raw, dbPath ? { dbPath } : {});
+  const parsed = parsePreviewVolumes(raw, spec);
   if (parsed.ok) return parsed;
   return {
     ok: false,
@@ -534,7 +534,7 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
   const normalizedDb = normalizeDbSpec(db.value);
   const volumes = parsePreviewVolumesField(
     parsed.preview.volumes,
-    normalizedDb.provider === "sqlite" ? normalizedDb.path : undefined,
+    normalizedDb,
   );
   if (!volumes.ok) return volumes;
 

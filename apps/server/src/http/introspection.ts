@@ -154,13 +154,13 @@ export function drop(deps: IntrospectionDeps) {
   };
 }
 
-function toDoctorOrphans(
-  previewKeys: Set<string>,
-  catalog: { slug: string; prId: number; dbName: string }[],
-  containers: { slug: string; prId: number }[],
-  dataVolumes: DataVolumeRef[],
-): DoctorOrphan[] {
-  return planOrphans(previewKeys, catalog, containers, dataVolumes).map((deletion) => {
+function toDoctorOrphans(input: {
+  previewKeys: Set<string>;
+  catalog: { slug: string; prId: number; dbName: string }[];
+  containers: { slug: string; prId: number }[];
+  dataVolumes: DataVolumeRef[];
+}): DoctorOrphan[] {
+  return planOrphans(input).map((deletion) => {
     switch (deletion.reason) {
       case "sweep:orphan-db":
         return {
@@ -207,7 +207,7 @@ async function collectDoctorFindings(deps: IntrospectionDeps): Promise<{
       deps.previewDb.ping(),
       deps.previewDb.listPreviewDatabases(),
       deps.app.list(),
-      deps.app.listDataVolumes(),
+      deps.dataVolumes.listDataVolumes(),
     ]);
 
   const postgres: "ok" | "unreachable" =
@@ -237,6 +237,6 @@ async function collectDoctorFindings(deps: IntrospectionDeps): Promise<{
   return {
     postgres,
     docker,
-    orphans: toDoctorOrphans(previewKeys, catalog, containers, dataVolumes),
+    orphans: toDoctorOrphans({ previewKeys, catalog, containers, dataVolumes }),
   };
 }

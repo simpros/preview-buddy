@@ -3,6 +3,7 @@ import type { ForgeClient } from "../forge/client.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 import { previews } from "../infrastructure/db/schema.ts";
+import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import {
   dropOrphanDatabase,
   dropOrphanDataVolume,
@@ -19,10 +20,8 @@ import type {
 export type LiveSweepDeps = {
   db: StateDb;
   previewDb: PreviewDbRouter;
-  app: Pick<
-    PreviewAppOps,
-    "list" | "remove" | "removeDataVolumes" | "listDataVolumes"
-  >;
+  app: Pick<PreviewAppOps, "list" | "remove">;
+  dataVolumes: PreviewDataVolumes;
   forge: ForgeClient;
   ttlHours: number;
   log?: SweepPorts["log"];
@@ -33,6 +32,7 @@ function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
     db: deps.db,
     previewDb: deps.previewDb,
     app: deps.app,
+    dataVolumes: deps.dataVolumes,
   };
 }
 
@@ -49,10 +49,7 @@ async function removeControlPlane(
     expectedDbName: deletion.dbName,
     expectedCreatedAt: deletion.createdAt,
   });
-  if (!result.ok) {
-    deps.log?.(`sweep drop database failed: ${result.error}`, deletion);
-    throw new Error(`teardown incomplete: ${deletion.dbName}`);
-  }
+  if (!result.ok) throw new Error(result.error);
   return result.value;
 }
 
@@ -86,7 +83,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
       (await deps.previewDb.listPreviewDatabases()).map(
         ({ slug, prId, dbName }) => ({ slug, prId, dbName }),
       ),
-    listDataVolumes: async () => await deps.app.listDataVolumes(),
+    listDataVolumes: async () => await deps.dataVolumes.listDataVolumes(),
     listPreviewContainers: async () =>
       (await deps.app.list()).map(({ slug, prId }) => ({
         slug,
@@ -95,58 +92,39 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
     listOpenPrIds: (canonicalRepoId) =>
       deps.forge.listOpenPrIds(canonicalRepoId),
     drop: async (deletion: SweepDeletion) => {
-      switch (deletion.reason) {
-        case "sweep:ttl-expired":
-          return removeControlPlane(deps, deletion);
-        case "sweep:pr-not-open": {
-          const open = await deps.forge.listOpenPrIds(
-            deletion.canonicalRepoId,
-          );
-          if (open.includes(deletion.prId)) return false;
-          return removeControlPlane(deps, deletion);
-        }
-        case "sweep:orphan-db": {
-          try {
-            return await dropOrphanDatabase(
-              teardownDeps(deps),
-              deletion.dbName,
-            );
-          } catch (error) {
-            deps.log?.(
-              `sweep drop database failed: ${String(error)}`,
-              deletion,
-            );
-            throw new Error(`teardown incomplete: ${deletion.dbName}`);
-          }
-        }
-        case "sweep:orphan-container": {
-          try {
-            await deps.app.remove(deletion.slug, deletion.prId);
-            return true;
-          } catch (error) {
-            deps.log?.(
-              `sweep remove container failed: ${String(error)}`,
-              deletion,
-            );
-            throw new Error(
-              `teardown incomplete: ${deletion.slug}:${deletion.prId}`,
-            );
-          }
-        }
-        case "sweep:orphan-data-volume": {
-          try {
-            return await dropOrphanDataVolume(teardownDeps(deps), deletion);
-          } catch (error) {
-            deps.log?.(
-              `sweep drop data volume failed: ${String(error)}`,
-              deletion,
-            );
-            throw new Error(
-              `teardown incomplete: ${deletion.slug}:${deletion.prId}`,
-            );
-          }
-        }
+      try {
+        return await dropDeletion(deps, deletion);
+      } catch (error) {
+        deps.log?.(
+          `sweep drop failed (${deletion.reason}): ${String(error)}`,
+          deletion,
+        );
+        throw new Error(
+          `teardown incomplete: ${deletion.slug}:${deletion.prId}`,
+        );
       }
     },
   };
+}
+
+async function dropDeletion(
+  deps: LiveSweepDeps,
+  deletion: SweepDeletion,
+): Promise<boolean> {
+  switch (deletion.reason) {
+    case "sweep:ttl-expired":
+      return removeControlPlane(deps, deletion);
+    case "sweep:pr-not-open": {
+      const open = await deps.forge.listOpenPrIds(deletion.canonicalRepoId);
+      if (open.includes(deletion.prId)) return false;
+      return removeControlPlane(deps, deletion);
+    }
+    case "sweep:orphan-db":
+      return dropOrphanDatabase(teardownDeps(deps), deletion.dbName);
+    case "sweep:orphan-container":
+      await deps.app.remove(deletion.slug, deletion.prId);
+      return true;
+    case "sweep:orphan-data-volume":
+      return dropOrphanDataVolume(teardownDeps(deps), deletion);
+  }
 }

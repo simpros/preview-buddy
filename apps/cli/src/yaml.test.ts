@@ -1180,4 +1180,19 @@ db:
       error: expect.stringContaining("db.path"),
     });
   });
+
+  test("rejects root and nested preview.volumes", () => {
+    const base = (volumes: string) =>
+      parseSproutYaml(
+        `slug: myapp\npreview:\n  hostname: "pr-{pr_id}.example.com"\n  volumes:${volumes}\n`,
+      );
+    expect(base("\n    - /")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("preview.volumes[0]"),
+    });
+    expect(base("\n    - /data\n    - /data/documents")).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("preview.volumes[1]"),
+    });
+  });
 });

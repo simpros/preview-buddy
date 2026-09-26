@@ -6,6 +6,7 @@ import {
 import { bindTestPreviewApp, createTestDb } from "../http/test-helpers.ts";
 import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
 import { runSweepPass } from "./reconcile.ts";
 
@@ -74,6 +75,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb,
       forge: {
         listOpenPrIds: async () => [],
@@ -117,6 +119,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
       }),
@@ -158,6 +161,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "sprout_widgets_pr1", slug: "widgets", prId: 1 },
@@ -211,6 +215,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "sprout_widgets_pr1", slug: "widgets", prId: 1 },
@@ -263,6 +268,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: () => ({
@@ -318,6 +324,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [
           { dbName: "sprout_widgets_pr10", slug: "widgets", prId: 10 },
@@ -374,6 +381,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -423,6 +431,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -472,6 +481,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -523,6 +533,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: dropRecorder(droppedDbs),
@@ -565,6 +576,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
       }),
@@ -591,6 +603,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
       }),
@@ -619,6 +632,7 @@ describe("createLiveSweepPorts", () => {
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       previewDb: stubPreviewDb({
         listPreviewDatabases: async () => [],
         forDrop: () => ({
@@ -639,6 +653,6 @@ describe("createLiveSweepPorts", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr42",
       }),
-    ).rejects.toThrow("teardown incomplete: sprout_widgets_pr42");
+    ).rejects.toThrow("teardown incomplete: widgets:42");
   });
 });

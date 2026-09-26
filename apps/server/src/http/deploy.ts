@@ -432,10 +432,7 @@ export function resolvePreviewVolumesRequest(
 ):
   | { ok: true; value: string[] }
   | { ok: false; error: string; detail?: string } {
-  const parsed = parsePreviewVolumes(
-    body.volumes,
-    spec.provider === "sqlite" ? { dbPath: spec.path } : {},
-  );
+  const parsed = parsePreviewVolumes(body.volumes, spec);
   if (parsed.ok) return parsed;
   return {
     ok: false,
@@ -540,7 +537,7 @@ export function deploy(
       connectionEnv: deploySpecs.value.connectionEnv,
       mail: deploySpecs.value.mail,
       roles: deploySpecs.value.roles,
-      volumes: volumes.value,
+      dataVolumePaths: volumes.value,
     });
     const collisions = resolveLabelCollisions({
       slug: body.slug,

@@ -96,14 +96,14 @@ export function resolvePreviewPlan(
     connectionEnv?: PreviewEnvMap;
     mail?: MailSpec;
     /** Opt-in per-preview app-data container paths (`preview.volumes`). */
-    volumes?: string[];
+    dataVolumePaths?: string[];
     /** Test override; deploy omits it so identity resolves in one place. */
     dbName?: string | null;
     /** Resolved by the deploy boundary via resolveDbRoles; required here. */
     roles: DbRolesMode;
   },
 ): PreviewDbPlan {
-  const appDataVolumes = (input.volumes ?? []).map(
+  const appDataVolumes = (input.dataVolumePaths ?? []).map(
     (path, index) =>
       `${dataVolumeName(input.slug, input.prId, index)}:${path}`,
   );

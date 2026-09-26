@@ -3,6 +3,7 @@ import { createForgeClient } from "../forge/client.ts";
 import type { Config } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
 import { runSweepPass } from "./reconcile.ts";
 import { startSweepTimer, type SweepTimerHandle } from "./timer.ts";
@@ -12,6 +13,7 @@ export function startGatewaySweep(deps: {
   db: StateDb;
   previewDb: PreviewDbRouter;
   app: PreviewAppOps;
+  dataVolumes: PreviewDataVolumes;
 }): SweepTimerHandle {
   const forge = createForgeClient({
     githubToken: deps.config.githubToken,
@@ -22,6 +24,7 @@ export function startGatewaySweep(deps: {
     db: deps.db,
     previewDb: deps.previewDb,
     app: deps.app,
+    dataVolumes: deps.dataVolumes,
     forge,
     ttlHours: deps.config.ttlHours,
     log: (message, deletion) => {

@@ -356,8 +356,16 @@ contract:
   containers are byte-identical to today's.
 
 Validation fails at manifest parse, naming `preview.volumes`: relative
-paths, `..` segments, duplicates, and a collision with the SQLite
-`db.path` are each rejected.
+paths, `/` itself, `..` segments, duplicates, nested entries (one path
+equal to or inside another), and any entry equal to or nested inside the
+SQLite `db.path` (or vice versa) are each rejected.
+
+Volume names are index-keyed, so treat the list as append-only:
+appending an entry is safe, but reordering or removing one silently
+re-points an existing volume's contents at a different mount path (and
+strands the tail volume). Shrinking the list does not delete the
+surplus volumes either — they linger until teardown or the sweep's
+orphan pass removes them.
 
 Writability rule: a fresh named volume starts empty. Docker copies the
 image's content and ownership at that path into the volume only when

@@ -230,7 +230,7 @@ describe("resolvePreviewPlan", () => {
 
   test("preview.volumes mounts one named volume per entry on postgres", () => {
     expect(
-      plan(defaultDbSpec(), { volumes: ["/data/documents"] }),
+      plan(defaultDbSpec(), { dataVolumePaths: ["/data/documents"] }),
     ).toMatchObject({
       provider: "postgres",
       volumes: ["sprout-myapp-pr-42-data-0:/data/documents"],
@@ -239,13 +239,13 @@ describe("resolvePreviewPlan", () => {
 
   test("preview.volumes appends after the sqlite volume with stable indexes", () => {
     expect(
-      plan(SQLITE_DB, { volumes: ["/data/documents", "/cache"] }),
+      plan(SQLITE_DB, { dataVolumePaths: ["/cache", "/work"] }),
     ).toMatchObject({
       provider: "sqlite",
       volumes: [
         "sprout-myapp-pr-42-sqlite:/data",
-        "sprout-myapp-pr-42-data-0:/data/documents",
-        "sprout-myapp-pr-42-data-1:/cache",
+        "sprout-myapp-pr-42-data-0:/cache",
+        "sprout-myapp-pr-42-data-1:/work",
       ],
     });
   });

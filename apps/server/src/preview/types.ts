@@ -10,6 +10,7 @@ import type {
 import type { SeedImageSpec } from "../app-deployment/seed.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import type { PreviewDataVolumes } from "./data-volumes.ts";
 
 export type PreviewStatus =
   | "provisioning"
@@ -38,13 +39,15 @@ import type { PreviewDbPlan } from "./runtime.ts";
 export type TeardownDeps = {
   db: StateDb;
   previewDb: PreviewDbRouter;
-  app: Pick<PreviewAppOps, "remove" | "removeDataVolumes">;
+  app: Pick<PreviewAppOps, "remove">;
+  dataVolumes: PreviewDataVolumes;
 };
 
 export type LifecycleDeps = {
   db: StateDb;
   previewDb: PreviewDbRouter;
   app: PreviewAppOps;
+  dataVolumes: PreviewDataVolumes;
 };
 
 export type ProvisionInput = {

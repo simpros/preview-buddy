@@ -5,6 +5,7 @@ import { hashToken } from "../auth/tokens.ts";
 import { createFakeDockerClient } from "../docker/fake.ts";
 import { repos } from "../infrastructure/db/schema.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
+import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createRoutes } from "./routes.ts";
 import {
   bearer,
@@ -339,10 +340,12 @@ describe("ensureAdminToken", () => {
     const again = await ensureAdminToken(testDb.db);
     expect(again).toEqual({ status: "existing" });
 
+    const docker = createFakeDockerClient();
     const app = createRoutes({
       db: testDb.db,
       previewDb: createFakePreviewDb(),
-      app: bindTestPreviewApp(createFakeDockerClient()),
+      app: bindTestPreviewApp(docker),
+      dataVolumes: bindPreviewDataVolumes(docker),
       materialization: { traefikNetwork: "sprout-traefik" },
     });
     const res = await app.handle(

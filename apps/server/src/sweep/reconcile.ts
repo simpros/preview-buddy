@@ -98,15 +98,15 @@ export type OrphanDeletion = Extract<
   }
 >;
 
-export function planOrphans(
-  previewKeys: Set<string>,
-  catalog: CatalogDbRef[],
-  containers: PreviewRef[],
-  dataVolumes: DataVolumeRef[],
-): OrphanDeletion[] {
+export function planOrphans(input: {
+  previewKeys: Set<string>;
+  catalog: CatalogDbRef[];
+  containers: PreviewRef[];
+  dataVolumes: DataVolumeRef[];
+}): OrphanDeletion[] {
   const out: OrphanDeletion[] = [];
-  for (const db of catalog) {
-    if (previewKeys.has(`${db.slug}:${db.prId}`)) continue;
+  for (const db of input.catalog) {
+    if (input.previewKeys.has(`${db.slug}:${db.prId}`)) continue;
     out.push({
       reason: "sweep:orphan-db",
       slug: db.slug,
@@ -114,27 +114,34 @@ export function planOrphans(
       dbName: db.dbName,
     });
   }
-  const seenOrphanContainers = new Set<string>();
-  for (const container of containers) {
-    const key = `${container.slug}:${container.prId}`;
-    if (previewKeys.has(key) || seenOrphanContainers.has(key)) continue;
-    seenOrphanContainers.add(key);
-    out.push({
-      reason: "sweep:orphan-container",
-      slug: container.slug,
-      prId: container.prId,
-    });
-  }
-  const seenOrphanVolumes = new Set<string>();
-  for (const volume of dataVolumes) {
-    const key = `${volume.slug}:${volume.prId}`;
-    if (previewKeys.has(key) || seenOrphanVolumes.has(key)) continue;
-    seenOrphanVolumes.add(key);
-    out.push({
-      reason: "sweep:orphan-data-volume",
-      slug: volume.slug,
-      prId: volume.prId,
-    });
+  out.push(
+    ...keyedRefs(input.previewKeys, input.containers, "sweep:orphan-container"),
+    ...keyedRefs(
+      input.previewKeys,
+      input.dataVolumes,
+      "sweep:orphan-data-volume",
+    ),
+  );
+  return out;
+}
+
+/** One deduped slug:prId loop for every per-preview orphan resource. */
+function keyedRefs(
+  previewKeys: Set<string>,
+  refs: PreviewRef[],
+  reason: "sweep:orphan-container" | "sweep:orphan-data-volume",
+): OrphanDeletion[] {
+  const seen = new Set<string>();
+  const out: OrphanDeletion[] = [];
+  for (const ref of refs) {
+    const key = `${ref.slug}:${ref.prId}`;
+    if (previewKeys.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    if (reason === "sweep:orphan-container") {
+      out.push({ reason, slug: ref.slug, prId: ref.prId });
+    } else {
+      out.push({ reason, slug: ref.slug, prId: ref.prId });
+    }
   }
   return out;
 }
@@ -196,7 +203,12 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
     }
   }
 
-  const orphanDeletions = planOrphans(previewKeys, catalog, containers, dataVolumes);
+  const orphanDeletions = planOrphans({
+    previewKeys,
+    catalog,
+    containers,
+    dataVolumes,
+  });
 
   const candidateRepos = [
     ...new Set(remainingPreviews.map((p) => p.canonicalRepoId)),
