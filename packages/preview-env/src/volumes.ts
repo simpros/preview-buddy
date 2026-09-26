@@ -19,10 +19,10 @@ function hasDotDotSegment(path: string): boolean {
 export function parsePreviewVolumes(
   raw: unknown,
   opts: { dbPath?: string } = {},
-): { ok: true; value: string[] | undefined } | { ok: false; issue: PreviewVolumeIssue } {
-  if (raw === undefined) return { ok: true, value: undefined };
+): { ok: true; value: string[] } | { ok: false; issue: PreviewVolumeIssue } {
+  if (raw === undefined) return { ok: true, value: [] };
   if (!Array.isArray(raw)) return { ok: false, issue: { code: "volumes_not_a_list" } };
-  if (raw.length === 0) return { ok: true, value: undefined };
+  if (raw.length === 0) return { ok: true, value: [] };
   const out: string[] = [];
   const seen = new Set<string>();
   const dbPath =

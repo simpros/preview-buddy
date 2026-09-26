@@ -52,7 +52,6 @@ export type PreviewAppOps = {
   remove: (slug: string, prId: number) => Promise<void>;
   list: () => Promise<CatalogContainer[]>;
   removeDataVolumes: (slug: string, prId: number) => Promise<void>;
-  removeDataVolume: (name: string) => Promise<void>;
   listDataVolumes: () => Promise<DataVolumeRef[]>;
   liveLogs: (input: {
     slug: string;
@@ -82,6 +81,19 @@ export async function fetchLiveContainerLogs(
     ),
   ]);
   return { app, seed };
+}
+
+/** Single ownership rule for app-data volumes; teardown and sweep share it. */
+async function listDataVolumeRefs(
+  docker: PreviewDocker,
+): Promise<DataVolumeRef[]> {
+  const out: DataVolumeRef[] = [];
+  for (const name of await docker.listVolumes()) {
+    const parsed = parseDataVolumeName(name);
+    if (!parsed) continue;
+    out.push({ name, ...parsed });
+  }
+  return out;
 }
 
 export function bindPreviewOps(deps: BindPreviewOpsDeps): PreviewAppOps {
@@ -118,23 +130,13 @@ export function bindPreviewOps(deps: BindPreviewOpsDeps): PreviewAppOps {
     remove: (slug, prId) => removePreviewFleet(deps.docker, slug, prId),
     list: () => deps.docker.listPreviewContainers(),
     removeDataVolumes: async (slug, prId) => {
-      const volumes = await deps.docker.listVolumes();
-      const owned = volumes.filter((name) => {
-        const parsed = parseDataVolumeName(name);
-        return parsed !== null && parsed.slug === slug && parsed.prId === prId;
-      });
-      await Promise.all(owned.map((name) => deps.docker.removeVolume(name)));
+      const refs = await listDataVolumeRefs(deps.docker);
+      const owned = refs.filter(
+        (ref) => ref.slug === slug && ref.prId === prId,
+      );
+      await Promise.all(owned.map((ref) => deps.docker.removeVolume(ref.name)));
     },
-    removeDataVolume: (name) => deps.docker.removeVolume(name),
-    listDataVolumes: async () => {
-      const out: DataVolumeRef[] = [];
-      for (const name of await deps.docker.listVolumes()) {
-        const parsed = parseDataVolumeName(name);
-        if (!parsed) continue;
-        out.push({ name, ...parsed });
-      }
-      return out;
-    },
+    listDataVolumes: () => listDataVolumeRefs(deps.docker),
     liveLogs: (input) => fetchLiveContainerLogs(deps.docker, input),
   };
 }

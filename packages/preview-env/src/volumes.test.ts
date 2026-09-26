@@ -1,16 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import type { PreviewVolumeIssue } from "./index.ts";
 import {
   parsePreviewVolumes,
   previewVolumeIssueMessage,
 } from "./volumes.ts";
 
 describe("parsePreviewVolumes", () => {
-  test("absent stays absent; empty list stays absent", () => {
+  test("absent and empty list mean no volumes", () => {
     expect(parsePreviewVolumes(undefined)).toEqual({
       ok: true,
-      value: undefined,
+      value: [],
     });
-    expect(parsePreviewVolumes([])).toEqual({ ok: true, value: undefined });
+    expect(parsePreviewVolumes([])).toEqual({ ok: true, value: [] });
   });
 
   test("normalizes trailing slashes", () => {
@@ -46,9 +47,10 @@ describe("parsePreviewVolumes", () => {
     const parsed = parsePreviewVolumes(["/data", "/data/"]);
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) {
-      expect(parsed.issue.code).toBe("volume_duplicate");
+      const issue: PreviewVolumeIssue = parsed.issue;
+      expect(issue.code).toBe("volume_duplicate");
       expect(
-        previewVolumeIssueMessage("preview.volumes", parsed.issue),
+        previewVolumeIssueMessage("preview.volumes", issue),
       ).toContain("preview.volumes");
     }
   });

@@ -576,7 +576,6 @@ describe("createLiveSweepPorts", () => {
       reason: "sweep:orphan-data-volume",
       slug: "widgets",
       prId: 42,
-      name: "sprout-widgets-pr-42-data-0",
     });
     expect(removed).toBe(false);
     expect(docker.volumesRemoved).toEqual([]);
@@ -588,6 +587,7 @@ describe("createLiveSweepPorts", () => {
 
     const docker = createFakeDockerClient();
     docker.volumes.add("sprout-widgets-pr-42-data-0");
+    docker.volumes.add("sprout-widgets-pr-42-data-1");
     const ports = createLiveSweepPorts({
       db: testDb.db,
       app: bindTestPreviewApp(docker),
@@ -602,10 +602,12 @@ describe("createLiveSweepPorts", () => {
       reason: "sweep:orphan-data-volume",
       slug: "widgets",
       prId: 42,
-      name: "sprout-widgets-pr-42-data-0",
     });
     expect(removed).toBe(true);
-    expect(docker.volumesRemoved).toEqual(["sprout-widgets-pr-42-data-0"]);
+    expect(docker.volumesRemoved).toEqual([
+      "sprout-widgets-pr-42-data-0",
+      "sprout-widgets-pr-42-data-1",
+    ]);
     expect([...docker.volumes]).toEqual([]);
   });
 

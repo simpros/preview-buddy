@@ -175,7 +175,7 @@ describe("runSweepPass", () => {
     expect(logs).toContain("deleted (sweep:orphan-container)");
   });
 
-  test("drops each orphan data volume with sweep:orphan-data-volume", async () => {
+  test("dedupes orphan data volumes to one deletion per preview", async () => {
     setSystemTime(new Date("2026-09-03T12:00:00.000Z"));
     const { ports, deletions, logs } = memoryPorts({
       previews: [],
@@ -199,13 +199,6 @@ describe("runSweepPass", () => {
         reason: "sweep:orphan-data-volume",
         prId: 42,
         slug: "widgets",
-        name: "sprout-widgets-pr-42-data-0",
-      },
-      {
-        reason: "sweep:orphan-data-volume",
-        prId: 42,
-        slug: "widgets",
-        name: "sprout-widgets-pr-42-data-1",
       },
     ]);
     expect(logs).toContain("deleted (sweep:orphan-data-volume)");

@@ -25,7 +25,6 @@ import {
   type PreviewEnvMap,
   type PreviewLabels,
   type PreviewServiceSpec,
-  type PreviewVolumeIssue,
 } from "@sprout/preview-env";
 import { t } from "elysia";
 import { parseResetMarkerToken } from "@sprout/preview-db";
@@ -431,18 +430,17 @@ export function resolvePreviewVolumesRequest(
   body: Pick<DeployBody, "volumes">,
   spec: DbSpec,
 ):
-  | { ok: true; value: string[] | undefined }
+  | { ok: true; value: string[] }
   | { ok: false; error: string; detail?: string } {
   const parsed = parsePreviewVolumes(
     body.volumes,
     spec.provider === "sqlite" ? { dbPath: spec.path } : {},
   );
   if (parsed.ok) return parsed;
-  const issue: PreviewVolumeIssue = parsed.issue;
   return {
     ok: false,
     error: "invalid_volumes",
-    detail: previewVolumeIssueMessage("preview.volumes", issue),
+    detail: previewVolumeIssueMessage("preview.volumes", parsed.issue),
   };
 }
 
@@ -542,7 +540,7 @@ export function deploy(
       connectionEnv: deploySpecs.value.connectionEnv,
       mail: deploySpecs.value.mail,
       roles: deploySpecs.value.roles,
-      ...(volumes.value !== undefined ? { volumes: volumes.value } : {}),
+      volumes: volumes.value,
     });
     const collisions = resolveLabelCollisions({
       slug: body.slug,

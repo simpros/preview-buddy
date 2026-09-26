@@ -41,7 +41,6 @@ export type SweepDeletion =
       reason: "sweep:orphan-data-volume";
       slug: string;
       prId: number;
-      name: string;
     };
 
 export type SweepPorts = {
@@ -103,7 +102,7 @@ export function planOrphans(
   previewKeys: Set<string>,
   catalog: CatalogDbRef[],
   containers: PreviewRef[],
-  dataVolumes: DataVolumeRef[] = [],
+  dataVolumes: DataVolumeRef[],
 ): OrphanDeletion[] {
   const out: OrphanDeletion[] = [];
   for (const db of catalog) {
@@ -126,13 +125,15 @@ export function planOrphans(
       prId: container.prId,
     });
   }
+  const seenOrphanVolumes = new Set<string>();
   for (const volume of dataVolumes) {
-    if (previewKeys.has(`${volume.slug}:${volume.prId}`)) continue;
+    const key = `${volume.slug}:${volume.prId}`;
+    if (previewKeys.has(key) || seenOrphanVolumes.has(key)) continue;
+    seenOrphanVolumes.add(key);
     out.push({
       reason: "sweep:orphan-data-volume",
       slug: volume.slug,
       prId: volume.prId,
-      name: volume.name,
     });
   }
   return out;

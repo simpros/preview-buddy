@@ -21,7 +21,7 @@ export type LiveSweepDeps = {
   previewDb: PreviewDbRouter;
   app: Pick<
     PreviewAppOps,
-    "list" | "remove" | "removeDataVolumes" | "removeDataVolume" | "listDataVolumes"
+    "list" | "remove" | "removeDataVolumes" | "listDataVolumes"
   >;
   forge: ForgeClient;
   ttlHours: number;
@@ -135,17 +135,15 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
         }
         case "sweep:orphan-data-volume": {
           try {
-            return await dropOrphanDataVolume(teardownDeps(deps), {
-              name: deletion.name,
-              slug: deletion.slug,
-              prId: deletion.prId,
-            });
+            return await dropOrphanDataVolume(teardownDeps(deps), deletion);
           } catch (error) {
             deps.log?.(
               `sweep drop data volume failed: ${String(error)}`,
               deletion,
             );
-            throw new Error(`teardown incomplete: ${deletion.name}`);
+            throw new Error(
+              `teardown incomplete: ${deletion.slug}:${deletion.prId}`,
+            );
           }
         }
       }

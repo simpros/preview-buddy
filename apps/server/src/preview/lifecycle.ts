@@ -1,5 +1,4 @@
 import { and, eq, ne } from "drizzle-orm";
-import type { DataVolumeRef } from "@sprout/preview-env";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { completeBringUp, pullImagesOutsideLock } from "./bring-up.ts";
@@ -599,20 +598,20 @@ export function dropOrphanDatabase(
 
 export async function dropOrphanDataVolume(
   deps: TeardownDeps,
-  volume: DataVolumeRef,
+  preview: { slug: string; prId: number },
 ): Promise<boolean> {
   const [claim] = await deps.db
     .select()
     .from(previews)
     .where(
       and(
-        eq(previews.slug, volume.slug),
-        eq(previews.prId, volume.prId),
+        eq(previews.slug, preview.slug),
+        eq(previews.prId, preview.prId),
         ne(previews.status, "removed"),
       ),
     )
     .limit(1);
   if (claim) return false;
-  await deps.app.removeDataVolume(volume.name);
+  await deps.app.removeDataVolumes(preview.slug, preview.prId);
   return true;
 }

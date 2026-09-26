@@ -22,7 +22,6 @@ import {
   type MailSpec,
   type PreviewEnvMap,
   type PreviewLabels,
-  type PreviewVolumeIssue,
   type ServiceFields,
 } from "@sprout/preview-env";
 import { hostnameIssueMessage } from "./hostname.ts";
@@ -385,13 +384,12 @@ function parseLabels(
 function parsePreviewVolumesField(
   raw: unknown,
   dbPath: string | undefined,
-): Result<string[] | undefined> {
+): Result<string[]> {
   const parsed = parsePreviewVolumes(raw, dbPath ? { dbPath } : {});
   if (parsed.ok) return parsed;
-  const issue: PreviewVolumeIssue = parsed.issue;
   return {
     ok: false,
-    error: previewVolumeIssueMessage("preview.volumes", issue),
+    error: previewVolumeIssueMessage("preview.volumes", parsed.issue),
   };
 }
 
@@ -562,7 +560,7 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
   if (appEnv.value) value.preview.app_env = appEnv.value;
   if (services.value) value.preview.services = services.value;
   if (labels.value) value.preview.labels = labels.value;
-  if (volumes.value) value.preview.volumes = volumes.value;
+  if (volumes.value.length > 0) value.preview.volumes = volumes.value;
   if (db.value) value.db = db.value;
   if (mail.value) value.mail = mail.value;
   if (build.value) value.build = build.value;

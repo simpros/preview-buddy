@@ -76,10 +76,20 @@ function healthBlock() {
 describe("POST /v1/deploy preview.volumes", () => {
   test("without the key no volume is created and containers carry no Binds", async () => {
     const { deployToken } = await setup();
-    const res = await postDeploy(deployToken, deployBody());
+    const res = await postDeploy(
+      deployToken,
+      deployBody({
+        services: [{ name: "api", image: SVC_IMAGE }],
+        seed_image: SEED_IMAGE,
+        health: healthBlock(),
+      }),
+    );
     expect(res.settleStatus).toBe(200);
     expect(fakeDocker!.volumesCreated).toEqual([]);
-    expect(fakeDocker!.creates[0]).not.toHaveProperty("volumes");
+    expect(fakeDocker!.creates.length).toBeGreaterThan(1);
+    for (const create of fakeDocker!.creates) {
+      expect(create).not.toHaveProperty("volumes");
+    }
   });
 
   test("bring-up mounts the volume on app, service, and seed without pre-creating it", async () => {

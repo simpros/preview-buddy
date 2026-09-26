@@ -103,19 +103,10 @@ export function resolvePreviewPlan(
     roles: DbRolesMode;
   },
 ): PreviewDbPlan {
-  function dataVolumePart(volumeInput: {
-    slug: string;
-    prId: number;
-    volumes?: string[];
-  }): Pick<PreviewDbPlan, "volumes"> {
-    const paths = volumeInput.volumes ?? [];
-    return {
-      volumes: paths.map(
-        (path, index) =>
-          `${dataVolumeName(volumeInput.slug, volumeInput.prId, index)}:${path}`,
-      ),
-    };
-  }
+  const appDataVolumes = (input.volumes ?? []).map(
+    (path, index) =>
+      `${dataVolumeName(input.slug, input.prId, index)}:${path}`,
+  );
   const dbName =
     input.dbName !== undefined
       ? input.dbName
@@ -147,14 +138,13 @@ export function resolvePreviewPlan(
       dbName,
       roles,
       gatewayEnv: [],
-      ...dataVolumePart(input),
+      volumes: appDataVolumes,
       appNetworks: [ctx.traefikNetwork],
       seedNetworks: [],
     });
   }
   if (input.spec.provider === "sqlite") {
     const target = input.connectionEnv?.DATABASE_URL ?? "DATABASE_URL";
-    const data = dataVolumePart(input);
     return withMail({
       provider: "sqlite",
       dbName,
@@ -164,7 +154,7 @@ export function resolvePreviewPlan(
       ],
       volumes: [
         `${sqliteVolumeName(input.slug, input.prId)}:${input.spec.path}`,
-        ...data.volumes,
+        ...appDataVolumes,
       ],
       appNetworks: [ctx.traefikNetwork],
       // Seed needs no postgres data; traefik is the network that always exists.
@@ -187,7 +177,7 @@ export function resolvePreviewPlan(
     gatewayEnv: [
       ...pgConnectionEnv(postgres.pg, dbName, input.connectionEnv, roles),
     ],
-    ...dataVolumePart(input),
+    volumes: appDataVolumes,
     appNetworks: [ctx.traefikNetwork, postgres.network],
     seedNetworks: [postgres.network],
   });

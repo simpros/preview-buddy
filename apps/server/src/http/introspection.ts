@@ -34,7 +34,6 @@ export type DoctorOrphan =
       kind: "orphan-data-volume";
       slug: string;
       pr_id: number;
-      volume_name: string;
     };
 
 export type IntrospectionDeps = LifecycleDeps;
@@ -159,7 +158,7 @@ function toDoctorOrphans(
   previewKeys: Set<string>,
   catalog: { slug: string; prId: number; dbName: string }[],
   containers: { slug: string; prId: number }[],
-  dataVolumes: DataVolumeRef[] = [],
+  dataVolumes: DataVolumeRef[],
 ): DoctorOrphan[] {
   return planOrphans(previewKeys, catalog, containers, dataVolumes).map((deletion) => {
     switch (deletion.reason) {
@@ -181,7 +180,6 @@ function toDoctorOrphans(
           kind: "orphan-data-volume" as const,
           slug: deletion.slug,
           pr_id: deletion.prId,
-          volume_name: deletion.name,
         };
       default: {
         const _exhaustive: never = deletion;
