@@ -104,6 +104,13 @@ preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"
 `;
 
+const dockerfileServiceYaml = (serviceFields = "") => `slug: myapp
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+  services:
+    - name: landing
+${serviceFields}      dockerfile: apps/landing/Dockerfile
+`;
 const SEEDED_YAML = `slug: myapp
 build:
   dockerfile: Dockerfile
@@ -789,15 +796,9 @@ health:
   test("dockerfile service yields a second container on its own hostname", async () => {
     const baseUrl = healthyGateway();
     const cwd = await withWorkspace(
-      `slug: myapp
-preview:
-  hostname: "pr-{pr_id}.myapp.preview.example.com"
-  services:
-    - name: landing
-      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"
-      port: 80
-      dockerfile: apps/landing/Dockerfile
-`,
+      dockerfileServiceYaml(
+        '      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"\n      port: 80\n',
+      ),
     );
     const code = await runCli(
       ["ci", "preview"],
@@ -827,19 +828,18 @@ preview:
         },
       ],
     });
+    const firstBody = captured[0]?.body as {
+      services?: Array<Record<string, unknown>>;
+    };
+    expect(firstBody.services?.[0]).not.toHaveProperty("dockerfile");
   });
 
   test("--service overlays the built service ref without building it", async () => {
     const baseUrl = healthyGateway();
     const cwd = await withWorkspace(
-      `slug: myapp
-preview:
-  hostname: "pr-{pr_id}.myapp.preview.example.com"
-  services:
-    - name: landing
-      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"
-      dockerfile: apps/landing/Dockerfile
-`,
+      dockerfileServiceYaml(
+        '      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"\n',
+      ),
     );
     const code = await runCli(
       ["ci", "preview", "--service", "landing=prebuilt:1"],
@@ -863,19 +863,15 @@ preview:
         },
       ],
     });
+    const overlayBody = captured[0]?.body as {
+      services?: Array<Record<string, unknown>>;
+    };
+    expect(overlayBody.services?.[0]).not.toHaveProperty("dockerfile");
   });
 
   test("--clear-services skips service builds and clears companions", async () => {
     const baseUrl = healthyGateway();
-    const cwd = await withWorkspace(
-      `slug: myapp
-preview:
-  hostname: "pr-{pr_id}.myapp.preview.example.com"
-  services:
-    - name: landing
-      dockerfile: apps/landing/Dockerfile
-`,
-    );
+    const cwd = await withWorkspace(dockerfileServiceYaml());
     const code = await runCli(
       ["ci", "preview", "--clear-services"],
       deps({
@@ -892,19 +888,30 @@ preview:
     expect(captured[0]?.body).toMatchObject({ services: [] });
   });
 
+  test("--clear-services with --service fails before any image work", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(dockerfileServiceYaml());
+    const code = await runCli(
+      ["ci", "preview", "--clear-services", "--service", "landing=prebuilt:1"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toEqual([
+      "--clear-services cannot be combined with --service",
+    ]);
+    expect(dockerCalls).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+
   test("service build failure exits before deploy", async () => {
     const baseUrl = healthyGateway();
     dockerBehavior = (argv) =>
       argv.includes("apps/landing/Dockerfile") ? 2 : 0;
-    const cwd = await withWorkspace(
-      `slug: myapp
-preview:
-  hostname: "pr-{pr_id}.myapp.preview.example.com"
-  services:
-    - name: landing
-      dockerfile: apps/landing/Dockerfile
-`,
-    );
+    const cwd = await withWorkspace(dockerfileServiceYaml());
     const code = await runCli(
       ["ci", "preview"],
       deps({

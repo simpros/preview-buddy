@@ -12,12 +12,12 @@ import {
   truncationNotice,
 } from "./reset-request.ts";
 import { ensureSeedImage } from "./seed-image.ts";
-import { ensureServiceImages } from "./service-image.ts";
 import { teardownPreview } from "./teardown.ts";
 
 export const previewDeployPolicy: CiDeployPolicy = {
   allowReseed: true,
-  prepareImages: async (ctx, yaml, identity, flags) => {
+  buildServiceImages: true,
+  prepareImages: async (ctx, yaml, identity) => {
     let seedImage: string | undefined;
     if (yaml.seed) {
       const seed = await ensureSeedImage(ctx, yaml.seed, identity.imageRef);
@@ -27,8 +27,6 @@ export const previewDeployPolicy: CiDeployPolicy = {
     const appDockerfile = yaml.build?.dockerfile ?? "Dockerfile";
     const app = await buildAndPush(ctx, "app", appDockerfile, identity.imageRef);
     if (!app.ok) return app;
-    const services = await ensureServiceImages(ctx, yaml, identity.imageRef, flags);
-    if (!services.ok) return services;
     return { ok: true, value: { seedImage } };
   },
   publishNote: (deps, identity, settled) =>

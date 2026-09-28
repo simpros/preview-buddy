@@ -2,11 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { CliContext } from "../context.ts";
 import type { SproutYaml } from "../yaml.ts";
 import {
-  applyServiceImageTargets,
-  ensureServiceImages,
+  prepareServiceImages,
   resolveServiceImageRef,
   resolveServiceImageTargets,
-  resolveServiceImagesForReset,
   serviceFlagOverrides,
 } from "./service-image.ts";
 
@@ -64,6 +62,10 @@ describe("resolveServiceImageRef", () => {
   test("refuses an untagged app ref", () => {
     expect(resolveServiceImageRef("registry/app", "landing").ok).toBe(false);
   });
+
+  test("refuses a service name that would overflow the tag limit", () => {
+    expect(resolveServiceImageRef(APP_REF, "x".repeat(200)).ok).toBe(false);
+  });
 });
 
 describe("serviceFlagOverrides", () => {
@@ -89,7 +91,15 @@ describe("resolveServiceImageTargets", () => {
       resolveServiceImageTargets(yaml, APP_REF, new Set(["other"])),
     ).toEqual({
       ok: true,
-      value: new Map([["landing", `${APP_REF}-landing`]]),
+      value: new Map([
+        [
+          "landing",
+          {
+            dockerfile: "apps/landing/Dockerfile",
+            ref: `${APP_REF}-landing`,
+          },
+        ],
+      ]),
     });
   });
 
@@ -111,23 +121,7 @@ describe("resolveServiceImageTargets", () => {
   });
 });
 
-describe("applyServiceImageTargets", () => {
-  test("merges built refs as the service image", () => {
-    const yaml = yamlWithServices([
-      { name: "landing", dockerfile: "apps/landing/Dockerfile" },
-    ]);
-    applyServiceImageTargets(yaml, new Map([["landing", `${APP_REF}-landing`]]));
-    expect(yaml.preview.services).toEqual([
-      {
-        name: "landing",
-        dockerfile: "apps/landing/Dockerfile",
-        image: `${APP_REF}-landing`,
-      },
-    ]);
-  });
-});
-
-describe("ensureServiceImages", () => {
+describe("prepareServiceImages", () => {
   test("builds + pushes each declared service image", async () => {
     const { ctx, calls } = fakeCtx();
     const yaml = yamlWithServices([
@@ -137,13 +131,24 @@ describe("ensureServiceImages", () => {
         dockerfile: "apps/landing/Dockerfile",
       },
     ]);
-    const result = await ensureServiceImages(ctx, yaml, APP_REF, {
-      service: [],
-      clearServices: false,
-    });
+    const result = await prepareServiceImages(
+      ctx,
+      yaml,
+      APP_REF,
+      { service: [], clearServices: false },
+      { build: true },
+    );
     expect(result).toEqual({
       ok: true,
-      value: new Map([["landing", `${APP_REF}-landing`]]),
+      value: new Map([
+        [
+          "landing",
+          {
+            dockerfile: "apps/landing/Dockerfile",
+            ref: `${APP_REF}-landing`,
+          },
+        ],
+      ]),
     });
     expect(calls).toEqual([
       [
@@ -157,7 +162,36 @@ describe("ensureServiceImages", () => {
       ],
       ["docker", "push", `${APP_REF}-landing`],
     ]);
-    expect(yaml.preview.services?.[0]?.image).toBe(`${APP_REF}-landing`);
+    // The map is the transport: the yaml stays untouched for the request layer.
+    expect(yaml.preview.services?.[0]).not.toHaveProperty("image");
+  });
+
+  test("build: false resolves the same refs with no docker work", async () => {
+    const { ctx, calls } = fakeCtx();
+    const yaml = yamlWithServices([
+      { name: "landing", dockerfile: "apps/landing/Dockerfile" },
+    ]);
+    const result = await prepareServiceImages(
+      ctx,
+      yaml,
+      APP_REF,
+      { service: [], clearServices: false },
+      { build: false },
+    );
+    expect(result).toEqual({
+      ok: true,
+      value: new Map([
+        [
+          "landing",
+          {
+            dockerfile: "apps/landing/Dockerfile",
+            ref: `${APP_REF}-landing`,
+          },
+        ],
+      ]),
+    });
+    expect(calls).toEqual([]);
+    expect(yaml.preview.services?.[0]).not.toHaveProperty("image");
   });
 
   test("--clear-services skips all builds", async () => {
@@ -165,13 +199,15 @@ describe("ensureServiceImages", () => {
     const yaml = yamlWithServices([
       { name: "landing", dockerfile: "apps/landing/Dockerfile" },
     ]);
-    const result = await ensureServiceImages(ctx, yaml, APP_REF, {
-      service: [],
-      clearServices: true,
-    });
+    const result = await prepareServiceImages(
+      ctx,
+      yaml,
+      APP_REF,
+      { service: [], clearServices: true },
+      { build: true },
+    );
     expect(result).toEqual({ ok: true, value: new Map() });
     expect(calls).toEqual([]);
-    expect(yaml.preview.services?.[0]?.image).toBeUndefined();
   });
 
   test("--service overlay skips the overridden build", async () => {
@@ -179,10 +215,13 @@ describe("ensureServiceImages", () => {
     const yaml = yamlWithServices([
       { name: "landing", dockerfile: "apps/landing/Dockerfile" },
     ]);
-    const result = await ensureServiceImages(ctx, yaml, APP_REF, {
-      service: ["landing=prebuilt:1"],
-      clearServices: false,
-    });
+    const result = await prepareServiceImages(
+      ctx,
+      yaml,
+      APP_REF,
+      { service: ["landing=prebuilt:1"], clearServices: false },
+      { build: true },
+    );
     expect(result).toEqual({ ok: true, value: new Map() });
     expect(calls).toEqual([]);
   });
@@ -209,43 +248,17 @@ describe("ensureServiceImages", () => {
     const yaml = yamlWithServices([
       { name: "landing", dockerfile: "apps/landing/Dockerfile" },
     ]);
-    const result = await ensureServiceImages(ctx, yaml, APP_REF, {
-      service: [],
-      clearServices: false,
-    });
+    const result = await prepareServiceImages(
+      ctx,
+      yaml,
+      APP_REF,
+      { service: [], clearServices: false },
+      { build: true },
+    );
     expect(result).toEqual({
       ok: false,
       error: "service landing image build failed (exit 2)",
     });
     expect(calls).toHaveLength(1);
-  });
-});
-
-describe("resolveServiceImagesForReset", () => {
-  test("resolves the same refs with no docker work", () => {
-    const yaml = yamlWithServices([
-      { name: "landing", dockerfile: "apps/landing/Dockerfile" },
-    ]);
-    const result = resolveServiceImagesForReset(yaml, APP_REF, {
-      service: [],
-      clearServices: false,
-    });
-    expect(result).toEqual({
-      ok: true,
-      value: new Map([["landing", `${APP_REF}-landing`]]),
-    });
-    expect(yaml.preview.services?.[0]?.image).toBe(`${APP_REF}-landing`);
-  });
-
-  test("--clear-services resolves nothing", () => {
-    const yaml = yamlWithServices([
-      { name: "landing", dockerfile: "apps/landing/Dockerfile" },
-    ]);
-    expect(
-      resolveServiceImagesForReset(yaml, APP_REF, {
-        service: [],
-        clearServices: true,
-      }),
-    ).toEqual({ ok: true, value: new Map() });
   });
 });

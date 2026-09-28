@@ -462,6 +462,10 @@ preview:
         },
       ],
     });
+    const resetBody = captured[1]?.body as {
+      services?: Array<Record<string, unknown>>;
+    };
+    expect(resetBody.services?.[0]).not.toHaveProperty("dockerfile");
   });
 
   test("reset --service overlays the resolved service ref", async () => {
@@ -488,5 +492,9 @@ preview:
     expect(captured[1]?.body).toMatchObject({
       services: [{ name: "landing", image: "prebuilt:1" }],
     });
+    const resetBody = captured[1]?.body as {
+      services?: Array<Record<string, unknown>>;
+    };
+    expect(resetBody.services?.[0]).not.toHaveProperty("dockerfile");
   });
 });

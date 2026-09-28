@@ -7,6 +7,12 @@ export const MAX_SERVICES = 8;
 
 export type DeployService = PreviewServiceSpec;
 
+/** Companion selection flags shared by the deploy entry points. */
+export type ServiceSelection = {
+  service: string[];
+  clearServices: boolean;
+};
+
 export function parseServiceFlag(raw: string): Result<{ name: string; image: string }> {
   const eq = raw.indexOf("=");
   if (eq <= 0 || eq === raw.length - 1) {

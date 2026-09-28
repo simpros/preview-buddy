@@ -10,14 +10,12 @@ import {
   truncationNotice,
 } from "./reset-request.ts";
 import { resolveSeedTarget } from "./seed-image.ts";
-import { resolveServiceImagesForReset } from "./service-image.ts";
 import { teardownPreview } from "./teardown.ts";
 
 export const resetDeployPolicy: CiDeployPolicy = {
   allowReseed: false,
-  prepareImages: async (ctx, yaml, identity, flags) => {
-    const services = resolveServiceImagesForReset(yaml, identity.imageRef, flags);
-    if (!services.ok) return services;
+  buildServiceImages: false,
+  prepareImages: async (ctx, yaml, identity) => {
     if (!yaml.seed) return { ok: true, value: {} };
     const target = await resolveSeedTarget(
       yaml.seed,
