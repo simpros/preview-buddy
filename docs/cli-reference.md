@@ -43,7 +43,7 @@ auth so outside-pipeline errors win over missing-token.
 | | `--seed-env KEY=VALUE` (repeat) | One-off seed env. |
 | | `--seed-env-file PATH` (repeat) | Explicit dotenv file(s) for the seed, on top of `SPROUT_SEED_ENV`. |
 | | `--seed-arg ARG` (repeat) | Extra seed container args (appended after yaml `seed.args`; values may start with `-`). |
-| | `--service name=image` (repeat) | Create/refresh companion services (see [Previews](previews.md#multi-image-previews-app--services)). |
+| | `--service name=image` (repeat) | Create/refresh companion services (see [Previews](previews.md#multi-image-previews-app--services)). Overlays any `preview.services[].image` or built `preview.services[].dockerfile` ref (last write wins). |
 | | `--clear-services` | Remove all companions (`services: []` on the API). Cannot combine with `--service`. |
 | | `--tail N` | Gateway log lines printed when the deploy fails (default `200`; must be a positive integer, checked before building). |
 | | `--dotenv-file PATH` | Dotenv artifact the CLI writes `PREVIEW_URL=` to (default `sprout-preview.env`, relative to the workspace root). Emitted only once the preview is healthy. |
@@ -131,7 +131,10 @@ Repo-relative paths for the reference contract above:
 - `sprout ci preview` (builds, seed content-hash + reuse gate, `--reseed`,
   service flags, seed env/args, tail, dotenv, health gate):
   `apps/cli/src/commands/ci-preview.test.ts`,
-  `apps/cli/src/commands/seed-image.test.ts`
+  `apps/cli/src/commands/seed-image.test.ts`,
+  `apps/cli/src/commands/service-image.test.ts`
+- `sprout ci reset` (teardown + redeploy, same image set without rebuild):
+  `apps/cli/src/commands/ci-reset.test.ts`
 - `sprout ci` identity (both forges, detached/non-MR refusal):
   `apps/cli/src/commands/ci.test.ts`,
   `apps/cli/src/commands/ci-identity.test.ts`

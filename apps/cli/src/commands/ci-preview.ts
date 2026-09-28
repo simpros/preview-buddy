@@ -16,6 +16,7 @@ import { teardownPreview } from "./teardown.ts";
 
 export const previewDeployPolicy: CiDeployPolicy = {
   allowReseed: true,
+  buildServiceImages: true,
   prepareImages: async (ctx, yaml, identity) => {
     let seedImage: string | undefined;
     if (yaml.seed) {

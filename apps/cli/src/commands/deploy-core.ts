@@ -18,7 +18,7 @@ import type { CliDeps } from "../context.ts";
 import { readEden } from "../eden.ts";
 import { resolveDeployHostname } from "../hostname.ts";
 import type { Result } from "../result.ts";
-import { mergeServices, type DeployService } from "../services.ts";
+import { mergeServices, type DeployService, type ServiceSelection } from "../services.ts";
 import type {
   DbSpec,
   ManifestEnvValue,
@@ -30,6 +30,7 @@ import type { MailSpec } from "../yaml.ts";
 import { deployOutcome, printSettled } from "./deploy-outcome.ts";
 import type { DeploySettled } from "./deploy-outcome.ts";
 import { DEPLOY_POLL_BUFFER_MS, pollPreviewReady } from "./deploy-poll.ts";
+import type { ServiceImageTargets } from "./service-image.ts";
 
 export type { DeploySettled };
 
@@ -227,10 +228,7 @@ export async function postDeployAndWait(opts: {
   return { ok: true, value: poll.value };
 }
 
-export function checkServiceFlags(inputs: {
-  service: string[];
-  clearServices: boolean;
-}): Result<true> {
+export function checkServiceFlags(inputs: ServiceSelection): Result<true> {
   if (inputs.clearServices && inputs.service.length > 0) {
     return {
       ok: false,
@@ -262,6 +260,8 @@ export type BuildDeployRequestInputs = {
   service: string[];
   clearServices: boolean;
   reseed?: boolean;
+  /** Built service refs, layered under `--service` (see resolveDeployServices). */
+  serviceImages?: ServiceImageTargets;
 } & (
   | { seedImage: string; seedSource: "-s" | "seed" }
   | { seedImage?: undefined; seedSource?: undefined }
@@ -318,6 +318,7 @@ export function buildDeployRequest(
   const services = resolveDeployServices(yaml, identity.prId, {
     service: inputs.service,
     clearServices: inputs.clearServices,
+    serviceImages: inputs.serviceImages,
   });
   if (!services.ok) return services;
   if (services.value) body.services = services.value;
@@ -347,12 +348,19 @@ export function buildReseedRequest(
 export function resolveDeployServices(
   yaml: SproutYaml,
   prId: number,
-  inputs: { service: string[]; clearServices: boolean },
+  inputs: ServiceSelection & { serviceImages?: ServiceImageTargets },
 ): Result<DeployService[] | undefined> {
   const flags = checkServiceFlags(inputs);
   if (!flags.ok) return flags;
   if (inputs.clearServices) return { ok: true, value: [] };
-  const services = mergeServices(yaml.preview.services, inputs.service);
+  // One readable layering: yaml image < built service ref < `--service` flag.
+  const base = inputs.serviceImages
+    ? (yaml.preview.services ?? []).map((svc) => {
+        const built = inputs.serviceImages?.get(svc.name);
+        return built ? { ...svc, image: built.ref } : svc;
+      })
+    : yaml.preview.services;
+  const services = mergeServices(base, inputs.service);
   if (!services.ok) return services;
   if (!services.value) return { ok: true, value: undefined };
   const mapped: DeployService[] = [];

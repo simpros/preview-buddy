@@ -104,6 +104,13 @@ preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"
 `;
 
+const dockerfileServiceYaml = (serviceFields = "") => `slug: myapp
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+  services:
+    - name: landing
+${serviceFields}      dockerfile: apps/landing/Dockerfile
+`;
 const SEEDED_YAML = `slug: myapp
 build:
   dockerfile: Dockerfile
@@ -784,5 +791,190 @@ health:
     ]);
     expect(dockerCalls).toEqual([]);
     expect(captured).toEqual([]);
+  });
+
+  test("dockerfile service yields a second container on its own hostname", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(
+      dockerfileServiceYaml(
+        '      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"\n      port: 80\n',
+      ),
+    );
+    const code = await runCli(
+      ["ci", "preview"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(0);
+    const landingRef = `${APP_REF}-landing`;
+    expect(dockerCalls).toEqual([
+      ["docker", "build", "-f", "Dockerfile", "-t", APP_REF, "."],
+      ["docker", "push", APP_REF],
+      ["docker", "build", "-f", "apps/landing/Dockerfile", "-t", landingRef, "."],
+      ["docker", "push", landingRef],
+    ]);
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.body).toMatchObject({
+      app_image: APP_REF,
+      services: [
+        {
+          name: "landing",
+          image: landingRef,
+          hostname: "landing-pr-17.myapp.preview.example.com",
+          port: 80,
+        },
+      ],
+    });
+    const firstBody = captured[0]?.body as {
+      services?: Array<Record<string, unknown>>;
+    };
+    expect(firstBody.services?.[0]).not.toHaveProperty("dockerfile");
+  });
+
+  test("--service overlays the built service ref without building it", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(
+      dockerfileServiceYaml(
+        '      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"\n',
+      ),
+    );
+    const code = await runCli(
+      ["ci", "preview", "--service", "landing=prebuilt:1"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(dockerCalls).toEqual([
+      ["docker", "build", "-f", "Dockerfile", "-t", APP_REF, "."],
+      ["docker", "push", APP_REF],
+    ]);
+    expect(captured[0]?.body).toMatchObject({
+      services: [
+        {
+          name: "landing",
+          image: "prebuilt:1",
+          hostname: "landing-pr-17.myapp.preview.example.com",
+        },
+      ],
+    });
+    const overlayBody = captured[0]?.body as {
+      services?: Array<Record<string, unknown>>;
+    };
+    expect(overlayBody.services?.[0]).not.toHaveProperty("dockerfile");
+  });
+
+  test("--clear-services skips service builds and clears companions", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(dockerfileServiceYaml());
+    const code = await runCli(
+      ["ci", "preview", "--clear-services"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(dockerCalls).toEqual([
+      ["docker", "build", "-f", "Dockerfile", "-t", APP_REF, "."],
+      ["docker", "push", APP_REF],
+    ]);
+    expect(captured[0]?.body).toMatchObject({ services: [] });
+  });
+
+  test("--clear-services with --service fails before any image work", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(dockerfileServiceYaml());
+    const code = await runCli(
+      ["ci", "preview", "--clear-services", "--service", "landing=prebuilt:1"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toEqual([
+      "--clear-services cannot be combined with --service",
+    ]);
+    expect(dockerCalls).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+
+  test("service build failure exits before deploy", async () => {
+    const baseUrl = healthyGateway();
+    dockerBehavior = (argv) =>
+      argv.includes("apps/landing/Dockerfile") ? 2 : 0;
+    const cwd = await withWorkspace(dockerfileServiceYaml());
+    const code = await runCli(
+      ["ci", "preview"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toEqual(["service landing image build failed (exit 2)"]);
+    expect(captured).toEqual([]);
+  });
+
+  test("service with neither image nor dockerfile keeps the requires-an-image error", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(
+      `slug: myapp
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+  services:
+    - name: landing
+`,
+    );
+    const code = await runCli(
+      ["ci", "preview"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toEqual([
+      "service landing requires an image (--service landing=<image>)",
+    ]);
+    expect(captured).toEqual([]);
+  });
+
+  test("manifest without the new key produces a byte-identical deploy body", async () => {
+    const baseUrl = healthyGateway();
+    const cwd = await withWorkspace(MINIMAL_YAML);
+    const code = await runCli(
+      ["ci", "preview"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(dockerCalls).toEqual([
+      ["docker", "build", "-f", "Dockerfile", "-t", APP_REF, "."],
+      ["docker", "push", APP_REF],
+    ]);
+    const body = captured[0]?.body as Record<string, unknown>;
+    expect(body).toMatchObject({
+      canonical_repo_id: "https://gitlab.com/group/repo",
+      pr_id: 17,
+      slug: "myapp",
+      hostname: "pr-17.myapp.preview.example.com",
+      app_image: APP_REF,
+    });
+    expect(body).not.toHaveProperty("services");
+    expect(body).not.toHaveProperty("seed_image");
   });
 });

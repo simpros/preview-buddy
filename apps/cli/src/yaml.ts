@@ -45,6 +45,8 @@ export type SproutHealth = {
 export type SproutYamlService = {
   name: string;
   image?: string;
+  /** Repo-root-relative Dockerfile to build + push for this service. */
+  dockerfile?: string;
   hostname?: string;
   path?: string;
 } & ServiceFields;
@@ -87,7 +89,7 @@ export type SproutYaml = {
 const TOP_KEYS = new Set(["slug", "preview", "health", "build", "seed", "db", "mail"]);
 const PREVIEW_KEYS = new Set(["hostname", "env", "app_env", "services", "labels", "volumes"]);
 const HEALTH_KEYS = new Set(["path", "interval", "timeout", "expect"]);
-const SERVICE_KEYS = new Set(["name", "image", "hostname", "path", "port", "env", "labels"]);
+const SERVICE_KEYS = new Set(["name", "image", "dockerfile", "hostname", "path", "port", "env", "labels"]);
 const DOCKERFILE_KEYS = new Set(["dockerfile"]);
 const SEED_KEYS = new Set(["dockerfile", "inputs", "env", "args"]);
 
@@ -434,6 +436,11 @@ function parseServices(
       const image = requireString(entry.image, `${path}.image`);
       if (!image.ok) return image;
       service.image = image.value;
+    }
+    if (entry.dockerfile !== undefined) {
+      const dockerfile = requireString(entry.dockerfile, `${path}.dockerfile`);
+      if (!dockerfile.ok) return dockerfile;
+      service.dockerfile = dockerfile.value;
     }
     if (entry.hostname !== undefined) {
       const hostname = requireString(entry.hostname, `${path}.hostname`);

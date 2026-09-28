@@ -531,6 +531,35 @@ preview:
     );
   });
 
+  test("deploy with a dockerfile-only service requires --service (no build step)", async () => {
+    const cwd = await withWorkspace(`
+slug: myapp
+preview:
+  hostname: "pr-{pr_id}.example.com"
+  services:
+    - name: landing
+      dockerfile: apps/landing/Dockerfile
+`);
+    const code = await runCli(
+      ["deploy", "-i", "app:1"],
+      deps({
+        cwd,
+        env: {
+          SPROUT_URL: "http://127.0.0.1:9",
+          SPROUT_TOKEN: "t",
+          GITHUB_REPOSITORY: "org/repo",
+          GITHUB_REF: "refs/pull/9/merge",
+        },
+        readTextFile: async (path) => Bun.file(path).text(),
+      }),
+    );
+    expect(code).toBe(1);
+    expect(stderr).toEqual([
+      "service landing requires an image (--service landing=<image>)",
+    ]);
+    expect(captured).toEqual([]);
+  });
+
   test("deploy fails stable_per_pr without SPROUT_TOKEN (admin fallback insufficient)", async () => {
     const baseUrl = startGateway(async (req, url) => {
       captured.push({

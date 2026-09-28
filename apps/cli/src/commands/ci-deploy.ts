@@ -12,17 +12,20 @@ import {
 } from "../context.ts";
 import { parseFlags } from "../flags.ts";
 import type { Result } from "../result.ts";
+import type { ServiceSelection } from "../services.ts";
 import type { SproutYaml } from "../yaml.ts";
 import type { CiIdentity, CiPreviewIdentity } from "./ci-identity.ts";
 import {
   applyDeployEnv,
   buildDeployRequest,
+  checkServiceFlags,
   postDeployAndWait,
   requireHealthWhenSeeding,
   type DeploySettled,
 } from "./deploy-core.ts";
 import { warnForgeNote } from "./forge-note.ts";
 import { fetchPreviewLogs, parseTailFlag, printLogs } from "./logs.ts";
+import { prepareServiceImages } from "./service-image.ts";
 
 export const DEFAULT_CI_DEPLOY_TAIL = 200;
 
@@ -31,6 +34,8 @@ export const DEFAULT_CI_DEPLOY_DOTENV_FILE = "sprout-preview.env";
 
 export type CiDeployPolicy = {
   allowReseed: boolean;
+  /** Preview builds + pushes service images; reset reuses the refs as-is. */
+  buildServiceImages: boolean;
   prepareImages: (
     ctx: CliContext,
     yaml: SproutYaml,
@@ -80,6 +85,14 @@ export async function runCiDeploy(
   if (!tail.ok) return fail(ctx.deps.io, tail.error);
   const tailN = tail.value ?? DEFAULT_CI_DEPLOY_TAIL;
 
+  // Flag contradictions fail before any image is built or pushed.
+  const selection: ServiceSelection = {
+    service: flags.value.service,
+    clearServices: flags.value.clearServices,
+  };
+  const flagGate = checkServiceFlags(selection);
+  if (!flagGate.ok) return fail(ctx.deps.io, flagGate.error);
+
   const dotenvRaw = flags.value.dotenvFile?.trim();
   const dotenvFile =
     dotenvRaw && dotenvRaw.length > 0
@@ -115,6 +128,15 @@ export async function runCiDeploy(
   if (!images.ok) return fail(ctx.deps.io, images.error);
   const seedImage = images.value.seedImage;
 
+  const serviceImages = await prepareServiceImages(
+    ctx,
+    yaml.value,
+    identity.imageRef,
+    selection,
+    { build: policy.buildServiceImages },
+  );
+  if (!serviceImages.ok) return fail(ctx.deps.io, serviceImages.error);
+
   const assembled = buildDeployRequest(
     yaml.value,
     identity,
@@ -127,6 +149,7 @@ export async function runCiDeploy(
           service: flags.value.service,
           clearServices: flags.value.clearServices,
           reseed: flags.value.reseed,
+          serviceImages: serviceImages.value,
         }
       : {
           appImage: identity.imageRef,
@@ -134,6 +157,7 @@ export async function runCiDeploy(
           service: flags.value.service,
           clearServices: flags.value.clearServices,
           reseed: flags.value.reseed,
+          serviceImages: serviceImages.value,
         },
   );
   if (!assembled.ok) return fail(ctx.deps.io, assembled.error);
