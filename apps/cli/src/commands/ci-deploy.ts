@@ -35,6 +35,7 @@ export type CiDeployPolicy = {
     ctx: CliContext,
     yaml: SproutYaml,
     identity: CiPreviewIdentity,
+    flags: { service: string[]; clearServices: boolean },
   ) => Promise<Result<{ seedImage?: string }>>;
   beforeDeploy?: (
     client: ApiClient,
@@ -111,7 +112,10 @@ export async function runCiDeploy(
     return fail(ctx.deps.io, "--reseed requires a seed block in .sprout.yaml");
   }
 
-  const images = await policy.prepareImages(ctx, yaml.value, identity);
+  const images = await policy.prepareImages(ctx, yaml.value, identity, {
+    service: flags.value.service,
+    clearServices: flags.value.clearServices,
+  });
   if (!images.ok) return fail(ctx.deps.io, images.error);
   const seedImage = images.value.seedImage;
 
