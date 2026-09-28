@@ -428,4 +428,65 @@ health:
     expect(forgeCalls[1]?.method).toBe("PUT");
     expect(String(forgeCalls[1]?.url)).toContain("/notes/7");
   });
+
+  test("reset reuses the same commit-scoped service refs with no docker work", async () => {
+    const baseUrl = resetGateway();
+    const cwd = await withWorkspace(
+      `slug: myapp
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+  services:
+    - name: landing
+      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"
+      dockerfile: apps/landing/Dockerfile
+`,
+    );
+    const code = await runCli(
+      ["ci", "reset"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(dockerCalls).toEqual([]);
+    expect(captured).toHaveLength(2);
+    expect(captured[1]?.body).toMatchObject({
+      app_image: APP_REF,
+      services: [
+        {
+          name: "landing",
+          image: `${APP_REF}-landing`,
+          hostname: "landing-pr-17.myapp.preview.example.com",
+        },
+      ],
+    });
+  });
+
+  test("reset --service overlays the resolved service ref", async () => {
+    const baseUrl = resetGateway();
+    const cwd = await withWorkspace(
+      `slug: myapp
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+  services:
+    - name: landing
+      dockerfile: apps/landing/Dockerfile
+`,
+    );
+    const code = await runCli(
+      ["ci", "reset", "--service", "landing=prebuilt:1"],
+      deps({
+        cwd,
+        env: { SPROUT_URL: baseUrl, SPROUT_TOKEN: "t", ...GITLAB_MR_ENV },
+        readTextFile: readRealFile,
+      }),
+    );
+    expect(code).toBe(0);
+    expect(dockerCalls).toEqual([]);
+    expect(captured[1]?.body).toMatchObject({
+      services: [{ name: "landing", image: "prebuilt:1" }],
+    });
+  });
 });
