@@ -55,34 +55,6 @@ replace) with the app. The health gate covers **only the app**: after the
 app passes `health.expect`, seed runs (when configured), then companion
 services start. There is no per-service health poll in this release.
 
-### Building service images from Dockerfiles
-
-The manifest declares the surface, the CLI builds it — same rule as the
-app image and the seed image. `sprout ci preview` builds + pushes each
-`preview.services[].dockerfile` to a commit-scoped ref
-(`<app-ref>-<name>`) and deploys that ref as the service's image;
-`sprout ci reset` reuses the same refs without rebuilding. `--service
-name=image` overlays the built ref (last write wins); `--clear-services`
-skips the builds and clears companions. A service with neither `image`
-nor `dockerfile` fails with `service <name> requires an image`. No
-Docker build args in this release, and `{hostname}` interpolation in
-`preview.services[].env` is out of scope — an SPA that bakes its product
-URL at build time still points at production from a preview.
-
-```yaml
-slug: myapp
-preview:
-  hostname: "pr-{pr_id}.myapp.preview.example.com"
-  services:
-    - name: landing
-      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"
-      port: 80
-      dockerfile: apps/landing/Dockerfile
-```
-
-Without the key the deploy body is byte-identical to today (inert by
-default); repos that declare a prebuilt `image:` only never build.
-
 ## Multi-image previews (app + services)
 
 Routing examples only — merge, lifecycle, and health-gate rules live above.
