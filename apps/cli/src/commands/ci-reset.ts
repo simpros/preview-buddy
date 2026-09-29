@@ -14,7 +14,6 @@ import { teardownPreview } from "./teardown.ts";
 
 export const resetDeployPolicy: CiDeployPolicy = {
   allowReseed: false,
-  buildServiceImages: false,
   prepareImages: async (ctx, yaml, identity) => {
     if (!yaml.seed) return { ok: true, value: {} };
     const target = await resolveSeedTarget(

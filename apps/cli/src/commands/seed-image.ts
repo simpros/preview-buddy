@@ -2,11 +2,7 @@ import { createHash } from "node:crypto";
 import { defaultRunCommand, type CliContext } from "../context.ts";
 import type { Result } from "../result.ts";
 import type { SproutSeed } from "../yaml.ts";
-import {
-  buildAndPush,
-  deriveSiblingTagRef,
-  splitTaggedImageRef,
-} from "./image-build.ts";
+import { buildAndPush } from "./image-build.ts";
 
 /** Hex chars kept from the seed-content sha256 for the tag suffix. */
 export const SEED_TAG_HASH_LEN = 12;
@@ -26,17 +22,31 @@ export function shortSeedHash(entries: SeedContent[]): string {
   return hash.digest("hex").slice(0, SEED_TAG_HASH_LEN);
 }
 
+/** Scoped push credentials can only write under the project's own repository. */
+function splitTaggedImageRef(appImageRef: string): Result<string> {
+  const cut = appImageRef.lastIndexOf(":");
+  if (cut <= 0 || cut === appImageRef.length - 1) {
+    return {
+      ok: false,
+      error: `cannot derive seed image ref from ${appImageRef}`,
+    };
+  }
+  return { ok: true, value: appImageRef.slice(0, cut) };
+}
+
 export function resolveCommitSeedImageRef(
   appImageRef: string,
 ): Result<string> {
-  return deriveSiblingTagRef(appImageRef, "seed", "seed");
+  const repo = splitTaggedImageRef(appImageRef);
+  if (!repo.ok) return repo;
+  return { ok: true, value: `${appImageRef}-seed` };
 }
 
 export function resolveContentSeedImageRef(
   appImageRef: string,
   shortHash: string,
 ): Result<string> {
-  const repo = splitTaggedImageRef(appImageRef, "seed");
+  const repo = splitTaggedImageRef(appImageRef);
   if (!repo.ok) return repo;
   return { ok: true, value: `${repo.value}:seed-${shortHash}` };
 }

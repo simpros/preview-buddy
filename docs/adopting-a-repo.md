@@ -33,7 +33,6 @@ pointers live in [CLI reference](cli-reference.md#test-coverage-maintainers).
 | `preview.services` | no | leave companions | Companion routing entries (see [Previews](previews.md#service-images-merge-leave-clear-lifecycle)). |
 | `preview.services[].name` | per entry | — | Service name (validated, unique). |
 | `preview.services[].image` | per entry unless `--service` | — | Pinned image for the service. |
-| `preview.services[].dockerfile` | per entry unless `image` / `--service` | — | Repo-root-relative Dockerfile the CLI builds + pushes for `sprout ci preview` (same grammar as `build.dockerfile`). The pushed tag is commit-scoped (`<app-ref>-<name>`, mirroring `<app-ref>-seed`) so scoped registry credentials keep working. `--service name=image` overlays the built ref; a service with neither `image` nor `dockerfile` fails with `service <name> requires an image`. No build args in this release. |
 | `preview.services[].hostname` | no | internal-only | Distinct `Host()` for the service. |
 | `preview.services[].path` | no | internal-only | `PathPrefix()` for the service (must start with `/`). |
 | `preview.services[].port` | no | image first `EXPOSE`, else `SPROUT_PREVIEW_PORT_DEFAULT` | Routed port override (integer 1–65535). Only sets the Traefik `server.port` label when the service is routed; accepted for internal services with no routing effect. |

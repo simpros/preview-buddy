@@ -57,30 +57,6 @@ describe("mergeServices", () => {
     });
   });
 
-  test("dockerfile-only services still require an image at merge (low-level deploy)", () => {
-    expect(
-      mergeServices(
-        [{ name: "landing", dockerfile: "apps/landing/Dockerfile" }],
-        [],
-      ),
-    ).toEqual({
-      ok: false,
-      error: "service landing requires an image (--service landing=<image>)",
-    });
-  });
-
-  test("--service satisfies a dockerfile-only entry", () => {
-    expect(
-      mergeServices(
-        [{ name: "landing", dockerfile: "apps/landing/Dockerfile" }],
-        ["landing=prebuilt:1"],
-      ),
-    ).toEqual({
-      ok: true,
-      value: [{ name: "landing", image: "prebuilt:1" }],
-    });
-  });
-
   test("rejects more than MAX_SERVICES", () => {
     const flags = Array.from(
       { length: 9 },
