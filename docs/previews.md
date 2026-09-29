@@ -70,6 +70,35 @@ sprout deploy -i "$APP_IMAGE" \
   --service worker=ghcr.io/org/worker:${SHA}
 ```
 
+### Per-MR service tags (consumer builds, manifest references)
+
+A literal ref can't follow the merge request, so a pipeline that builds a
+per-MR image for a second surface (a separate SPA besides the app) pins the
+tag in the manifest and lets the CLI resolve it at deploy time. The
+consumer's pipeline builds and pushes the image; nothing in the component
+builds service images.
+
+```yaml
+preview:
+  services:
+    - name: landing
+      image: "registry.gitlab.com/toptiere/dcos/landing:{commit_sha}"
+      hostname: "landing-pr-{pr_id}.kido.internal.prosen-software.cc"
+      port: 80
+```
+
+```bash
+docker build -f apps/landing/Dockerfile -t "$CI_REGISTRY_IMAGE/landing:$CI_COMMIT_SHA" .
+docker push "$CI_REGISTRY_IMAGE/landing:$CI_COMMIT_SHA"
+```
+
+`image` accepts the same placeholders as env values (`{hostname}`,
+`{pr_id}`, `{commit_sha}`), resolved after manifest/flag merge — so a
+`--service landing=…:{commit_sha}` overlay wins with its own ref resolved.
+`{hostname}` is that service's own resolved hostname when it declares one,
+else the app's. Literal refs deploy byte-identical; the deploy body carries
+literal refs only.
+
 ### Routing (optional)
 
 Without routing metadata, a service is internal-only (reachable on the Docker

@@ -178,6 +178,26 @@ export async function applyDeployEnv<T extends DeployRequest>(
   const next = { ...body };
   if (appEnv.value) next.app_env = appEnv.value;
   if (seedEnv.value) next.seed_env = seedEnv.value;
+  if ((body as DeployRequest).services) {
+    const source = (body as DeployRequest).services!;
+    const resolvedServices: DeployService[] = [];
+    for (let i = 0; i < source.length; i++) {
+      const svc = source[i]!;
+      const imageCtx = {
+        ...resolveCtx,
+        hostname: svc.hostname ?? resolveCtx.hostname,
+      };
+      const expanded = expandAppEnvValue(svc.image, imageCtx);
+      if (!expanded.ok) {
+        return {
+          ok: false,
+          error: `preview.services[${i}].image: ${expanded.error}`,
+        };
+      }
+      resolvedServices.push({ ...svc, image: expanded.value });
+    }
+    next.services = resolvedServices as T["services"];
+  }
   return { ok: true, value: next };
 }
 
