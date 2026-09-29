@@ -32,7 +32,7 @@ pointers live in [CLI reference](cli-reference.md#test-coverage-maintainers).
 | `preview.app_env` | no | — | Extra app env (see Value grammar, Merge order, Connection env reservation). |
 | `preview.services` | no | leave companions | Companion routing entries (see [Previews](previews.md#service-images-merge-leave-clear-lifecycle)). |
 | `preview.services[].name` | per entry | — | Service name (validated, unique). |
-| `preview.services[].image` | per entry unless `--service` | — | Pinned image for the service. |
+| `preview.services[].image` | per entry unless `--service` | — | Pinned image for the service. Accepts the env placeholder grammar (`{hostname}`, `{pr_id}`, `{commit_sha}`), resolved by the CLI at deploy time; the gateway receives literal refs only. |
 | `preview.services[].hostname` | no | internal-only | Distinct `Host()` for the service. |
 | `preview.services[].path` | no | internal-only | `PathPrefix()` for the service (must start with `/`). |
 | `preview.services[].port` | no | image first `EXPOSE`, else `SPROUT_PREVIEW_PORT_DEFAULT` | Routed port override (integer 1–65535). Only sets the Traefik `server.port` label when the service is routed; accepted for internal services with no routing effect. |
