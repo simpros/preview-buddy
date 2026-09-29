@@ -1,4 +1,5 @@
 import { copyServiceExtras, type PreviewServiceSpec } from "@sprout/preview-env";
+import { expandAppEnvValue, type AppEnvResolveContext } from "./app-env-values.ts";
 import type { Result } from "./result.ts";
 import { SERVICE_NAME_RE, type SproutYamlService } from "./yaml.ts";
 
@@ -67,6 +68,29 @@ export function mergeServices(
     if (svc.path) entry.path = svc.path;
     copyServiceExtras(svc, entry);
     out.push(entry);
+  }
+  return { ok: true, value: out };
+}
+
+/** Resolve `{hostname}`/`{pr_id}`/`{commit_sha}` in each service image after manifest/flag merge. */
+export function resolveServiceImages(
+  services: DeployService[],
+  ctx: AppEnvResolveContext,
+): Result<DeployService[]> {
+  const out: DeployService[] = [];
+  for (let i = 0; i < services.length; i++) {
+    const svc = services[i];
+    const expanded = expandAppEnvValue(svc.image, {
+      ...ctx,
+      hostname: svc.hostname ?? ctx.hostname,
+    });
+    if (!expanded.ok) {
+      return {
+        ok: false,
+        error: `preview.services[${i}].image: ${expanded.error}`,
+      };
+    }
+    out.push({ ...svc, image: expanded.value });
   }
   return { ok: true, value: out };
 }

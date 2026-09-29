@@ -82,8 +82,8 @@ builds service images.
 preview:
   services:
     - name: landing
-      image: "registry.gitlab.com/toptiere/dcos/landing:{commit_sha}"
-      hostname: "landing-pr-{pr_id}.kido.internal.prosen-software.cc"
+      image: "ghcr.io/org/landing:{commit_sha}"
+      hostname: "landing-pr-{pr_id}.myapp.preview.example.com"
       port: 80
 ```
 

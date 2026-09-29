@@ -18,7 +18,11 @@ import type { CliDeps } from "../context.ts";
 import { readEden } from "../eden.ts";
 import { resolveDeployHostname } from "../hostname.ts";
 import type { Result } from "../result.ts";
-import { mergeServices, type DeployService } from "../services.ts";
+import {
+  mergeServices,
+  resolveServiceImages,
+  type DeployService,
+} from "../services.ts";
 import type {
   DbSpec,
   ManifestEnvValue,
@@ -108,12 +112,12 @@ export function layerSeedWireOptions(
   };
 }
 
-export async function applyDeployEnv<T extends DeployRequest>(
-  body: T,
+export async function applyDeployEnv(
+  body: DeployRequest,
   deps: CliDeps,
   yaml: SproutYaml,
   inputs: DeployEnvInputs,
-): Promise<Result<T>> {
+): Promise<Result<DeployRequest>> {
   const [appEnvFiles, seedEnvFiles] = await Promise.all([
     readEnvFiles(deps, "SPROUT_APP_ENV", inputs.appEnvFile, "--app-env-file"),
     readEnvFiles(
@@ -178,25 +182,10 @@ export async function applyDeployEnv<T extends DeployRequest>(
   const next = { ...body };
   if (appEnv.value) next.app_env = appEnv.value;
   if (seedEnv.value) next.seed_env = seedEnv.value;
-  if ((body as DeployRequest).services) {
-    const source = (body as DeployRequest).services!;
-    const resolvedServices: DeployService[] = [];
-    for (let i = 0; i < source.length; i++) {
-      const svc = source[i]!;
-      const imageCtx = {
-        ...resolveCtx,
-        hostname: svc.hostname ?? resolveCtx.hostname,
-      };
-      const expanded = expandAppEnvValue(svc.image, imageCtx);
-      if (!expanded.ok) {
-        return {
-          ok: false,
-          error: `preview.services[${i}].image: ${expanded.error}`,
-        };
-      }
-      resolvedServices.push({ ...svc, image: expanded.value });
-    }
-    next.services = resolvedServices as T["services"];
+  if (body.services) {
+    const images = resolveServiceImages(body.services, resolveCtx);
+    if (!images.ok) return images;
+    next.services = images.value;
   }
   return { ok: true, value: next };
 }
