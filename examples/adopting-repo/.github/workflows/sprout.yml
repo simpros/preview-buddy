@@ -11,9 +11,9 @@ permissions:
 
 jobs:
   preview:
-    uses: simpros/sprout/.github/workflows/preview.yml@v0.8.2
+    uses: simpros/sprout/.github/workflows/preview.yml@v0.8.3
     with:
-      sprout_version: v0.8.2
+      sprout_version: v0.8.3
     secrets:
       SPROUT_URL: ${{ secrets.SPROUT_URL }}
       SPROUT_TOKEN: ${{ secrets.SPROUT_TOKEN }}
