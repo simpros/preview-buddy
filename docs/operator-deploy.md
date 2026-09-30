@@ -517,9 +517,13 @@ need non-defaults):
 |---|---|
 | `SPROUT_PORT` | `7331` |
 | `SPROUT_TTL_HOURS` | `72` |
-| `SPROUT_SWEEP_MINUTES` | `30` |
+| `SPROUT_SWEEP_CRON` | `*/30 * * * *` |
 | `SPROUT_PREVIEW_PORT_DEFAULT` | `8080` |
 | `SPROUT_SEED_TIMEOUT` | `180` |
+
+`SPROUT_SWEEP_CRON` is a cron expression (local gateway time); an invalid
+value fails gateway boot. The first sweep pass lands on the next boundary —
+never at boot.
 
 For HTTPS behind an external Traefik, set entrypoints (and optionally
 certresolver) to that proxy's names. Example Coolify-shaped values (operator

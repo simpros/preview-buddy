@@ -148,7 +148,7 @@ describe("loadConfig", () => {
       network: "postgres",
     });
     expect(config.ttlHours).toBe(OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS);
-    expect(config.sweepMinutes).toBe(OPTIONAL_ENV_DEFAULTS.SPROUT_SWEEP_MINUTES);
+    expect(config.sweepCron).toBe(OPTIONAL_ENV_DEFAULTS.SPROUT_SWEEP_CRON);
     expect(config.previewPortDefault).toBe(
       OPTIONAL_ENV_DEFAULTS.SPROUT_PREVIEW_PORT_DEFAULT,
     );
@@ -255,6 +255,18 @@ describe("loadConfig", () => {
     );
   });
 
+  test("accepts a custom sweep cron expression", () => {
+    setRequiredEnv();
+    process.env.SPROUT_SWEEP_CRON = "0 * * * *";
+    expect(loadConfig().sweepCron).toBe("0 * * * *");
+  });
+
+  test("rejects an invalid sweep cron expression", () => {
+    setRequiredEnv();
+    process.env.SPROUT_SWEEP_CRON = "not-a-cron";
+    expect(() => loadConfig()).toThrow("Invalid SPROUT_SWEEP_CRON");
+  });
+
   test("fails boot on partial Postgres config instead of limping", () => {
     setRequiredEnv();
     process.env.SPROUT_PREVIEW_POSTGRES_URL = "   ";
@@ -358,7 +370,7 @@ describe("loadConfig", () => {
       gitlabToken: "",
       extraGitlabHosts: new Set(),
       ttlHours: 72,
-      sweepMinutes: 30,
+      sweepCron: "*/30 * * * *",
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,
@@ -388,7 +400,7 @@ describe("loadConfig", () => {
       gitlabToken: "gl",
       extraGitlabHosts: new Set(["git.example.com"]),
       ttlHours: 72,
-      sweepMinutes: 30,
+      sweepCron: "*/30 * * * *",
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,
@@ -428,7 +440,7 @@ describe("loadConfig", () => {
       gitlabToken: "",
       extraGitlabHosts: new Set(),
       ttlHours: 72,
-      sweepMinutes: 30,
+      sweepCron: "*/30 * * * *",
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,

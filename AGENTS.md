@@ -36,6 +36,7 @@ bun run db:migrate   # runtime migrator (apps/server; same as boot)
 ## Style
 
 - Plain functions, no classes.
+- Periodic work uses `Bun.cron`, never `setTimeout`/`setInterval`.
 - Keep modules small and focused.
 - Fail fast at config load for required env vars.
 - DB schema lives in `apps/server/src/infrastructure/db/`; migrations in `apps/server/drizzle/`.

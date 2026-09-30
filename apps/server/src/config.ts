@@ -34,7 +34,7 @@ export const OPTIONAL_ENV_DEFAULTS = {
   SPROUT_PG_PORT: 5432,
   SPROUT_MAIL_PORT: 1025,
   SPROUT_TTL_HOURS: 72,
-  SPROUT_SWEEP_MINUTES: 30,
+  SPROUT_SWEEP_CRON: "*/30 * * * *",
   SPROUT_PREVIEW_PORT_DEFAULT: 8080,
   SPROUT_SEED_TIMEOUT: 180,
   SPROUT_PORT: 7331,
@@ -96,7 +96,7 @@ export type Config = {
   extraGitlabHosts: ReadonlySet<string>;
   adminToken?: string;
   ttlHours: number;
-  sweepMinutes: number;
+  sweepCron: string;
   previewPortDefault: number;
   seedTimeout: number;
   port: number;
@@ -115,6 +115,22 @@ function parsePositiveInt(
     throw new Error(`Invalid ${name}: must be a positive integer`);
   }
   return value;
+}
+
+function parseSweepCron(
+  raw: string | undefined,
+  defaultValue: string,
+): string {
+  const trimmed = raw?.trim() ?? "";
+  const schedule = trimmed === "" ? defaultValue : trimmed;
+  try {
+    Bun.cron(schedule, () => {}).stop();
+  } catch (error) {
+    throw new Error(
+      `Invalid SPROUT_SWEEP_CRON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  return schedule;
 }
 
 function requiredEnv(key: (typeof REQUIRED_ENV)[number]): string {
@@ -310,10 +326,9 @@ export function loadConfig(): Config {
       process.env.SPROUT_TTL_HOURS,
       OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS,
     ),
-    sweepMinutes: parsePositiveInt(
-      "SPROUT_SWEEP_MINUTES",
-      process.env.SPROUT_SWEEP_MINUTES,
-      OPTIONAL_ENV_DEFAULTS.SPROUT_SWEEP_MINUTES,
+    sweepCron: parseSweepCron(
+      process.env.SPROUT_SWEEP_CRON,
+      OPTIONAL_ENV_DEFAULTS.SPROUT_SWEEP_CRON,
     ),
     previewPortDefault: parsePositiveInt(
       "SPROUT_PREVIEW_PORT_DEFAULT",
@@ -391,7 +406,7 @@ export function configSummary(config: Config): Record<string, string | number> {
     gitlabToken: config.gitlabToken === "" ? "[unset]" : "[set]",
     extraGitlabHosts: config.extraGitlabHosts.size,
     ttlHours: config.ttlHours,
-    sweepMinutes: config.sweepMinutes,
+    sweepCron: config.sweepCron,
     previewPortDefault: config.previewPortDefault,
     seedTimeout: config.seedTimeout,
     port: config.port,

@@ -80,5 +80,5 @@ const app = bindPreviewOps({
 startServer({ config, db, previewDb, app, materialization });
 startGatewaySweep({ config, db, previewDb, app });
 console.log(
-  `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
+  `sweep scheduled (${config.sweepCron}): first pass on the next boundary`,
 );
