@@ -82,5 +82,5 @@ const dataVolumes = bindPreviewDataVolumes(docker);
 startServer({ config, db, previewDb, app, dataVolumes, materialization });
 startGatewaySweep({ config, db, previewDb, app, dataVolumes });
 console.log(
-  `sweep scheduled: first pass in ${config.sweepMinutes}m, then every ${config.sweepMinutes}m`,
+  `sweep scheduled (${config.sweepCron}): first pass on the next boundary`,
 );

@@ -33,9 +33,8 @@ export function startGatewaySweep(deps: {
     },
   });
 
-  const intervalMs = deps.config.sweepMinutes * 60 * 1000;
   return startSweepTimer({
-    intervalMs,
+    schedule: deps.config.sweepCron,
     runPass: async () => {
       await runSweepPass(ports);
     },
