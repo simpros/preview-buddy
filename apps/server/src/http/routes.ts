@@ -8,6 +8,7 @@ import type { LifecycleDeps } from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import type { TelemetryDeployHook } from "../telemetry/contract.ts";
+import type { TracesHandle } from "../telemetry/traces.ts";
 import {
   createDeployToken,
   createDeployTokenBody,
@@ -39,6 +40,7 @@ export type RouteDeps = {
   dashboard?: DashboardConfig;
   extraGitlabHosts?: ReadonlySet<string>;
   telemetry: TelemetryDeployHook;
+  tracesPlugin?: TracesHandle["plugin"];
 };
 
 function stubNotImplemented({
@@ -69,7 +71,11 @@ export function createRoutes(deps: RouteDeps) {
       ? { previewAuth: deps.materialization.previewAuth }
       : {}),
   };
-  const app = new Elysia()
+  const base = new Elysia();
+  if (deps.tracesPlugin) {
+    base.use(deps.tracesPlugin);
+  }
+  const app = base
     .get("/healthz", () => ({ ok: true }))
     .get("/v1/internal/preview-auth", verifyPreviewAccess(accessDeps));
   if (deps.dashboard?.enabled) {

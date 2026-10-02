@@ -249,6 +249,7 @@ describe("buildMaterializationCtx", () => {
       },
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
     expect(ctx.previewAuth).toEqual({
       secret: "sekrit",
@@ -267,6 +268,7 @@ describe("buildMaterializationCtx", () => {
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
     expect(bare.previewAuth).toBeUndefined();
   });

@@ -50,6 +50,7 @@ file without echoing the value.
 | Preview apps unreachable behind Coolify Traefik | Wrong Traefik network, TLS entrypoints, or labels | Confirm gateway + apps join Coolify's Traefik network; set `SPROUT_TRAEFIK_ENTRYPOINTS` / `CERTRESOLVER` to that proxy's names |
 | Admin SQL works but gateway cannot | `POSTGRES_PASSWORD` vs DSN password drift | Re-sync both spellings in `compose.env` and recreate gateway |
 | No installation data reaches the maintainer | Reporting is off (`SPROUT_TELEMETRY=off` or `DO_NOT_TRACK=1`); no destination (the usual case for a from-source build); wrong credential (401/403) or wrong path (404) | Check the boot line (`telemetry …` names the state); confirm both `SPROUT_TELEMETRY_ENDPOINT` and `SPROUT_TELEMETRY_AUTH` are set; see [Telemetry](telemetry.md) |
+| No spans arrive at the trace backend | Endpoint unset (tracing is off); wrong traces path or missing `Authorization` (401/403); only `/healthz` traffic, which is excluded by design | Confirm `SPROUT_OTLP_ENDPOINT` carries the full traces path and `SPROUT_OTLP_HEADERS` carries the backend credential; send a real deploy, not just healthchecks; see [Your own trace backend](telemetry.md#your-own-trace-backend) |
 
 ## See also
 

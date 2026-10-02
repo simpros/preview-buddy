@@ -10,9 +10,11 @@ import {
   POSTGRES_REQUIRED_ENV,
   postgresNotConfiguredDetail,
   parseExtraGitlabHosts,
+  parseOtlpHeaders,
   previewAuthNotConfiguredDetail,
   REQUIRED_ENV,
 } from "./config.ts";
+import { formatOtlpDestination } from "./telemetry/destination.ts";
 
 const TEST_POSTGRES_VALUES: Record<(typeof POSTGRES_REQUIRED_ENV)[number], string> = {
   SPROUT_PREVIEW_POSTGRES_URL: "postgres://admin:sekrit@localhost:5432/postgres",
@@ -73,6 +75,8 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_PREVIEW_AUTH_ADDRESS;
   delete process.env.SPROUT_TELEMETRY_ENDPOINT;
   delete process.env.SPROUT_TELEMETRY_AUTH;
+  delete process.env.SPROUT_OTLP_ENDPOINT;
+  delete process.env.SPROUT_OTLP_HEADERS;
   delete process.env.DO_NOT_TRACK;
 }
 
@@ -387,6 +391,7 @@ describe("loadConfig", () => {
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
@@ -429,6 +434,7 @@ describe("loadConfig", () => {
         password: "pw",
       },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
@@ -469,6 +475,7 @@ describe("loadConfig", () => {
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");
@@ -719,5 +726,60 @@ describe("telemetry config", () => {
     const summary = configSummary(config);
     expect(summary.telemetryAuth).toBe("[set]");
     expect(JSON.stringify(summary)).not.toContain("secret");
+  });
+});
+
+describe("otlp config", () => {
+  test("parses Authorization with base64 padding byte-identical", () => {
+    const headers = parseOtlpHeaders(
+      "Authorization=Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM=,stream-name=default",
+    );
+    expect(headers).toEqual({
+      Authorization: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM=",
+      "stream-name": "default",
+    });
+    expect(headers["Authorization"]).toBe(
+      "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM=",
+    );
+  });
+
+  test("rejects entry without = and empty name", () => {
+    expect(() => parseOtlpHeaders("nopadding")).toThrow("nopadding");
+    expect(() => parseOtlpHeaders("=value")).toThrow("=value");
+  });
+
+  test("non-absolute endpoint fails boot naming the variable", () => {
+    setRequiredEnv();
+    process.env.SPROUT_OTLP_ENDPOINT = "not-a-url";
+    expect(() => loadConfig()).toThrow("SPROUT_OTLP_ENDPOINT");
+    process.env.SPROUT_OTLP_ENDPOINT = "ftp://example.com/v1/traces";
+    expect(() => loadConfig()).toThrow("SPROUT_OTLP_ENDPOINT");
+  });
+
+  test("no endpoint means off with empty headers summary", () => {
+    setRequiredEnv();
+    const config = loadConfig();
+    expect(config.otlp).toEqual({ endpoint: "", headers: {} });
+    expect(formatOtlpDestination("")).toBe("off");
+  });
+
+  test("headers without an endpoint fail boot instead of silently dropping", () => {
+    setRequiredEnv();
+    process.env.SPROUT_OTLP_HEADERS = "Authorization=Basic c2VjcmV0";
+    expect(() => loadConfig()).toThrow("SPROUT_OTLP_HEADERS");
+  });
+
+  test("endpoint set yields host/path summary and [set] headers, never the value", () => {
+    setRequiredEnv();
+    process.env.SPROUT_OTLP_ENDPOINT = "https://collector.example.com:4318/v1/traces";
+    process.env.SPROUT_OTLP_HEADERS = "Authorization=Basic c2VjcmV0,stream-name=default";
+    const config = loadConfig();
+    const summary = configSummary(config);
+    expect(summary.traces).toBe("collector.example.com:4318/v1/traces");
+    expect(summary.otlpHeaders).toBe("[set]");
+    expect(JSON.stringify(summary)).not.toContain("c2VjcmV0");
+    delete process.env.SPROUT_OTLP_HEADERS;
+    const bare = loadConfig();
+    expect(configSummary(bare).otlpHeaders).toBe("[empty]");
   });
 });

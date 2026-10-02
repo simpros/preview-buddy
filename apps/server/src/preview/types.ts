@@ -12,6 +12,7 @@ import type { PreviewAuthConfig } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { PreviewDataVolumes } from "./data-volumes.ts";
+import type { PreviewDbPlan } from "./runtime.ts";
 
 export type PreviewStatus =
   | "provisioning"
@@ -34,8 +35,6 @@ export type DisplayPreviewStatus =
   | "failed"
   | "removing"
   | "removed";
-
-import type { PreviewDbPlan } from "./runtime.ts";
 
 export type TeardownDeps = {
   db: StateDb;

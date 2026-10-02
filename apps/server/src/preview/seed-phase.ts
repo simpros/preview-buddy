@@ -11,14 +11,13 @@ import {
 } from "./row.ts";
 import type { BringUpPlan, PhaseTimer } from "./types.ts";
 import { timed } from "./timing.ts";
+import type { PreviewDbPlan } from "./runtime.ts";
 
 export type SeedPhaseDeps = {
   db: StateDb;
   app: Pick<PreviewAppOps, "runSeed">;
   phaseTimer?: PhaseTimer;
 };
-
-import type { PreviewDbPlan } from "./runtime.ts";
 
 export type DeployEphemerals = {
   seed?: SeedImageSpec;

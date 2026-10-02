@@ -554,6 +554,8 @@ DSN from the raw password in YAML.
 | `SPROUT_FORGE_HOSTS` | no | Optional `host=gitlab` pairs for self-managed GitLab |
 | `SPROUT_TELEMETRY_ENDPOINT` | no | Anonymous install-telemetry destination (URL). Empty = nothing is sent; must be set together with `SPROUT_TELEMETRY_AUTH` (see [Install telemetry](#install-telemetry)) |
 | `SPROUT_TELEMETRY_AUTH` | no | Credential for the install-telemetry destination. Empty = nothing is sent |
+| `SPROUT_OTLP_ENDPOINT` | no | Operator-owned OTLP/HTTP traces URL, used verbatim. Empty = no trace export; non-`http(s)` fails boot (see [Your own trace backend](telemetry.md#your-own-trace-backend)) |
+| `SPROUT_OTLP_HEADERS` | no | Comma-separated `name=value` export headers (first `=` splits, base64 padding kept). Bad entries fail boot |
 
 Forge kind is chosen **per repo** from the canonical URL (`github.com` /
 `gitlab.com`) or `SPROUT_FORGE_HOSTS` — not a gateway-wide forge switch.

@@ -3,6 +3,7 @@ import type {
   TraefikTls,
 } from "./app-deployment/labels.ts";
 import type { TelemetryState } from "./telemetry/destination.ts";
+import { formatOtlpDestination } from "./telemetry/destination.ts";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -60,6 +61,8 @@ export const OPTIONAL_STRING_ENV = [
   "SPROUT_FORWARDAUTH_ADDRESS",
   "SPROUT_TELEMETRY_ENDPOINT",
   "SPROUT_TELEMETRY_AUTH",
+  "SPROUT_OTLP_ENDPOINT",
+  "SPROUT_OTLP_HEADERS",
 ] as const;
 
 export const DASHBOARD_ENV_KEYS = [
@@ -116,6 +119,13 @@ export type DashboardConfig = {
   password: string;
 };
 
+export type OtlpConfig = {
+  /** Verbatim OTLP/HTTP traces URL; empty means tracing is off. */
+  endpoint: string;
+  /** Verbatim export headers; never logged. */
+  headers: Record<string, string>;
+};
+
 export type Config = {
   /** Absent on sqlite-only gateways; all-or-nothing (partial fails boot). */
   postgres?: PostgresConfig;
@@ -139,6 +149,8 @@ export type Config = {
   traefikForwardAuth?: TraefikForwardAuth;
   /** The enablement decision, resolved once at load; off always names its reason. */
   telemetry: TelemetryState;
+  /** Operator-owned trace export; active exactly when endpoint is set. */
+  otlp: OtlpConfig;
 };
 
 function parsePositiveInt(
@@ -214,6 +226,66 @@ function parseTelemetryDestination(): {
     );
   }
   return { endpoint, auth };
+}
+
+/** Split a comma-separated env list, trimming entries and dropping empties. */
+function splitListEntries(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (trimmed === "") return [];
+  const out: string[] = [];
+  for (const part of trimmed.split(",")) {
+    const entry = part.trim();
+    if (entry !== "") out.push(entry);
+  }
+  return out;
+}
+
+export function parseOtlpHeaders(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const entry of splitListEntries(raw)) {
+    const sep = entry.indexOf("=");
+    if (sep <= 0) {
+      throw new Error(
+        `Invalid SPROUT_OTLP_HEADERS entry "${entry}": expected name=value`,
+      );
+    }
+    const name = entry.slice(0, sep).trim();
+    const value = entry.slice(sep + 1);
+    if (name === "") {
+      throw new Error(
+        `Invalid SPROUT_OTLP_HEADERS entry "${entry}": expected name=value`,
+      );
+    }
+    out[name] = value;
+  }
+  return out;
+}
+
+function parseOtlpConfig(): OtlpConfig {
+  const endpoint = optionalEnv("SPROUT_OTLP_ENDPOINT");
+  const headersRaw = optionalEnv("SPROUT_OTLP_HEADERS");
+  if (endpoint === "") {
+    if (headersRaw !== "") {
+      throw new Error(
+        "SPROUT_OTLP_HEADERS is set but SPROUT_OTLP_ENDPOINT is empty: set both or neither",
+      );
+    }
+    return { endpoint: "", headers: {} };
+  }
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    throw new Error(
+      "Invalid SPROUT_OTLP_ENDPOINT: must be an absolute http(s) URL",
+    );
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(
+      "Invalid SPROUT_OTLP_ENDPOINT: must be an absolute http(s) URL",
+    );
+  }
+  return { endpoint, headers: parseOtlpHeaders(headersRaw) };
 }
 
 function requiredEnv(key: (typeof REQUIRED_ENV)[number]): string {
@@ -383,12 +455,8 @@ function parseDashboardConfig(): DashboardConfig {
 }
 
 export function parseExtraGitlabHosts(raw: string): ReadonlySet<string> {
-  const trimmed = raw.trim();
-  if (trimmed === "") return new Set();
   const out = new Set<string>();
-  for (const part of trimmed.split(",")) {
-    const entry = part.trim();
-    if (entry === "") continue;
+  for (const entry of splitListEntries(raw)) {
     const sep = entry.includes("=") ? "=" : entry.includes(":") ? ":" : null;
     if (!sep) {
       throw new Error(
@@ -523,6 +591,7 @@ export function loadConfig(): Config {
     traefikTls: parseTraefikTls(),
     traefikForwardAuth: parseTraefikForwardAuth(),
     telemetry,
+    otlp: parseOtlpConfig(),
   };
 }
 
@@ -604,7 +673,13 @@ export function configSummary(config: Config): Record<string, string | number> {
       config.traefikForwardAuth,
     ),
     telemetryAuth: telemetryAuthSummary(config.telemetry),
+    traces: formatOtlpDestination(config.otlp.endpoint),
+    otlpHeaders: otlpHeadersSummary(config.otlp),
   };
+}
+
+function otlpHeadersSummary(otlp: OtlpConfig): string {
+  return Object.keys(otlp.headers).length > 0 ? "[set]" : "[empty]";
 }
 
 function telemetryAuthSummary(telemetry: TelemetryState): string {

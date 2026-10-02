@@ -1,3 +1,4 @@
+import { SpanStatusCode, trace, type Span } from "@opentelemetry/api";
 import type { Result } from "./result.ts";
 import { captureDeployOutcome } from "./deploy-outcome.ts";
 import {
@@ -15,7 +16,11 @@ import {
 } from "./snapshot.ts";
 import { createPhaseCollector } from "./timing.ts";
 import type { BringUpPlan } from "./types.ts";
-import type { TelemetryDeployHook } from "../telemetry/contract.ts";
+import type {
+  TelemetryDeployHook,
+  TelemetryDeployOutcome,
+} from "../telemetry/contract.ts";
+import { TRACER_NAME } from "../telemetry/tracer-name.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -75,12 +80,53 @@ export async function runAsyncDeploy(
   input: ProvisionInput,
   plan: BringUpPlan,
 ): Promise<void> {
-  const key = previewKey(input.repo, input.prId);
   const startedAt = Date.now();
   const phases = createPhaseCollector();
+  const tracer = trace.getTracer(TRACER_NAME);
+  await tracer.startActiveSpan(
+    "preview.deploy",
+    {
+      // Detached from the accepting request span: its own root trace,
+      // correlated by sprout.* attributes rather than the trace id.
+      root: true,
+      attributes: {
+        "sprout.repo": input.repo,
+        "sprout.pr": input.prId,
+        "sprout.slug": input.slug,
+        "sprout.plan": plan,
+      },
+    },
+    async (span) => {
+      const { outcome, caught } = await attemptDeploy(deps, input, plan, {
+        startedAt,
+        phases,
+      });
+      applyDeploySpanStatus(span, outcome, caught);
+      span.end();
+    },
+  );
+}
+
+type AttemptClock = {
+  startedAt: number;
+  phases: ReturnType<typeof createPhaseCollector>;
+};
+
+async function attemptDeploy(
+  deps: AsyncDeployDeps,
+  input: ProvisionInput,
+  plan: BringUpPlan,
+  clock: AttemptClock,
+): Promise<{ outcome: TelemetryDeployOutcome | null; caught: unknown }> {
+  const key = previewKey(input.repo, input.prId);
+  let caught: unknown;
   try {
-    await provisionPreview({ ...deps, phaseTimer: phases.timer }, input);
+    await provisionPreview(
+      { ...deps, phaseTimer: clock.phases.timer },
+      input,
+    );
   } catch (err) {
+    caught = err;
     console.warn("provision:background_failed", err);
     try {
       await withPreviewLock(input.repo, input.prId, async () => {
@@ -97,17 +143,43 @@ export async function runAsyncDeploy(
       });
     } catch {
     }
-  } finally {
-    const outcome = await captureDeployOutcome(deps.db, {
-      repo: input.repo,
-      prId: input.prId,
-      plan,
-      startedAt,
-      phaseMs: phases.phaseMs,
-    });
-    inFlightDeploys.delete(key);
+  }
+  const outcome = await captureDeployOutcome(deps.db, {
+    repo: input.repo,
+    prId: input.prId,
+    plan,
+    startedAt: clock.startedAt,
+    phaseMs: clock.phases.phaseMs,
+  });
+  inFlightDeploys.delete(key);
+  if (outcome) {
     // exportEvent never rejects, so there is nothing to catch here.
-    if (outcome) deps.telemetry.reportDeployOutcome(outcome);
+    deps.telemetry.reportDeployOutcome(outcome);
+  }
+  return { outcome, caught };
+}
+
+function applyDeploySpanStatus(
+  span: Span,
+  outcome: TelemetryDeployOutcome | null,
+  caught: unknown,
+): void {
+  if (outcome) {
+    span.setAttribute("sprout.status", outcome.outcome);
+    if (outcome.outcome === "failed") {
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      span.recordException(
+        new Error(outcome.failureClass ?? "deploy_failed"),
+      );
+    }
+    return;
+  }
+  span.setAttribute("sprout.status", "unknown");
+  if (caught !== undefined) {
+    span.setStatus({ code: SpanStatusCode.ERROR });
+    span.recordException(
+      caught instanceof Error ? caught : new Error(String(caught)),
+    );
   }
 }
 
