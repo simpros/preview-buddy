@@ -1,3 +1,4 @@
+// Container names only; volume names live in @sprout/preview-env.
 import type { CatalogContainer } from "../docker/port.ts";
 
 const PREVIEW_APP_CONTAINER_RE = /^sprout-([a-zA-Z0-9]+)-pr-(\d+)$/;
