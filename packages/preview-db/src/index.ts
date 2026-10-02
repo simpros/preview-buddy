@@ -18,9 +18,6 @@ export {
   isWorktreeInputError,
 } from "./errors.ts";
 export {
-  assertWorktreeObjectName,
-} from "./worktree-names.ts";
-export {
   dropWorktreeDb,
   provisionWorktreeDb,
   type DropWorktreeDbResult,

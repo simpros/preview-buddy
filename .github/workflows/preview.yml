@@ -100,7 +100,7 @@ on:
         required: false
     outputs:
       preview_url:
-        description: "Preview URL printed by sprout ci preview (empty on teardown or skipped edited runs)."
+        description: "Preview URL printed by sprout ci preview (empty on teardown)."
         value: ${{ jobs.preview.outputs.preview_url }}
 
 concurrency:

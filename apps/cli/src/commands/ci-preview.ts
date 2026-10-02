@@ -4,7 +4,6 @@ import { runCiDeploy, type CiDeployPolicy } from "./ci-deploy.ts";
 import { publishPreviewNote } from "./forge-note.ts";
 import { buildAndPush } from "./image-build.ts";
 import { ensureSeedImage } from "./seed-image.ts";
-import { teardownPreview } from "./teardown.ts";
 
 export const previewDeployPolicy: CiDeployPolicy = {
   allowReseed: true,
