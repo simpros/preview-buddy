@@ -1,42 +1,8 @@
 import {
-  parseDurationMs,
   type EffectiveGovernanceMs,
   type GovernanceConfig,
   type GovernanceManifest,
 } from "@sprout/preview-env";
-
-export function hoursToMs(hours: number): number {
-  return hours * 60 * 60 * 1000;
-}
-
-/** Gateway-level parse: empty/off means unbounded, otherwise a duration. */
-export function parseGatewayDurationMs(
-  envName: string,
-  raw: string | undefined,
-): number | null {
-  const trimmed = raw?.trim() ?? "";
-  if (trimmed === "" || trimmed.toLowerCase() === "off") return null;
-  const ms = parseDurationMs(trimmed);
-  if (ms === null) {
-    throw new Error(
-      `Invalid ${envName}: expected a duration (e.g. 7d, 2h, 30m) or off, got ${JSON.stringify(raw ?? "")}`,
-    );
-  }
-  return ms;
-}
-
-export function parseGatewayCap(
-  envName: string,
-  raw: string | undefined,
-): number | null {
-  const trimmed = raw?.trim() ?? "";
-  if (trimmed === "" || trimmed.toLowerCase() === "off") return null;
-  const value = Number(trimmed);
-  if (!Number.isInteger(value) || value <= 0) {
-    throw new Error(`Invalid ${envName}: must be a positive integer or off`);
-  }
-  return value;
-}
 
 /** Manifest override wins; "off" at the effective level disables. Pure lookup:
  * the manifest already carries the parsed bound, so there is nothing to
@@ -47,11 +13,9 @@ export function resolveEffectiveGovernanceMs(
 ): EffectiveGovernanceMs {
   return {
     ttlMs:
-      manifest?.ttl !== undefined ? manifest.ttl.ms : gateway.previewTtlMs,
+      manifest?.ttlMs !== undefined ? manifest.ttlMs : gateway.previewTtlMs,
     idleMs:
-      manifest?.idle_teardown !== undefined
-        ? manifest.idle_teardown.ms
-        : gateway.previewIdleMs,
+      manifest?.idleMs !== undefined ? manifest.idleMs : gateway.previewIdleMs,
   };
 }
 
@@ -228,24 +192,22 @@ export function evaluateGovernance(
 
   const perPreview = gov.previewMaxDbConnections;
   const ceiling = gov.postgresMaxConnections;
-  if (perPreview !== null && ceiling !== null) {
-    // Narrowed here so the violation carries numbers; connectionProjection
-    // re-checks the same condition internally and yields null without one.
-    const budget = connectionProjection({
-      previews: status.total + incoming,
-      perPreview,
+  // connectionProjection returns null without a budget, so one call covers
+  // both cases; the narrows are only so the violation carries numbers.
+  const budget = connectionProjection({
+    previews: status.total + incoming,
+    perPreview,
+    ceiling,
+  });
+  if (budget?.over && perPreview !== null && ceiling !== null) {
+    violations.push({
+      kind: "connection-budget",
+      code: "preview_connection_budget_exceeded",
+      projected: budget.projected,
       ceiling,
+      perPreview,
+      previews: status.total + incoming,
     });
-    if (budget?.over) {
-      violations.push({
-        kind: "connection-budget",
-        code: "preview_connection_budget_exceeded",
-        projected: budget.projected,
-        ceiling,
-        perPreview,
-        previews: status.total + incoming,
-      });
-    }
   }
 
   return violations;

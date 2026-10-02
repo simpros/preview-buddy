@@ -48,12 +48,12 @@ export type EffectiveGovernanceMs = {
 };
 
 /** Manifest-level governance overrides; undefined means inherit the gateway.
- * Each present field carries its parsed bound (`ms` null means "off"),
- * produced once at the boundary so downstream resolution is pure arithmetic
- * with no re-parse and no throw. */
+ * Each present field is the parsed bound (null means "off"), produced once
+ * at the boundary so downstream resolution is pure arithmetic with no
+ * re-parse and no throw. */
 export type GovernanceManifest = {
-  ttl?: { raw: string; ms: number | null };
-  idle_teardown?: { raw: string; ms: number | null };
+  ttlMs?: number | null;
+  idleMs?: number | null;
 };
 
 export function governanceIssueMessage(path: string, raw: string): string {

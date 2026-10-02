@@ -4,9 +4,6 @@ import {
   connectionProjection,
   evaluateGovernance,
   governanceStatus,
-  hoursToMs,
-  parseGatewayCap,
-  parseGatewayDurationMs,
   resolveEffectiveGovernanceMs,
   resolvePreviewExpiry,
   violationMessage,
@@ -124,40 +121,16 @@ describe("server governance policy", () => {
     );
   });
 
-  test("gateway duration accepts off and rejects garbage", () => {
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", undefined)).toBeNull();
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "off")).toBeNull();
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "7d")).toBe(
-      7 * 24 * 60 * 60 * 1000,
-    );
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "2h")).toBe(
-      2 * 60 * 60 * 1000,
-    );
-    expect(() =>
-      parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "forever"),
-    ).toThrow("Invalid SPROUT_PREVIEW_TTL");
-  });
-
-  test("gateway caps accept off and reject garbage", () => {
-    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", undefined)).toBeNull();
-    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "off")).toBeNull();
-    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "10")).toBe(10);
-    expect(() => parseGatewayCap("SPROUT_MAX_PREVIEWS", "0")).toThrow(
-      "Invalid SPROUT_MAX_PREVIEWS",
-    );
-  });
-
   test("manifest overrides gateway and off disables", () => {
     const gateway = { previewTtlMs: 2 * 3600_000, previewIdleMs: null };
-    expect(
-      resolveEffectiveGovernanceMs(
-        { ttl: { raw: "7d", ms: 7 * 86400_000 } },
-        gateway,
-      ),
-    ).toEqual({ ttlMs: 7 * 86400_000, idleMs: null });
-    expect(
-      resolveEffectiveGovernanceMs({ ttl: { raw: "off", ms: null } }, gateway),
-    ).toEqual({ ttlMs: null, idleMs: null });
+    expect(resolveEffectiveGovernanceMs({ ttlMs: 7 * 86400_000 }, gateway)).toEqual({
+      ttlMs: 7 * 86400_000,
+      idleMs: null,
+    });
+    expect(resolveEffectiveGovernanceMs({ ttlMs: null }, gateway)).toEqual({
+      ttlMs: null,
+      idleMs: null,
+    });
     expect(resolveEffectiveGovernanceMs(undefined, gateway)).toEqual({
       ttlMs: 2 * 3600_000,
       idleMs: null,
@@ -263,9 +236,5 @@ describe("server governance policy", () => {
         legacyTtlMs,
       }),
     ).toEqual({ expiresAtMs: null, bound: null });
-  });
-
-  test("hours convert once for the legacy bound", () => {
-    expect(hoursToMs(72)).toBe(72 * 3600_000);
   });
 });

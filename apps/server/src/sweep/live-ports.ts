@@ -43,9 +43,32 @@ function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
 async function removeControlPlane(
   deps: LiveSweepDeps,
   deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
-  useTryLock = false,
 ): Promise<boolean> {
-  const input = {
+  const result = await removePreview(
+    teardownDeps(deps),
+    controlPlaneInput(deletion),
+  );
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+}
+
+/** Non-blocking expiry removal: false when a deploy holds the preview lock. */
+async function tryRemoveControlPlane(
+  deps: LiveSweepDeps,
+  deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
+): Promise<boolean> {
+  const result = await tryRemovePreview(
+    teardownDeps(deps),
+    controlPlaneInput(deletion),
+  );
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+}
+
+function controlPlaneInput(
+  deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
+) {
+  return {
     repo: deletion.canonicalRepoId,
     prId: deletion.prId,
     expectedDbName: deletion.dbName,
@@ -53,11 +76,6 @@ async function removeControlPlane(
     expectedLastActivityAt: deletion.lastActivityAt,
     expiryReason: deletion.reason,
   };
-  const result = useTryLock
-    ? await tryRemovePreview(teardownDeps(deps), input)
-    : await removePreview(teardownDeps(deps), input);
-  if (!result.ok) throw new Error(result.error);
-  return result.value;
 }
 
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
@@ -122,7 +140,7 @@ async function dropDeletion(
   switch (deletion.reason) {
     case "sweep:ttl-expired":
     case "sweep:idle-expired":
-      return removeControlPlane(deps, deletion, true);
+      return tryRemoveControlPlane(deps, deletion);
     case "sweep:pr-not-open": {
       const open = await deps.forge.listOpenPrIds(deletion.canonicalRepoId);
       if (open.includes(deletion.prId)) return false;

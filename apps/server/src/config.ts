@@ -4,13 +4,8 @@ import type {
 } from "./app-deployment/labels.ts";
 import type { TelemetryState } from "./telemetry/destination.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
-import {
-  hoursToMs,
-  parseGatewayCap,
-  parseGatewayDurationMs,
-} from "./preview/governance.ts";
 import type { GovernanceConfig } from "@sprout/preview-env";
-import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
+import { DEFAULT_MAIL_FROM_DOMAIN, parseDurationMs } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
   buildRegistryPullAuth,
@@ -186,6 +181,40 @@ function parsePositiveInt(
     throw new Error(`Invalid ${name}: must be a positive integer`);
   }
   return value;
+}
+
+/** SPROUT_TTL_HOURS as ms, derived once at load so read and sweep surfaces
+ * share one bound without converting units themselves. */
+function hoursToMs(hours: number): number {
+  return hours * 60 * 60 * 1000;
+}
+
+/** Gateway-level duration: empty/off means unbounded, otherwise a duration. */
+export function parseGatewayDurationMs(
+  envName: string,
+  raw: string | undefined,
+): number | null {
+  const trimmed = raw?.trim() ?? "";
+  if (trimmed === "" || trimmed.toLowerCase() === "off") return null;
+  const ms = parseDurationMs(trimmed);
+  if (ms === null) {
+    throw new Error(
+      `Invalid ${envName}: expected a duration (e.g. 7d, 2h, 30m) or off, got ${JSON.stringify(raw ?? "")}`,
+    );
+  }
+  return ms;
+}
+
+/** Gateway-level cap: empty/off means unbounded, otherwise a positive int. */
+export function parseGatewayCap(
+  envName: string,
+  raw: string | undefined,
+): number | null {
+  const trimmed = raw?.trim() ?? "";
+  if (trimmed === "" || trimmed.toLowerCase() === "off") return null;
+  // Empty/off returned above, so trimmed is always a value here and the
+  // default never fires; the positive-int check stays in one place.
+  return parsePositiveInt(envName, trimmed, 0);
 }
 
 function parseSweepCron(
@@ -477,12 +506,8 @@ function parseDashboardConfig(): DashboardConfig {
 }
 
 export function parseExtraGitlabHosts(raw: string): ReadonlySet<string> {
-  const trimmed = raw.trim();
-  if (trimmed === "") return new Set();
   const out = new Set<string>();
-  for (const part of trimmed.split(",")) {
-    const entry = part.trim();
-    if (entry === "") continue;
+  for (const entry of splitListEntries(raw)) {
     const sep = entry.includes("=") ? "=" : entry.includes(":") ? ":" : null;
     if (!sep) {
       throw new Error(

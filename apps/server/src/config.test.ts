@@ -10,6 +10,8 @@ import {
   POSTGRES_REQUIRED_ENV,
   postgresNotConfiguredDetail,
   parseExtraGitlabHosts,
+  parseGatewayCap,
+  parseGatewayDurationMs,
   parseOtlpHeaders,
   previewAuthNotConfiguredDetail,
   REQUIRED_ENV,
@@ -551,6 +553,67 @@ describe("loadConfig", () => {
     process.env.SPROUT_MAIL_PORT = "1025";
     process.env.SPROUT_MAIL_SECURE = "maybe";
     expect(() => loadConfig()).toThrow("Invalid SPROUT_MAIL_SECURE");
+  });
+});
+
+describe("preview governance env", () => {
+  test("gateway durations accept off and reject garbage", () => {
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", undefined)).toBeNull();
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "off")).toBeNull();
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "7d")).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "2h")).toBe(
+      2 * 60 * 60 * 1000,
+    );
+    expect(() =>
+      parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "forever"),
+    ).toThrow("Invalid SPROUT_PREVIEW_TTL");
+  });
+
+  test("gateway caps accept off and reject garbage", () => {
+    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", undefined)).toBeNull();
+    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "off")).toBeNull();
+    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "10")).toBe(10);
+    expect(() => parseGatewayCap("SPROUT_MAX_PREVIEWS", "0")).toThrow(
+      "Invalid SPROUT_MAX_PREVIEWS",
+    );
+  });
+
+  test("legacy bound derives once from SPROUT_TTL_HOURS", () => {
+    setRequiredEnv();
+    const config = loadConfig();
+    expect(config.ttlHours).toBe(OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS);
+    expect(config.legacyTtlMs).toBe(
+      OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS * 3600_000,
+    );
+    expect(config.governance).toEqual({
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
+    });
+  });
+
+  test("governance env loads parsed bounds", () => {
+    setRequiredEnv();
+    process.env.SPROUT_PREVIEW_TTL = "7d";
+    process.env.SPROUT_PREVIEW_IDLE_TEARDOWN = "2h";
+    process.env.SPROUT_MAX_PREVIEWS_PER_REPO = "3";
+    process.env.SPROUT_MAX_PREVIEWS = "10";
+    process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS = "12";
+    process.env.SPROUT_POSTGRES_MAX_CONNECTIONS = "100";
+    const config = loadConfig();
+    expect(config.governance).toEqual({
+      previewTtlMs: 7 * 86400_000,
+      previewIdleMs: 2 * 3600_000,
+      maxPreviewsPerRepo: 3,
+      maxPreviews: 10,
+      previewMaxDbConnections: 12,
+      postgresMaxConnections: 100,
+    });
   });
 });
 

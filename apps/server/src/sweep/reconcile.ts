@@ -268,11 +268,15 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
 }
 
 /**
- * Governance expiry from the shared preview-env policy: one place decides
- * the base, the earlier bound, and which bound won. Returns the reason, or
- * null to keep. The cheap activity signal is the last successful deploy
- * (including reseed/reset); see docs/previews.md. The legacy creation-age
- * bound only collects rows that never completed a governed deploy.
+ * Governance expiry from the shared preview governance policy: one place
+ * decides the base, the earlier bound, and which bound won. Returns the
+ * reason, or null to keep. The cheap activity signal is the last successful
+ * deploy (including reseed/reset); see docs/previews.md. The legacy
+ * creation-age bound only collects rows that never completed a governed
+ * deploy. Expiry reads only the bounds snapshotted on the row at deploy
+ * time: live gateway config intentionally does not re-bound running
+ * previews (a config change takes effect on the next deploy).
+ * `ports.governance` feeds only the over-cap log below, never expiry.
  */
 export function planGovernanceExpiry(
   preview: SweepPreview,

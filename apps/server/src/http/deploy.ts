@@ -510,8 +510,8 @@ export function resolveGovernanceRequest(
   return {
     ok: true,
     value: {
-      ...(ttl.value !== undefined ? { ttl: ttl.value } : {}),
-      ...(idle.value !== undefined ? { idle_teardown: idle.value } : {}),
+      ...(ttl.value !== undefined ? { ttlMs: ttl.value.ms } : {}),
+      ...(idle.value !== undefined ? { idleMs: idle.value.ms } : {}),
     },
   };
 }
