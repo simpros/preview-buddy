@@ -6,6 +6,7 @@ import {
   labelIssueMessage,
   mailIntent,
   mailSpecIssueMessage,
+  MAX_SERVICES,
   normalizeDbSpec,
   parseDbSpec,
   parseLabelMap,
@@ -80,7 +81,6 @@ const serviceBody = t.Object({
 const MAX_SEED_ENV = 16;
 const MAX_SEED_ARG = 16;
 const MAX_APP_ENV = 32;
-const MAX_SERVICES = 8;
 
 const dbBody = t.Object({
   provider: t.Optional(t.String()),
@@ -171,7 +171,7 @@ export type DeploySpecs = {
  * Postgres presence lives only on the materialization context; the gate
  * reads it from there so deploy has a single source of truth.
  */
-export function resolveDeploySpecs(
+function resolveDeploySpecs(
   body: Pick<DeployBody, "db" | "env" | "mail">,
   materialization: PreviewMaterializationCtx,
   repo: string,
@@ -277,7 +277,7 @@ function validateKvEnvEntries(
   return { ok: true };
 }
 
-export function resolveSeedRequest(
+function resolveSeedRequest(
   body: Pick<
     DeployBody,
     "seed_image" | "seed_env" | "seed_arg" | "health" | "reseed"
@@ -333,7 +333,7 @@ export function resolveSeedRequest(
   };
 }
 
-export function resolveAppEnvRequest(
+function resolveAppEnvRequest(
   body: Pick<DeployBody, "app_env">,
 ): { ok: true; value: string[] } | { ok: false; error: string } {
   const appEnv = body.app_env ?? [];

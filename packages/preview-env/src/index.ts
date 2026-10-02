@@ -24,8 +24,6 @@ export type {
   PreviewEnvMap,
 } from "./env-keys.ts";
 
-export { ENV_TARGET_RE } from "./services.ts";
-
 type EnvProviderIssue = {
   code: "env_requires_provider";
   key: CanonicalEnvKey;
@@ -98,8 +96,11 @@ export {
 
 export {
   copyServiceExtras,
+  ENV_TARGET_RE,
   isServicePort,
+  MAX_SERVICES,
   parseServiceEnvMap,
+  SERVICE_NAME_RE,
   type PreviewServiceSpec,
   type ServiceFields,
 } from "./services.ts";

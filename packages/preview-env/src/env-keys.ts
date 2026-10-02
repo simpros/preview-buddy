@@ -35,18 +35,9 @@ export const CANONICAL_ENV_KEYS = [
 export const PREVIEW_ENV_KEYS = [...CANONICAL_ENV_KEYS, ...MAIL_ENV_KEYS] as const;
 
 export type OwnerEnvKey = (typeof OWNER_ENV_KEYS)[number];
-type CompanionEnvKey = (typeof COMPANION_ENV_KEYS)[number];
-type SqliteEnvKey = (typeof SQLITE_ENV_KEYS)[number];
 export type MailEnvKey = (typeof MAIL_ENV_KEYS)[number];
 export type CanonicalEnvKey = (typeof CANONICAL_ENV_KEYS)[number];
 export type PreviewEnvKey = CanonicalEnvKey | MailEnvKey;
-
-type PostgresEnvKey = OwnerEnvKey | CompanionEnvKey;
-
-export const POSTGRES_ENV_KEYS: readonly PostgresEnvKey[] = [
-  ...OWNER_ENV_KEYS,
-  ...COMPANION_ENV_KEYS,
-] as const;
 
 export type PreviewEnvMap = Partial<Record<PreviewEnvKey, string>>;
 
@@ -68,12 +59,6 @@ function isMailEnvKey(key: string): key is MailEnvKey {
 
 function isPreviewEnvKey(key: string): key is PreviewEnvKey {
   return (PREVIEW_ENV_KEYS as readonly string[]).includes(key);
-}
-
-export function envKeysForProvider(
-  provider: DbProvider,
-): readonly CanonicalEnvKey[] {
-  return CANONICAL_ENV_KEYS.filter((key) => ENV_KEY_HOME[key] === provider);
 }
 
 export function envProviderMismatch(

@@ -1,10 +1,12 @@
-import { copyServiceExtras, type PreviewServiceSpec } from "@sprout/preview-env";
+import {
+  copyServiceExtras,
+  MAX_SERVICES,
+  SERVICE_NAME_RE,
+  type PreviewServiceSpec,
+} from "@sprout/preview-env";
 import { expandAppEnvValue, type AppEnvResolveContext } from "./app-env-values.ts";
 import type { Result } from "./result.ts";
-import { SERVICE_NAME_RE, type SproutYamlService } from "./yaml.ts";
-
-/** Mirror server MAX_SERVICES — fail before POST. */
-export const MAX_SERVICES = 8;
+import type { SproutYamlService } from "./yaml.ts";
 
 export type DeployService = PreviewServiceSpec;
 

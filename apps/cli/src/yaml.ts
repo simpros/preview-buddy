@@ -18,6 +18,7 @@ import {
   resolveDbRoles,
   resolveHealthSpec,
   seedRequiresDatabaseMessage,
+  SERVICE_NAME_RE,
   validateHostnameValue,
   type DbSpec,
   type HealthIssue,
@@ -29,9 +30,6 @@ import {
 } from "@sprout/preview-env";
 import { hostnameIssueMessage } from "./hostname.ts";
 import type { Result } from "./result.ts";
-
-/** Alphanumeric service id (same grammar as slug / server validateServiceName). */
-export const SERVICE_NAME_RE = /^[a-z][a-z0-9]*$/;
 
 export type { PreviewEnvMap };
 export type { DbSpec };

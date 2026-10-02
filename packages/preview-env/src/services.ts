@@ -2,6 +2,12 @@ import type { PreviewLabels } from "./labels.ts";
 
 export const ENV_TARGET_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/** Single cap for companion services: CLI fails before POST, server enforces. */
+export const MAX_SERVICES = 8;
+
+/** Alphanumeric service id; doubles as the slug grammar. */
+export const SERVICE_NAME_RE = /^[a-z][a-z0-9]*$/;
+
 export const SERVICE_PORT_MIN = 1;
 export const SERVICE_PORT_MAX = 65535;
 

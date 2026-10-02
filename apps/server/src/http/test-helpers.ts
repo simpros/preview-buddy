@@ -165,7 +165,7 @@ export function bearer(token: string): HeadersInit {
 
 export const TEST_REPO = "https://github.com/org/repo";
 export const TEST_APP_IMAGE = "ghcr.io/org/myapp:sha-abc";
-export const TEST_HOSTNAME = "pr-42.myapp.preview.example.com";
+const TEST_HOSTNAME = "pr-42.myapp.preview.example.com";
 
 export function deployBody(overrides: Record<string, unknown> = {}) {
   return {
