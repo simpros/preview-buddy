@@ -4,10 +4,7 @@ import {
   parsePreviewDatabaseName,
   previewDbName,
 } from "./names.ts";
-import {
-  parseSqliteVolumeName,
-  sqliteVolumeName,
-} from "../preview/naming.ts";
+import { parseSqliteVolumeName, sqliteVolumeName } from "@sprout/preview-env";
 import type { CatalogDatabase, PreviewDb } from "./port.ts";
 
 export function createSqlitePreviewDb(docker: PreviewDocker): PreviewDb {

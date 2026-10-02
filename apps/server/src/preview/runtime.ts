@@ -1,7 +1,9 @@
 import {
+  dataVolumeName,
   mailIntent,
   requiresDatabase,
   sqliteDatabaseUrl,
+  sqliteVolumeName,
   type DbProvider,
   type DbRolesMode,
   type DbSpec,
@@ -16,7 +18,6 @@ import { mailConnectionEnv } from "../app-deployment/mail-env.ts";
 import type { MailConfig } from "../config.ts";
 import { pgConnectionEnv, type AppDeployPg } from "../app-deployment/pg-env.ts";
 import { previewDbName } from "../preview-db/names.ts";
-import { dataVolumeName, sqliteVolumeName } from "./naming.ts";
 
 /**
  * Materialization inputs. Postgres is present only when the gateway
