@@ -28,6 +28,7 @@ function testConfig(overrides: Partial<Config> = {}): Config {
     previewPortDefault: 8080,
     seedTimeout: 180,
     port: 7331,
+    dashboard: { enabled: false, user: "", password: "" },
     telemetry: { enabled: true, endpoint: "", auth: "" },
     ...overrides,
   };

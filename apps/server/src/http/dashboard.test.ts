@@ -6,6 +6,7 @@ import {
 import { previews } from "../infrastructure/db/schema.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import { NO_TELEMETRY } from "../telemetry/contract.ts";
 import { createRoutes } from "./routes.ts";
 import {
   bearer,
@@ -389,6 +390,7 @@ describe("GET /dashboard (flag on)", () => {
       dataVolumes: bindPreviewDataVolumes(testApp.docker),
       materialization: { traefikNetwork: "sprout-traefik" },
       dashboard: { ...ENABLED },
+      telemetry: NO_TELEMETRY,
     });
     const res = await probe.handle(
       new Request("http://localhost/dashboard", { headers: dashboardAuth() }),
