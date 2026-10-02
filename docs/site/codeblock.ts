@@ -25,16 +25,22 @@ export function isPromptFence(node: { meta?: string }): boolean {
 }
 
 // A filename token in the fence meta (` ```yaml .sprout.yaml `) names the
-// source file shown in the header. Tokens without a file shape (the `prompt`
-// tag, bare words) are ignored, so untagged fences render lang-only.
+// source file shown in the header. The only other meta token the fence
+// contract allows is the `prompt` tag, so the first token that is not the tag
+// is the file and anything else is absent, never shape-sniffed.
 export function fileFromMeta(meta: string | undefined): string | undefined {
   if (!meta) return undefined;
-  const file = meta
-    .split(/\s+/)
-    .filter((token) => token.length > 0 && token !== PROMPT_FENCE_META)
-    .find((token) => token.includes(".") || token.includes("/"));
-  return file;
+  return meta.split(/\s+/).find((token) => token.length > 0 && token !== PROMPT_FENCE_META);
 }
+
+// The header is explicit data, never derived: callers that know the fence
+// contract pass the exact labels to render, so changing copy wording cannot
+// silently rewrite the language line or inject a filename.
+export type CodeBlockHeader = {
+  copyLabel?: string;
+  langLabel?: string;
+  file?: string;
+};
 
 // One markup shape, used everywhere: language label plus the source file
 // where known plus a copy button over the escaped block text. Untagged
@@ -42,12 +48,12 @@ export function fileFromMeta(meta: string | undefined): string | undefined {
 export function codeBlockFigure(
   lang: string | undefined,
   code: string,
-  copyLabel = "Copy code block",
-  file?: string,
+  header: CodeBlockHeader = {},
 ): string {
   const shown = lang && lang.length > 0 ? lang : "text";
-  const langLabel = copyLabel === PROMPT_COPY_LABEL ? PROMPT_LANG_LABEL : shown;
-  const fileLabel = file ?? (copyLabel === PROMPT_COPY_LABEL ? PROMPT_SOURCE_FILE : undefined);
+  const langLabel = header.langLabel ?? shown;
+  const fileLabel = header.file;
+  const copyLabel = header.copyLabel ?? "Copy code block";
   return [
     `<figure class="codeblock" data-lang="${escapeHtml(shown)}">`,
     `  <div class="codeblock-bar">`,
@@ -64,17 +70,28 @@ export const codeBlockExtension: MarkdownExtension = {
   name: "codeblock",
   renderHtml(node) {
     if (node.type === "code") {
-      const copyLabel = isPromptFence(node) ? PROMPT_COPY_LABEL : undefined;
-      return codeBlockFigure(node.lang, node.value, copyLabel, fileFromMeta(node.meta));
+      const file = fileFromMeta(node.meta);
+      if (isPromptFence(node)) {
+        return codeBlockFigure(node.lang, node.value, {
+          copyLabel: PROMPT_COPY_LABEL,
+          langLabel: PROMPT_LANG_LABEL,
+          file: file ?? PROMPT_SOURCE_FILE,
+        });
+      }
+      return codeBlockFigure(node.lang, node.value, { file });
     }
     return undefined;
   },
 };
 
-// The one place the meta → prompt-label rule lives: assembly calls this for
-// the embedded prompt figure instead of composing it by hand.
+// The one place the prompt header lives: assembly calls this for the
+// embedded prompt figure instead of composing it by hand.
 export function promptFigure(prompt: string): string {
-  return codeBlockFigure("text", prompt, PROMPT_COPY_LABEL);
+  return codeBlockFigure("text", prompt, {
+    copyLabel: PROMPT_COPY_LABEL,
+    langLabel: PROMPT_LANG_LABEL,
+    file: PROMPT_SOURCE_FILE,
+  });
 }
 
 // Wired once per page by the shell: click copies the sibling `<code>` text,

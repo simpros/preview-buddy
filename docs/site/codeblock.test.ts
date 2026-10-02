@@ -24,13 +24,17 @@ describe("codeBlockFigure", () => {
   });
 
   test("names the source file in the header where known", () => {
-    const html = codeBlockFigure("yaml", "k: v", undefined, ".sprout.yaml");
+    const html = codeBlockFigure("yaml", "k: v", { file: ".sprout.yaml" });
     expect(html).toContain('<span class="codeblock-lang">yaml</span>');
     expect(html).toContain('<span class="codeblock-file">.sprout.yaml</span>');
   });
 
-  test("the prompt header says what it is and where it lives", () => {
-    const html = codeBlockFigure("text", "You are onboarding", PROMPT_COPY_LABEL);
+  test("renders exactly the header it is given, nothing derived", () => {
+    const html = codeBlockFigure("text", "You are onboarding", {
+      copyLabel: PROMPT_COPY_LABEL,
+      langLabel: PROMPT_LANG_LABEL,
+      file: PROMPT_SOURCE_FILE,
+    });
     expect(html).toContain('data-lang="text"');
     expect(html).toContain(`<span class="codeblock-lang">${PROMPT_LANG_LABEL}</span>`);
     expect(html).toContain(`<span class="codeblock-file">${PROMPT_SOURCE_FILE}</span>`);
@@ -64,9 +68,13 @@ describe("codeBlockFigure", () => {
     expect(plain).not.toContain("codeblock-file");
   });
 
-  test("promptFigure is the one meta → label rule", () => {
+  test("promptFigure is the one place the prompt header lives", () => {
     expect(promptFigure("You are onboarding")).toBe(
-      codeBlockFigure("text", "You are onboarding", "Copy onboarding prompt"),
+      codeBlockFigure("text", "You are onboarding", {
+        copyLabel: "Copy onboarding prompt",
+        langLabel: PROMPT_LANG_LABEL,
+        file: PROMPT_SOURCE_FILE,
+      }),
     );
   });
 });

@@ -45,12 +45,6 @@ function footerBlock(html: string): string {
   return match[0]!;
 }
 
-function groupNameOf(file: string): string {
-  const group = docsGroups.find((g) => g.pages.some((p) => p.file === file));
-  if (!group) throw new Error(`no manifest group owns ${file}`);
-  return group.name;
-}
-
 describe("grouped docs navigation", () => {
   test("group order and membership live in the manifest once", () => {
     expect(docsGroups.map((g) => g.name)).toEqual([
@@ -91,29 +85,20 @@ describe("grouped docs navigation", () => {
     expect(new Set(titles).size).toBe(docsPages.length);
   });
 
-  test("the current page is marked and its group is open", async () => {
+  test("the current page is marked", async () => {
     for (const page of docsPages) {
       const groups = docsSidebar(pageHtmlFile(page.file), page.file);
       expect(
         groups.flatMap((g) => g.items.filter((i) => i.current)).map((i) => i.title),
       ).toEqual([page.title]);
-      expect(groups.filter((g) => g.open).map((g) => g.name)).toEqual([
-        groupNameOf(page.file),
-      ]);
-      expect(
-        groups.find((g) => g.open)!.items.map((i) => i.title),
-      ).toContain(page.title);
     }
-    // Index and marketing pages belong to no group: the first group opens.
+    // Index and marketing pages belong to no group: nothing is current.
     for (const rel of [siteEntryPath, "docs/index.html"]) {
       const groups = docsSidebar(rel);
       expect(groups.flatMap((g) => g.items.filter((i) => i.current))).toEqual([]);
-      expect(groups.filter((g) => g.open).map((g) => g.name)).toEqual([
-        docsGroups[0].name,
-      ]);
     }
     // A supplied current page must be a manifest file: typos fail loudly
-    // instead of rendering with no marker and the wrong group open.
+    // instead of rendering with no marker.
     expect(() => docsSidebar("docs/x.html", "docs/does-not-exist.md")).toThrow(
       "not in manifest",
     );
@@ -181,8 +166,8 @@ describe("grouped docs navigation", () => {
     expect(html).toContain('<a class="btn primary" href="../index.html">Read the docs</a>');
     expect(html.match(/class="[^"]*\bprimary\b/g)).toHaveLength(1);
     expect(html).toContain('<a class="btn ghost" href="../onboarding-prompt.html">Let your agent do it</a>');
-    // In-page TOC stays on-page: no Docs entry pointing at the footer.
-    const toc = /<nav class="toc"[\s\S]*?<\/nav>/.exec(html)?.[0];
+    // In-page jumps stay on-page: no Docs entry pointing at the footer.
+    const toc = /<nav class="hero-toc"[\s\S]*?<\/nav>/.exec(html)?.[0];
     expect(toc).toBeDefined();
     for (const href of [...toc!.matchAll(/href="([^"]+)"/g)].map((m) => m[1]!)) {
       expect(href.startsWith("#")).toBe(true);

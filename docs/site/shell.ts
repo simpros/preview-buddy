@@ -44,7 +44,6 @@ type SidebarItem = {
 
 export type SidebarGroup = {
   name: string;
-  open: boolean;
   items: SidebarItem[];
 };
 
@@ -215,12 +214,13 @@ export type ShellOptions = {
 };
 
 // Scroll-spy for the "On this page" lists: the link matching the highest
-// heading above the reading position carries `.active`, in the rail and in
-// the inline card alike. Throttled through `requestAnimationFrame`, passive,
-// and a no-op on pages without headings. The movement itself is a CSS class
-// flip (gated by `prefers-reduced-motion` there); this script never animates.
+// h2–h4 heading above the reading position carries `.active`, in the rail
+// and in the inline card alike. Throttled through `requestAnimationFrame`,
+// passive, and a no-op on pages without headings. The movement itself is a
+// CSS class flip (gated by `prefers-reduced-motion` there); this script
+// never animates.
 const scrollSpyScript = `(() => {
-  const heads = Array.from(document.querySelectorAll("main h2[id]"));
+  const heads = Array.from(document.querySelectorAll("main :is(h2,h3,h4)[id]"));
   const links = Array.from(document.querySelectorAll(".toc a, .toc-inline a"));
   if (heads.length === 0 || links.length === 0) return;
   let ticking = false;
