@@ -131,11 +131,8 @@ export async function promoteAfterHealthy(
   const shouldSeed = seedWorkOutstanding(starting, seed, ephemerals.reseed);
 
   if (shouldSeed && seed) {
-    return timed(
-      deps,
-      "seed",
-      () => runSeedPhase(deps, starting, { ...ephemerals, seed }),
-      (result) => (!result.ok ? result.error : undefined),
+    return timed(deps, "seed", () =>
+      runSeedPhase(deps, starting, { ...ephemerals, seed }),
     );
   }
 
@@ -185,10 +182,7 @@ export async function resumeIncompleteSeed(
       error: "seed_image_required_to_resume_seeding",
     };
   }
-  return timed(
-    deps,
-    "seed",
-    () => runSeedPhase(deps, row, { ...ephemerals, seed }),
-    (result) => (!result.ok ? result.error : undefined),
+  return timed(deps, "seed", () =>
+    runSeedPhase(deps, row, { ...ephemerals, seed }),
   );
 }

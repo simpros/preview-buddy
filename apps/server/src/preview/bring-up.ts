@@ -245,73 +245,68 @@ async function attachAppContainer(
   row: PreviewRow,
   input: ProvisionInput,
 ): Promise<Result<PreviewRow>> {
-  return timed(
-    deps,
-    "app",
-    async () => {
-      let containerId: string;
-      let port: number;
-      try {
-        const previewAccess = await resolvePreviewAccessLabels({
-          slug: row.slug,
-          prId: row.prId,
-          stored: row,
-          ...(input.previewAuth ? { previewAuth: input.previewAuth } : {}),
-        });
-        ({ containerId, port } = await deps.app.replace({
-          slug: row.slug,
-          prId: row.prId,
-          hostname: input.hostname,
-          image: input.appImage,
-          appEnv: input.appEnv,
-          plan: input.plan,
-          ...(input.labels !== undefined ? { labels: input.labels } : {}),
-          ...(input.traefikTls !== undefined ? { traefikTls: input.traefikTls } : {}),
-          ...(input.traefikForwardAuth !== undefined
-            ? { traefikForwardAuth: input.traefikForwardAuth }
-            : {}),
-          previewAccess,
-        }));
-      } catch {
-        await markPreviewFailed(
-          deps.db,
-          row.canonicalRepoId,
-          row.prId,
-          "preview_app_deploy_failed",
-        );
-        return { ok: false, status: 500, error: "preview_app_deploy_failed" };
-      }
-
-      const now = utcIsoNow();
-      const starting = await updatePreviewRow(
+  return timed(deps, "app", async () => {
+    let containerId: string;
+    let port: number;
+    try {
+      const previewAccess = await resolvePreviewAccessLabels({
+        slug: row.slug,
+        prId: row.prId,
+        stored: row,
+        ...(input.previewAuth ? { previewAuth: input.previewAuth } : {}),
+      });
+      ({ containerId, port } = await deps.app.replace({
+        slug: row.slug,
+        prId: row.prId,
+        hostname: input.hostname,
+        image: input.appImage,
+        appEnv: input.appEnv,
+        plan: input.plan,
+        ...(input.labels !== undefined ? { labels: input.labels } : {}),
+        ...(input.traefikTls !== undefined ? { traefikTls: input.traefikTls } : {}),
+        ...(input.traefikForwardAuth !== undefined
+          ? { traefikForwardAuth: input.traefikForwardAuth }
+          : {}),
+        previewAccess,
+      }));
+    } catch {
+      await markPreviewFailed(
         deps.db,
-        row,
-        {
-          hostname: input.hostname,
-          appImage: input.appImage,
-          containerId,
-          status: "starting",
-          ...clearLastError,
-          updatedAt: now,
-        },
-        "preview_row_missing_on_app_attach",
+        row.canonicalRepoId,
+        row.prId,
+        "preview_app_deploy_failed",
       );
+      return { ok: false, status: 500, error: "preview_app_deploy_failed" };
+    }
 
-      const outcome = await deps.app.waitHealthy(
+    const now = utcIsoNow();
+    const starting = await updatePreviewRow(
+      deps.db,
+      row,
+      {
+        hostname: input.hostname,
+        appImage: input.appImage,
         containerId,
-        port,
-        input.health,
-        input.plan.appNetworks,
-      );
-      if (outcome === "timeout") {
-        console.warn("health:timeout");
-        return failUnhealthyAttach(deps, row, "health_timeout");
-      }
+        status: "starting",
+        ...clearLastError,
+        updatedAt: now,
+      },
+      "preview_row_missing_on_app_attach",
+    );
 
-      return { ok: true, value: starting };
-    },
-    (result) => (!result.ok ? result.error : undefined),
-  );
+    const outcome = await deps.app.waitHealthy(
+      containerId,
+      port,
+      input.health,
+      input.plan.appNetworks,
+    );
+    if (outcome === "timeout") {
+      console.warn("health:timeout");
+      return failUnhealthyAttach(deps, row, "health_timeout");
+    }
+
+    return { ok: true, value: starting };
+  });
 }
 
 async function attachThenPromote(
@@ -339,12 +334,7 @@ async function ensureThenAttach(
   // A nameless plan provisions no database, so there is no db phase to time.
   const ensured =
     input.plan.dbName != null
-      ? await timed(
-          deps,
-          "db",
-          () => ensureDatabase(deps, row, input),
-          (result) => (!result.ok ? result.error : undefined),
-        )
+      ? await timed(deps, "db", () => ensureDatabase(deps, row, input))
       : await ensureDatabase(deps, row, input);
   if (!ensured.ok) {
     await markPreviewFailed(

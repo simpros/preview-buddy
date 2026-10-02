@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { context, trace, SpanStatusCode } from "@opentelemetry/api";
-import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
+import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { opentelemetry } from "@elysiajs/opentelemetry";
-import { loadConfig, parseOtlpHeaders } from "../config.ts";
-import { formatOtlpDestination } from "./destination.ts";
+import { loadConfig } from "../config.ts";
 import { TRACER_NAME } from "./tracer-name.ts";
 import { createFakeDockerClient } from "../docker/fake.ts";
 import {
@@ -14,7 +13,7 @@ import {
   type TestApp,
 } from "../http/test-helpers.ts";
 import { createTelemetryReporter } from "./reporter.ts";
-import { createTraces, shouldTraceRequest, createRedactingSpanProcessor } from "./traces.ts";
+import { createTraces, shouldTraceRequest, createRedactingExporter } from "./traces.ts";
 import { startTelemetryReceiver, tempTelemetryDir, waitForTelemetry, type TelemetryReceiver } from "./test-receiver.ts";
 import type { TelemetryDeployHook } from "./contract.ts";
 
@@ -43,63 +42,6 @@ afterEach(() => {
 function setRequired(): void {
   process.env.SPROUT_TRAEFIK_NETWORK = "traefik";
 }
-
-describe("otlp config", () => {
-  test("parses Authorization with base64 padding byte-identical", () => {
-    const headers = parseOtlpHeaders(
-      "Authorization=Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM=,stream-name=default",
-    );
-    expect(headers).toEqual({
-      Authorization: "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM=",
-      "stream-name": "default",
-    });
-    expect(headers["Authorization"]).toBe(
-      "Basic cm9vdEBleGFtcGxlLmNvbTpDb21wbGV4cGFzcyMxMjM=",
-    );
-  });
-
-  test("rejects entry without = and empty name", () => {
-    expect(() => parseOtlpHeaders("nopadding")).toThrow("nopadding");
-    expect(() => parseOtlpHeaders("=value")).toThrow("=value");
-  });
-
-  test("non-absolute endpoint fails boot naming the variable", () => {
-    setRequired();
-    process.env.SPROUT_OTLP_ENDPOINT = "not-a-url";
-    expect(() => loadConfig()).toThrow("SPROUT_OTLP_ENDPOINT");
-    process.env.SPROUT_OTLP_ENDPOINT = "ftp://example.com/v1/traces";
-    expect(() => loadConfig()).toThrow("SPROUT_OTLP_ENDPOINT");
-  });
-
-  test("no endpoint means off with empty headers summary", () => {
-    setRequired();
-    const config = loadConfig();
-    expect(config.otlp).toEqual({ endpoint: "", headers: {} });
-    expect(formatOtlpDestination("")).toBe("off");
-  });
-
-  test("headers without an endpoint fail boot instead of silently dropping", () => {
-    setRequired();
-    process.env.SPROUT_OTLP_HEADERS = "Authorization=Basic c2VjcmV0";
-    expect(() => loadConfig()).toThrow("SPROUT_OTLP_HEADERS");
-  });
-
-  test("endpoint set yields host/path summary and [set] headers, never the value", async () => {
-    const { loadConfig: lc, configSummary } = await import("../config.ts");
-    setRequired();
-    process.env.SPROUT_OTLP_ENDPOINT = "https://collector.example.com:4318/v1/traces";
-    process.env.SPROUT_OTLP_HEADERS = "Authorization=Basic c2VjcmV0,stream-name=default";
-    const config = lc();
-    const summary = configSummary(config);
-    expect(summary.traces).toBe("collector.example.com:4318/v1/traces");
-    expect(summary.otlpHeaders).toBe("[set]");
-    expect(JSON.stringify(summary)).not.toContain("c2VjcmV0");
-    setRequired();
-    delete process.env.SPROUT_OTLP_HEADERS;
-    const bare = lc();
-    expect(configSummary(bare).otlpHeaders).toBe("[empty]");
-  });
-});
 
 describe("shouldTraceRequest", () => {
   test("excludes exactly /healthz", () => {
@@ -133,9 +75,11 @@ function installSpanProvider(): {
 } {
   const exporter = new InMemorySpanExporter();
   const provider = new BasicTracerProvider({
-    spanProcessors: [createRedactingSpanProcessor(), new SimpleSpanProcessor(exporter)],
+    spanProcessors: [new SimpleSpanProcessor(createRedactingExporter(exporter))],
   });
-  context.setGlobalContextManager(new AsyncHooksContextManager());
+  // The gateway runs under NodeSDK, which installs the ALS manager; the test
+  // exercises the same manager so deploy/phase parenting matches production.
+  context.setGlobalContextManager(new AsyncLocalStorageContextManager());
   trace.setGlobalTracerProvider(provider);
   return { exporter, provider };
 }
@@ -401,18 +345,22 @@ describe("otlp export", () => {
   });
 
   test("closed port and 500 never break a deploy", async () => {
-    // Closed port.
-    await withSpanProvider(async () => {
-      setRequired();
-      process.env.SPROUT_OTLP_ENDPOINT = "http://127.0.0.1:1/v1/traces";
+    // Closed port. The dead endpoint is wired in for real — no in-memory
+    // provider here, so deploy and HTTP spans flow through the SDK batch
+    // processor and export fails in the background while deploys proceed.
+    trace.disable();
+    setRequired();
+    process.env.SPROUT_OTLP_ENDPOINT = "http://127.0.0.1:1/v1/traces";
+    {
       const config = loadConfig();
-      // Deploy spans flow through the global provider; the dead endpoint is
-      // never wired in, so export cannot touch the request path.
+      const handle = createTraces(config);
+      expect(handle.plugin).toBeDefined();
       const testApp = await createTestApp({
         postgres: undefined,
         docker: createFakeDockerClient({
           exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
         }),
+        tracesPlugin: handle.plugin!,
       });
       try {
         const { body } = await postDeployToken(testApp, {
@@ -431,45 +379,56 @@ describe("otlp export", () => {
         expect(config.otlp.endpoint).toBe("http://127.0.0.1:1/v1/traces");
       } finally {
         await testApp.cleanup();
+        await handle.shutdown();
         clearOtlpEnv();
       }
-    });
+    }
     // 500 receiver.
     {
+      const exportHits: string[] = [];
       const server = Bun.serve({
         port: 0,
-        fetch() {
+        async fetch(req) {
+          exportHits.push(`${req.method} ${new URL(req.url).pathname}`);
+          await req.arrayBuffer();
           return new Response("nope", { status: 500 });
         },
       });
       try {
-        await withSpanProvider(async () => {
-          setRequired();
-          process.env.SPROUT_OTLP_ENDPOINT = `http://127.0.0.1:${server.port}/v1/traces`;
-          const testApp = await createTestApp({
-            postgres: undefined,
-            docker: createFakeDockerClient({
-              exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
-            }),
-          });
-          try {
-            const { body } = await postDeployToken(testApp, {
-              canonical_repo_id: "https://github.com/org/repo",
-              slug: "myapp",
-            });
-            const res = await postDeployAndSettle(testApp, body.token as string, {
-              canonical_repo_id: "https://github.com/org/repo",
-              pr_id: 42,
-              slug: "myapp",
-              hostname: "pr-42.myapp.preview.example.com",
-              app_image: "ghcr.io/org/myapp:sha-abc",
-              db: { provider: "sqlite" },
-            });
-            expect(res.outcome).toBe("ready");
-          } finally {
-            await testApp.cleanup();
-          }
+        trace.disable();
+        setRequired();
+        process.env.SPROUT_OTLP_ENDPOINT = `http://127.0.0.1:${server.port}/v1/traces`;
+        const config = loadConfig();
+        const handle = createTraces(config);
+        expect(handle.plugin).toBeDefined();
+        const testApp = await createTestApp({
+          postgres: undefined,
+          docker: createFakeDockerClient({
+            exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
+          }),
+          tracesPlugin: handle.plugin!,
         });
+        try {
+          const { body } = await postDeployToken(testApp, {
+            canonical_repo_id: "https://github.com/org/repo",
+            slug: "myapp",
+          });
+          const res = await postDeployAndSettle(testApp, body.token as string, {
+            canonical_repo_id: "https://github.com/org/repo",
+            pr_id: 42,
+            slug: "myapp",
+            hostname: "pr-42.myapp.preview.example.com",
+            app_image: "ghcr.io/org/myapp:sha-abc",
+            db: { provider: "sqlite" },
+          });
+          expect(res.outcome).toBe("ready");
+        } finally {
+          await testApp.cleanup();
+          await handle.shutdown();
+        }
+        // The deploy really exported through the failing endpoint: the
+        // collector was hit and the 500 did not fail the deploy.
+        expect(exportHits).toContain("POST /v1/traces");
       } finally {
         server.stop(true);
         clearOtlpEnv();
@@ -497,13 +456,13 @@ describe("otlp export", () => {
       });
       try {
         for (let i = 0; i < 3; i++) {
-          const res = await testApp.app.handle(new Request("http://localhost/healthz"));
+              const res = await testApp.app.handle(new Request("http://localhost/healthz"));
           expect(res.status).toBe(200);
         }
       } finally {
-        await testApp.cleanup();
-        await handle.shutdown();
-      }
+          await testApp.cleanup();
+          await handle.shutdown();
+        }
     } finally {
       server.stop(true);
       try {

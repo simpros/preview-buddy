@@ -1,4 +1,4 @@
-import { SpanStatusCode, context, trace, type Span } from "@opentelemetry/api";
+import { SpanStatusCode, trace, type Span } from "@opentelemetry/api";
 import type { Result } from "./result.ts";
 import { captureDeployOutcome } from "./deploy-outcome.ts";
 import {
@@ -20,7 +20,6 @@ import type {
   TelemetryDeployHook,
   TelemetryDeployOutcome,
 } from "../telemetry/contract.ts";
-import { runWithTraceContext } from "../telemetry/trace-context.ts";
 import { TRACER_NAME } from "../telemetry/tracer-name.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
@@ -98,12 +97,10 @@ export async function runAsyncDeploy(
       },
     },
     async (span) => {
-      // Bound once where the context is still valid: past this point the
-      // OTel manager no longer carries it across awaits (see trace-context).
-      const { outcome, caught } = await runWithTraceContext(
-        context.active(),
-        () => attemptDeploy(deps, input, plan, { startedAt, phases }),
-      );
+      const { outcome, caught } = await attemptDeploy(deps, input, plan, {
+        startedAt,
+        phases,
+      });
       applyDeploySpanStatus(span, outcome, caught);
       span.end();
     },

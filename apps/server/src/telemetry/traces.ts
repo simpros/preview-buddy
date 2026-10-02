@@ -5,7 +5,7 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import {
   BatchSpanProcessor,
   type ReadableSpan,
-  type SpanProcessor,
+  type SpanExporter,
 } from "@opentelemetry/sdk-trace-base";
 import type { Config } from "../config.ts";
 import { TRACER_NAME } from "./tracer-name.ts";
@@ -26,28 +26,37 @@ export function shouldTraceRequest(req: Request): boolean {
  * it, so the values are scrubbed before the batch processor sees them.
  * Names stay, values do not.
  *
- * This runs in onEnd rather than by intercepting setAttribute: creation-time
- * attributes never pass through setAttribute, and the scrubbed span is what
- * the exporter buffers because this processor is registered first.
+ * This wraps the exporter rather than running as a span processor: export is
+ * structurally the last touch before serialization, so the guarantee cannot
+ * be broken by reordering span processors. It also covers creation-time
+ * attributes, which never pass through setAttribute.
  */
 function isSensitiveAttributeKey(key: string): boolean {
   return /^http\.(request|response)\.(header\.|body$|cookie$)/.test(key);
 }
 
-export function createRedactingSpanProcessor(): SpanProcessor {
-  return {
-    onStart(): void {},
+function scrubSpanAttributes(span: ReadableSpan): void {
+  for (const key of Object.keys(span.attributes)) {
+    if (isSensitiveAttributeKey(key)) {
+      span.attributes[key] = "[redacted]";
+    }
+  }
+}
 
-    onEnd(span: ReadableSpan): void {
-      for (const key of Object.keys(span.attributes)) {
-        if (isSensitiveAttributeKey(key)) {
-          span.attributes[key] = "[redacted]";
-        }
-      }
+export function createRedactingExporter(inner: SpanExporter): SpanExporter {
+  return {
+    export(spans, resultCallback): void {
+      for (const span of spans) scrubSpanAttributes(span);
+      inner.export(spans, resultCallback);
     },
 
-    async shutdown(): Promise<void> {},
-    async forceFlush(): Promise<void> {},
+    async shutdown(): Promise<void> {
+      await inner.shutdown();
+    },
+
+    async forceFlush(): Promise<void> {
+      await inner.forceFlush?.();
+    },
   };
 }
 
@@ -75,8 +84,7 @@ export function createTraces(config: Config): TracesHandle {
       "service.version": sproutVersion(),
     }),
     spanProcessors: [
-      createRedactingSpanProcessor(),
-      new BatchSpanProcessor(exporter),
+      new BatchSpanProcessor(createRedactingExporter(exporter)),
     ],
   });
   sdk.start();

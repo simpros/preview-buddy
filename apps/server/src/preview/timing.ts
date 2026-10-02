@@ -4,7 +4,7 @@ import {
   type Span,
 } from "@opentelemetry/api";
 import { TRACER_NAME } from "../telemetry/tracer-name.ts";
-import { ambientTraceContext } from "../telemetry/trace-context.ts";
+import type { Result } from "./result.ts";
 import type {
   PhaseTimer,
   PreviewPhase,
@@ -13,27 +13,25 @@ import type {
 
 /**
  * Runs fn, records wall time, and wraps it in a preview.<phase> child span.
- * The timer knows nothing about what fn returns: callers that treat a value
- * as failure pass a classifier mapping it to an error message, and the span
- * records ERROR for exactly those.
+ * Every phase returns a Result, so ERROR status derives from result.ok here
+ * instead of at each call site. Generic over the whole result so call sites
+ * keep their narrow error vocabularies.
  */
-export async function timed<T>(
+export async function timed<R extends Result<unknown>>(
   deps: { phaseTimer?: PhaseTimer },
   phase: PreviewPhase,
-  fn: () => Promise<T>,
-  classifyError?: (value: T) => string | undefined,
-): Promise<T> {
+  fn: () => Promise<R>,
+): Promise<R> {
   const tracer = trace.getTracer(TRACER_NAME);
   const start = Date.now();
-  const run = async (span: Span): Promise<T> => {
+  const run = async (span: Span): Promise<R> => {
     try {
-      const value = await fn();
-      const message = classifyError?.(value);
-      if (message !== undefined) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message });
-        span.recordException(new Error(message));
+      const result = await fn();
+      if (!result.ok) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: result.error });
+        span.recordException(new Error(result.error));
       }
-      return value;
+      return result;
     } catch (err) {
       span.setStatus({ code: SpanStatusCode.ERROR });
       span.recordException(err instanceof Error ? err : new Error(String(err)));
@@ -45,13 +43,6 @@ export async function timed<T>(
       span.end();
     }
   };
-  // The deploy root binds its context into storage at span creation; the
-  // OTel manager cannot be trusted for the ambient parent here, so read it
-  // back explicitly. Without a bound deploy the span parents ambiently.
-  const parent = ambientTraceContext();
-  if (parent) {
-    return tracer.startActiveSpan(`preview.${phase}`, {}, parent, run);
-  }
   return tracer.startActiveSpan(`preview.${phase}`, run);
 }
 
