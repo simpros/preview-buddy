@@ -18,9 +18,6 @@ export {
   isWorktreeInputError,
 } from "./errors.ts";
 export {
-  parseResetMarkerToken,
-} from "./reset-marker.ts";
-export {
   dropWorktreeDb,
   provisionWorktreeDb,
   type DropWorktreeDbResult,

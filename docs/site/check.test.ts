@@ -78,6 +78,7 @@ describe("defaultCheckPaths", () => {
     for (const relPath of [
       "docs/herdr-integration.md",
       "docs/getting-started.md",
+      "docs/herdr-integration.md",
       "docs/adopting-a-repo.md",
       "docs/ci-integration.md",
       "docs/operator-deploy.md",
@@ -141,18 +142,18 @@ describe("defaultCheckPaths", () => {
     await check(await defaultCheckPaths(root));
   });
 
-  test("fails on a dead link in adoption.md", async () => {
+  test("fails on a dead link in getting-started.md", async () => {
     root = await mkdtemp(join(tmpdir(), "sprout-docs-check-"));
     await writeCorpusFixture(root);
     await writeFile(
-      join(root, "docs", "adoption.md"),
+      join(root, "docs", "getting-started.md"),
       "See [missing](../no-such-file.md).\n",
     );
     await expect(check(await defaultCheckPaths(root))).rejects.toThrow(
       /dead link/,
     );
     await expect(check(await defaultCheckPaths(root))).rejects.toThrow(
-      /adoption\.md/,
+      /getting-started\.md/,
     );
   });
 
@@ -188,10 +189,10 @@ describe("fragment resolution", () => {
   test("accepts a markdown fragment whose heading exists", async () => {
     root = await mkdtemp(join(tmpdir(), "sprout-docs-check-"));
     await writeCorpusFixture(root);
-    await writeFile(join(root, "docs", "deploy.md"), "# Deploy\n");
+    await writeFile(join(root, "docs", "operator-deploy.md"), "# Deploy\n");
     await writeFile(
-      join(root, "docs", "adoption.md"),
-      "See [deploy](deploy.md#deploy).\n",
+      join(root, "docs", "getting-started.md"),
+      "See [deploy](operator-deploy.md#deploy).\n",
     );
     await check(await defaultCheckPaths(root));
   });
@@ -201,8 +202,8 @@ describe("fragment resolution", () => {
     await writeCorpusFixture(root);
     await writeFile(join(root, "docs", "deploy.md"), "# Deploy\n");
     await writeFile(
-      join(root, "docs", "adoption.md"),
-      "See [deploy](deploy.md#no-such-heading).\n",
+      join(root, "docs", "getting-started.md"),
+      "See [deploy](operator-deploy.md#no-such-heading).\n",
     );
     await expect(check(await defaultCheckPaths(root))).rejects.toThrow(
       /dead fragment/,
@@ -212,15 +213,15 @@ describe("fragment resolution", () => {
   test("fragments speak GitHub anchors, not the collapsed form", async () => {
     root = await mkdtemp(join(tmpdir(), "sprout-docs-check-"));
     await writeCorpusFixture(root);
-    await writeFile(join(root, "docs", "deploy.md"), "## Upgrade / redeploy\n");
+    await writeFile(join(root, "docs", "operator-deploy.md"), "## Upgrade / redeploy\n");
     await writeFile(
-      join(root, "docs", "adoption.md"),
-      "See [u](deploy.md#upgrade--redeploy).\n",
+      join(root, "docs", "getting-started.md"),
+      "See [u](operator-deploy.md#upgrade--redeploy).\n",
     );
     await check(await defaultCheckPaths(root));
     await writeFile(
-      join(root, "docs", "adoption.md"),
-      "See [u](deploy.md#upgrade-redeploy).\n",
+      join(root, "docs", "getting-started.md"),
+      "See [u](operator-deploy.md#upgrade-redeploy).\n",
     );
     await expect(check(await defaultCheckPaths(root))).rejects.toThrow(
       /dead fragment/,

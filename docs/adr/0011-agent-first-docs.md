@@ -20,9 +20,6 @@ machine-readable catalogue, no paste-into-a-harness prompt.
 - `docs/index.html` lists every page with its one-line description.
   `llms.txt` at the site root lists every page with its canonical URL and
   marks the onboarding prompt as the entry point.
-- `docs/adoption.md` and `docs/deploy.md` stay as thin landing pages: same
-  old headings so old fragments still land, each heading linking out to the
-  page that now owns it.
 - `docs/onboarding-prompt.md` is one copy-paste block: fetch index then
   config then CI docs, inspect the repo, confirm slug and hostname template
   with the user, write only `.sprout.yaml` / optional `Dockerfile.seed` /
@@ -33,7 +30,8 @@ machine-readable catalogue, no paste-into-a-harness prompt.
 
 - New pages join `publishFiles` in `docs/site/assemble.ts`; the assemble
   and check suites assert the page set and the render step.
-- Inbound references point at the new pages; old paths never 404.
+- Inbound references point at the real pages; the removed thin maps
+  (`docs/adoption.md`, `docs/deploy.md`) are gone, so their old anchors 404.
 - Published pages never carry maintainer internals; the gate enforces it on
   markdown sources and rendered HTML alike.
 

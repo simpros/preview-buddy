@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Contract guards for docs/deploy hand copies. Blocking (unlike acceptance
+  # Contract guards for the docs publish set. Blocking (unlike acceptance
   # below) so PRs cannot merge while the publish-set or pin invariants break.
   guards:
     runs-on: ubuntu-latest

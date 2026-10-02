@@ -1,6 +1,5 @@
-import type { DataVolumeRef } from "@sprout/preview-env";
+import { parseDataVolumeName, type DataVolumeRef } from "@sprout/preview-env";
 import type { PreviewDocker } from "../docker/port.ts";
-import { parseDataVolumeName } from "./naming.ts";
 
 /** Docker volumes this control plane owns, behind one port like previewDb. */
 export type PreviewDataVolumes = {

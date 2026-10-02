@@ -27,7 +27,6 @@ import {
   type PreviewServiceSpec,
 } from "@sprout/preview-env";
 import { t } from "elysia";
-import { parseResetMarkerToken } from "@sprout/preview-db";
 import type { AuthContext } from "../auth/middleware.ts";
 import type { SeedImageSpec } from "../app-deployment/seed.ts";
 import { resolveLabelCollisions } from "../app-deployment/label-collisions.ts";
@@ -37,11 +36,10 @@ import {
 } from "../config.ts";
 import {
   teardownPreview,
-  setResetRequestMarker,
   type LifecycleDeps,
   type PreviewSnapshot,
 } from "../preview/lifecycle.ts";
-import { presentPreviewSnapshot, previewSnapshotFromRow } from "../preview/snapshot.ts";
+import { presentPreviewSnapshot } from "../preview/snapshot.ts";
 import {
   resolvePreviewPlan,
   type PreviewMaterializationCtx,
@@ -116,12 +114,6 @@ export const deployBody = t.Object({
 export const teardownBody = t.Object({
   canonical_repo_id: t.String({ minLength: 1 }),
   pr_id: t.Number(),
-});
-
-export const resetMarkerBody = t.Object({
-  canonical_repo_id: t.String({ minLength: 1 }),
-  pr_id: t.Number(),
-  marker: t.String({ minLength: 1, maxLength: 256 }),
 });
 
 export const previewQuery = t.Object({
@@ -446,12 +438,6 @@ export type TeardownBody = {
   pr_id: number;
 };
 
-export type ResetMarkerBody = {
-  canonical_repo_id: string;
-  pr_id: number;
-  marker: string;
-};
-
 export type PreviewQuery = {
   canonical_repo_id: string;
   pr_id: string;
@@ -643,37 +629,5 @@ export function teardown(deps: LifecycleDeps) {
       }),
       set,
     );
-  };
-}
-
-export function setResetMarker(deps: LifecycleDeps) {
-  return async ({
-    body,
-    auth,
-    set,
-  }: {
-    body: ResetMarkerBody;
-    auth: AuthContext | null;
-    set: { status?: number | string };
-  }) => {
-    const target = requirePreviewTarget(
-      auth,
-      body.canonical_repo_id,
-      body.pr_id,
-    );
-    if (!target.ok) return mapResult(target, set);
-    const marker = parseResetMarkerToken(body.marker);
-    if (!marker) {
-      set.status = 422;
-      return { error: "invalid_reset_marker" };
-    }
-    const stored = await setResetRequestMarker(
-      deps.db,
-      target.value.repo,
-      target.value.prId,
-      marker,
-    );
-    if (!stored.ok) return mapResult(stored, set);
-    return previewSnapshotFromRow(stored.value);
   };
 }

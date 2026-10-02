@@ -48,9 +48,8 @@ What you get:
   already gone).
 - `sprout-reset` job (manual, instant): `sprout ci reset` — wipe the preview
   database and redeploy + seed from scratch (data wiped). Press **Run** on it
-  inside the MR pipeline when you want the reset *now*; ticking the reset box
-  in the MR description is the declarative path honored on the next pipeline
-  run instead (GitLab has no description-edit → pipeline trigger, and a fresh
+  inside the MR pipeline when you want the reset *now* (GitLab has no
+  description-edit → pipeline trigger, and a fresh
   "Run pipeline" arrives as `CI_PIPELINE_SOURCE=web`, which `sprout ci`
   refuses — so the instant path lives inside the existing MR pipeline).
 - Prerequisites owned by the component: dind service, registry login,
@@ -72,7 +71,7 @@ everything else is manual (run from a merge-request pipeline or laptop):
 |---|---|---|
 | `sprout-preview` | `sprout ci preview --tail … --dotenv-file … [--app-env-file …] [--seed-env-file …] [--reseed]` | Install check aside, the CLI builds + pushes the app image and — when `.sprout.yaml` sets `seed` — the seed image (always rebuilt, unless explicit `seed.inputs` opt into content-addressed reuse: an existing tag skips the rebuild, reuse is logged, a failed check rebuilds), deploys (with `--reseed` when the flag is passed), writes `PREVIEW_URL=` to the dotenv artifact, dumps the gateway log tail on failure, and posts/updates the MR note (best-effort). |
 | `sprout-stop-preview` | `sprout ci teardown` (no flags) | Idempotent teardown; rewrites the MR note in place ("preview was removed"). No Docker daemon, no registry login on this path. |
-| `sprout-reset` | `sprout ci reset --tail … --dotenv-file … [--app-env-file …] [--seed-env-file …]` | Wipe the preview database and redeploy + seed from scratch (data wiped — the instant path; the ticked box is the declarative path honored on the next pipeline run). No rebuild: reuses the already pushed images for the commit, so no Docker daemon and no registry login on this path. |
+| `sprout-reset` | `sprout ci reset --tail … --dotenv-file … [--app-env-file …] [--seed-env-file …]` | Wipe the preview database and redeploy + seed from scratch (data wiped). No rebuild: reuses the already pushed images for the commit, so no Docker daemon and no registry login on this path. |
 
 Manual helpers (never called by the component): `sprout ci reseed -s …`
 (re-run the seed against the existing database) and `sprout ci logs
@@ -122,7 +121,7 @@ One caller workflow + secrets — parity with the GitLab component. The
 name: sprout
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited, closed]
+    types: [opened, synchronize, reopened, closed]
 permissions:
   contents: read
   pull-requests: write
@@ -150,20 +149,13 @@ bootstrapper over `sprout ci preview` / `sprout ci teardown`):
   `environment: url`.
 - Teardown on `closed`: `sprout ci teardown` (idempotent — exit 0 if
   already gone).
-- Reset via the ticked [reset-request checkbox](#reset-request-checkbox):
-  `edited` runs a cheap body pre-filter first and skips the preview job
-  before checkout when no reset is requested — a title edit never redeploys.
-  The pre-filter over-triggers by design (no fence or token validation); the
-  reset contract itself is owned by `classifyResetRequest` in the CLI, which
-  decides reset vs normal deploy on the runs that proceed. A ticked box +
-  rotated marker redeploys from scratch on that run. After the reset the job
-  rewrites the box back to `- [ ]` while keeping the marker, so the
-  follow-up `edited` run exits without resetting.
+- Reset is an ordinary action: run `sprout ci reset` from a hand-rolled job
+  or laptop with the same secrets — no ticked box, no marker token.
 - Per-PR serial runs via a `sprout-preview-<PR>` concurrency group.
 
 Caller permissions: a reusable workflow cannot elevate permissions, so the
 caller must grant `contents: read` (checkout), `pull-requests: write` (PR
-comment + the reset untick rewrite), and `packages: write` (image push to
+comment), and `packages: write` (image push to
 `ghcr.io`).
 
 Secrets (repo settings):
@@ -251,15 +243,10 @@ cause; a failed seed keeps the app up and routable with `seeded_at` unset
 
 ### GitLab triggering
 
-GitLab has no "description edited → run a pipeline" trigger, so a ticked
-[reset-request checkbox](#reset-request-checkbox) is honored at the **next**
-pipeline run, not when it is ticked. Two paths, one operation:
-
-- **Ticked box (declarative):** tick the box and rotate the marker token;
-  the next `sprout-preview` run resets first, then deploys normally.
-- **Run button (instant):** press **Run** on the `sprout-reset` manual job
-  inside the existing MR pipeline — same `sprout ci reset`, same inputs as
-  `sprout-preview`, no new commit.
+GitLab has no "description edited → run a pipeline" trigger, so a reset is
+always the manual path: press **Run** on the `sprout-reset` job inside the
+existing MR pipeline — same `sprout ci reset`, same inputs as
+`sprout-preview`, no new commit.
 
 A fresh "Run pipeline" from the GitLab UI cannot be used for the instant
 path: it arrives as `CI_PIPELINE_SOURCE=web`, which `sprout ci` refuses by
@@ -269,40 +256,9 @@ a job *inside* the existing MR pipeline.
 ### GitHub triggering
 
 The caller workflow listens to `pull_request: types: [opened, synchronize,
-reopened, edited, closed]`. An `edited` run first checks the PR body cheaply
-and skips the preview job before checkout when no reset is requested — a
-title edit never rebuilds or redeploys. A ticked box plus a rotated marker
-token redeploys from scratch on that run. After the reset the job rewrites
-the box back to `- [ ]`, keeping the marker, so the `edited` event that
-rewrite causes is a no-op. Title edits are deliberately ignored: the reset
-contract is owned by `classifyResetRequest` in the CLI, not by the event type.
-
-### Reset request checkbox
-
-Tick a box in the MR/PR description and the next `sprout ci preview` run
-wipes the preview database and redeploys from scratch — declarative, no
-webhook receiver. Snippet (also shipped as
-[`templates/reset-request-snippet.md`](../templates/reset-request-snippet.md)):
-
-```markdown
-- [ ] Sprout: reset preview <!-- sprout-reset: ada-2026-09-19-1 -->
-```
-
-To request a reset, tick the box (`- [x]`) **and** change the marker token to
-something new. The token is the exactly-once key: the gateway stores the
-handled token on the preview row, so re-runs and pipeline retries deploy
-normally. An unticked box, a missing marker, or a tick/marker inside a fenced
-code block does nothing. GitHub runs untick the box after the reset (marker
-kept); GitLab keeps the tick, guarded by the stored token. Paste the snippet
-at the top of the MR/PR description — GitLab exposes only the first 2700
-characters to CI, so a truncated description deploys normally with a warning
-when no reset box is visible, and deploys first and then fails the job with a
-named error when a ticked box is visible but its marker was cut off — the tick
-is never silently ignored. The same truncation rule applies to `sprout ci
-reset`: a truncated description with no reset box warns and exits 0 after the
-teardown + deploy, while a visible ticked box with its marker cut off fails the
-job after the teardown + deploy so the pending tick is not silently dropped
-(the marker cannot be recorded as handled).
+reopened, closed]`. There is no `edited` trigger and no PR-body parsing:
+every run deploys normally, and a reset is `sprout ci reset` from a
+hand-rolled job or laptop with the same secrets.
 
 ## Migration from a hand-rolled script
 

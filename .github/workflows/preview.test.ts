@@ -82,12 +82,6 @@ function stepByName(job: string, name: string): WorkflowStep {
   return found;
 }
 
-function stepById(job: string, id: string): WorkflowStep {
-  const found = stepsOf(job).find((s) => s.id === id);
-  if (!found) throw new Error(`workflow step id missing: ${job}/${id}`);
-  return found;
-}
-
 describe("reusable preview workflow contract", () => {
   test("triggers only on workflow_call", () => {
     expect(Object.keys(DOC.on)).toEqual(["workflow_call"]);
@@ -115,7 +109,6 @@ describe("reusable preview workflow contract", () => {
     expect(WORKFLOW).not.toContain("github.workflow_ref");
     expect(WORKFLOW).not.toContain("refs/tags/");
     expect(WORKFLOW).not.toContain("Resolve sprout version");
-    expect(DOC.jobs.setup?.outputs?.version).toBeUndefined();
     const install = stepByName("preview", "Install sprout");
     expect(String(install.env?.SPROUT_VERSION)).toContain(
       "inputs.sprout_version",
@@ -152,48 +145,6 @@ describe("reusable preview workflow contract", () => {
     expect(install).toContain("SHA256SUMS.txt");
     expect(install).toContain("sha256sum -c");
     expect(install).toContain('test "$("$RUNNER_TEMP/bin/sprout" --version)" = "$SPROUT_VERSION"');
-  });
-
-  test("single setup gate: edited without reset skips the preview job before checkout", () => {
-    const setup = DOC.jobs.setup;
-    expect(setup?.outputs?.run_heavy).toContain("steps.gate.outputs.run_heavy");
-    expect(DOC.jobs.preview?.needs).toContain("setup");
-    expect(String(DOC.jobs.preview?.if)).toBe(
-      "needs.setup.outputs.run_heavy == 'true'",
-    );
-    const check = stepById("setup", "reset_check");
-    expect(check.if).toBe("github.event.action == 'edited'");
-    expect(check.run).toContain("reset_requested");
-    const gate = stepById("setup", "gate").run ?? "";
-    expect(gate).toContain("run_heavy=");
-    for (const step of stepsOf("preview")) {
-      expect(String(step.if ?? "")).not.toContain("reset_requested");
-    }
-    expect(allSteps().some((s) => s.name === "Skip title-only edit")).toBe(
-      false,
-    );
-  });
-
-  test("skip path never downloads: install lives in the gated preview job", () => {
-    for (const step of stepsOf("setup")) {
-      expect(step.run ?? "").not.toContain("curl");
-    }
-    expect(stepsOf("setup").some((s) => s.name === "Install sprout")).toBe(
-      false,
-    );
-    expect(stepsOf("preview").some((s) => s.name === "Install sprout")).toBe(
-      true,
-    );
-  });
-
-  test("reset pre-filter defers to the CLI contract (no re-implemented parser)", () => {
-    const check = stepById("setup", "reset_check").run ?? "";
-    expect(check).toContain("sprout-reset");
-    expect(check).toContain("reset_requested=");
-    expect(check).toContain("classifyResetRequest");
-    for (const gone of ["python3", "in_fence", "finditer", "len(token)", "256"]) {
-      expect(check).not.toContain(gone);
-    }
   });
 
   test("deploy runs sprout ci preview; closed runs teardown; no hand-rolled shape", () => {
@@ -248,7 +199,7 @@ describe("example caller workflow", () => {
       jobs: Record<string, { uses?: string; with?: Record<string, string> }>;
     };
     expect(doc.on.pull_request.types.sort()).toEqual(
-      ["closed", "edited", "opened", "reopened", "synchronize"].sort(),
+      ["closed", "opened", "reopened", "synchronize"].sort(),
     );
     expect(doc.permissions["pull-requests"]).toBe("write");
     const jobs = Object.values(doc.jobs);
