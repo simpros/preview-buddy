@@ -56,6 +56,7 @@ export function verifyPreviewAccess(deps: AccessDeps) {
       headers["x-forwarded-host"] ?? headers.host ?? "",
     ).split(":")[0] ?? "";
     const uri = headers["x-forwarded-uri"] ?? "/";
+    const proto = (headers["x-forwarded-proto"] ?? "https").split(",")[0]?.trim() || "https";
     const deny = (
       reason: string,
       status: number,
@@ -110,7 +111,7 @@ export function verifyPreviewAccess(deps: AccessDeps) {
         status: 302,
         headers: {
           "content-type": "application/json",
-          location: "/",
+          location: `${proto}://${host}/`,
           "set-cookie": cookie,
         },
       });
