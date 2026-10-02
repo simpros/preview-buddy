@@ -117,8 +117,7 @@ describe("telemetry payload", () => {
     expect(JSON.stringify(event)).not.toContain("lastErrorDetail");
   });
 
-  test("failed deploy without a stored code reports unknown", () => {
-    const event = buildDeployEvent({
+  test("failed deploy without a stored code reports unknown", () => {    const event = buildDeployEvent({
       installId: INSTALL_ID,
       config: testConfig(),
       outcome: {
@@ -133,6 +132,45 @@ describe("telemetry payload", () => {
       now: NOW,
     });
     expect(event.failure_class).toBe("unknown");
+    expect(event.failure_family).toBe("unknown");
+  });
+
+  test("failure strings outside the preview vocabulary export as unknown", () => {
+    const event = buildDeployEvent({
+      installId: INSTALL_ID,
+      config: testConfig(),
+      outcome: {
+        outcome: "failed",
+        plan: "full_replace",
+        seeded: false,
+        durationMs: 7,
+        phaseMs: {},
+        failureClass: "registry hiccup: proxy 502",
+        failureFamily: "registry hiccup: proxy 502",
+      },
+      now: NOW,
+    });
+    expect(event.failure_class).toBe("unknown");
+    expect(event.failure_family).toBe("unknown");
+    expect(JSON.stringify(event)).not.toContain("registry hiccup");
+  });
+
+  test("failure family outside the vocabulary exports as unknown", () => {
+    const event = buildDeployEvent({
+      installId: INSTALL_ID,
+      config: testConfig(),
+      outcome: {
+        outcome: "failed",
+        plan: "full_replace",
+        seeded: false,
+        durationMs: 7,
+        phaseMs: {},
+        failureClass: "seed_failed",
+        failureFamily: "something the db remembered",
+      },
+      now: NOW,
+    });
+    expect(event.failure_class).toBe("seed_failed");
     expect(event.failure_family).toBe("unknown");
   });
 

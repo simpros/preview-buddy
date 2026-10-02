@@ -1,4 +1,5 @@
 import type { Config } from "../config.ts";
+import { telemetryStateFromConfig } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { describeTelemetryState } from "./destination.ts";
@@ -95,11 +96,7 @@ export function createTelemetryReporter(deps: {
   return {
     active,
     describe: () =>
-      describeTelemetryState({
-        enabled: config.telemetryEnabled,
-        offReason: config.telemetryOffReason,
-        endpoint: config.telemetryEndpoint,
-      }),
+      describeTelemetryState(telemetryStateFromConfig(config)),
     reportInstall,
     reportDeployOutcome,
     startHeartbeat: (schedule?: string) => {

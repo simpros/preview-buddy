@@ -1,5 +1,6 @@
 import type { Result } from "./result.ts";
 import { parseBringUpPlan } from "./bring-up.ts";
+import { captureDeployOutcome } from "./deploy-outcome.ts";
 import {
   claimDeployIntent,
   getPreviewRow,
@@ -15,10 +16,7 @@ import {
 } from "./snapshot.ts";
 import { createPhaseCollector } from "./timing.ts";
 import type { BringUpPlan } from "./types.ts";
-import type {
-  TelemetryDeployHook,
-  TelemetryDeployOutcome,
-} from "../telemetry/reporter.ts";
+import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -109,34 +107,18 @@ export async function runAsyncDeploy(
     } catch {
     }
   } finally {
-    // The terminal row is read while the in-flight marker still blocks a
-    // successor deploy for this key, so the event describes this deploy and
-    // never the next one. Only the fire-and-forget export leaves the lock.
     const telemetry = deps.telemetry;
-    let outcome: TelemetryDeployOutcome | undefined;
-    if (telemetry) {
-      try {
-        const row = await getPreviewRow(deps.db, input.repo, input.prId);
-        const failed = row?.status !== "running";
-        const base = {
-          plan,
-          seeded: row?.seededAt != null,
-          durationMs: Date.now() - startedAt,
-          phaseMs: phases.phaseMs,
-        };
-        outcome = failed
-          ? {
-            ...base,
-            outcome: "failed" as const,
-            failureClass: row?.lastError ?? null,
-            failureFamily: row?.failureFamily ?? null,
-          }
-          : { ...base, outcome: "running" as const };
-      } catch {
-        // Telemetry must never change a deploy outcome.
-      }
-    }
+    const outcome = telemetry
+      ? await captureDeployOutcome(deps.db, {
+        repo: input.repo,
+        prId: input.prId,
+        plan,
+        startedAt,
+        phaseMs: phases.phaseMs,
+      })
+      : null;
     inFlightDeploys.delete(key);
+    // exportEvent never rejects, so there is nothing to catch here.
     if (telemetry && outcome) telemetry.reportDeployOutcome(outcome);
   }
 }

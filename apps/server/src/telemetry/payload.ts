@@ -1,13 +1,26 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Config } from "../config.ts";
+import {
+  PREVIEW_FAILURE_CODES,
+  PREVIEW_FAILURE_FAMILIES,
+  PREVIEW_PHASES,
+  type BringUpPlan,
+  type PreviewPhaseMs,
+} from "../preview/types.ts";
 
 /**
  * Anonymous install-telemetry payload. The payload is assembled from a fixed
- * field list in this module; no string from an error, a manifest, the
- * environment or a database row passes through except the three
- * closed-vocabulary values lastError, failureFamily and plan.
+ * field list in this module; the stored lastError/failureFamily strings are
+ * validated against the preview vocabularies below, so anything outside the
+ * closed sets leaves the box as "unknown" instead of free text.
  */
+
+/** Shared with the preview domain: the stored plan feeds the report unchanged. */
+export type TelemetryPlan = BringUpPlan;
+
+/** Shared with the preview domain: the phase stopwatch feeds the report unchanged. */
+export type TelemetryPhaseMs = PreviewPhaseMs;
 
 export const TELEMETRY_CAPABILITY_VOCABULARY = [
   "mail",
@@ -23,18 +36,6 @@ export type TelemetryCapability =
   (typeof TELEMETRY_CAPABILITY_VOCABULARY)[number];
 
 export type TelemetryDbProvider = "postgres" | "sqlite";
-
-export type TelemetryPlan =
-  | "full_replace"
-  | "seed_resume"
-  | "sync_close"
-  | "close";
-
-export type TelemetryPhaseMs = {
-  db?: number;
-  app?: number;
-  seed?: number;
-};
 
 type TelemetryEnvelope = {
   event: string;
@@ -249,21 +250,36 @@ export function buildDeployEvent(options: {
   if (outcome.outcome === "running") {
     return { ...shared, outcome: "running" as const };
   }
-  // The stored code is absent only when the row never recorded one.
+  // The stored code is absent only when the row never recorded one; a code
+  // outside the preview vocabulary is untrusted free text, never exported.
+  const failureClass = sanitizeFailureClass(outcome.failureClass);
   return {
     ...shared,
     outcome: "failed" as const,
-    failure_class: outcome.failureClass ?? "unknown",
-    failure_family: outcome.failureClass == null
+    failure_class: failureClass ?? "unknown",
+    failure_family: failureClass == null
       ? "unknown"
-      : (outcome.failureFamily ?? null),
+      : sanitizeFailureFamily(outcome.failureFamily),
   };
+}
+
+const FAILURE_CODES = new Set<string>(PREVIEW_FAILURE_CODES);
+const FAILURE_FAMILIES = new Set<string>(PREVIEW_FAILURE_FAMILIES);
+
+function sanitizeFailureClass(code: string | null): string | null {
+  if (code == null) return null;
+  return FAILURE_CODES.has(code) ? code : null;
+}
+
+function sanitizeFailureFamily(family: string | null): string | null {
+  if (family == null) return null;
+  return FAILURE_FAMILIES.has(family) ? family : "unknown";
 }
 
 /** Only the closed-vocabulary phase keys travel; everything else is dropped. */
 function phaseMsOnly(phaseMs: TelemetryPhaseMs): TelemetryPhaseMs {
   const out: TelemetryPhaseMs = {};
-  for (const phase of ["db", "app", "seed"] as const) {
+  for (const phase of PREVIEW_PHASES) {
     const value = phaseMs[phase];
     if (typeof value === "number" && Number.isFinite(value)) {
       out[phase] = Math.max(0, Math.round(value));

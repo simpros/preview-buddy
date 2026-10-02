@@ -2,7 +2,7 @@ import type {
   TraefikForwardAuth,
   TraefikTls,
 } from "./app-deployment/labels.ts";
-import type { TelemetryOffReason } from "./telemetry/destination.ts";
+import type { TelemetryOffReason, TelemetryState } from "./telemetry/destination.ts";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -172,17 +172,33 @@ function parseSweepCron(
   return schedule;
 }
 
+function parseBooleanToken(
+  normalized: string,
+  trueTokens: readonly string[],
+  falseTokens: readonly string[],
+): boolean | undefined {
+  if (trueTokens.includes(normalized)) return true;
+  if (falseTokens.includes(normalized)) return false;
+  return undefined;
+}
+
 function parseTelemetryFlag(
   raw: string | undefined,
   defaultValue: string,
 ): boolean {
   const trimmed = raw?.trim() ?? "";
   const normalized = (trimmed === "" ? defaultValue : trimmed).toLowerCase();
-  if (["on", "1", "true", "yes"].includes(normalized)) return true;
-  if (["off", "0", "false", "no"].includes(normalized)) return false;
-  throw new Error(
-    "Invalid SPROUT_TELEMETRY: must be a boolean (on/off, true/false, 1/0, yes/no)",
+  const parsed = parseBooleanToken(
+    normalized,
+    ["on", "1", "true", "yes"],
+    ["off", "0", "false", "no"],
   );
+  if (parsed === undefined) {
+    throw new Error(
+      "Invalid SPROUT_TELEMETRY: must be a boolean (on/off, true/false, 1/0, yes/no)",
+    );
+  }
+  return parsed;
 }
 
 function parseTelemetryDestination(): {
@@ -224,11 +240,48 @@ function optionalEnv(
 function parseMailSecure(raw: string): boolean {
   const normalized = raw.trim().toLowerCase();
   if (normalized === "" ) return false;
-  if (["1", "true", "yes"].includes(normalized)) return true;
-  if (["0", "false", "no"].includes(normalized)) return false;
-  throw new Error(
-    "Invalid SPROUT_MAIL_SECURE: must be a boolean (true/false, 1/0, yes/no)",
+  const parsed = parseBooleanToken(
+    normalized,
+    ["1", "true", "yes"],
+    ["0", "false", "no"],
   );
+  if (parsed === undefined) {
+    throw new Error(
+      "Invalid SPROUT_MAIL_SECURE: must be a boolean (true/false, 1/0, yes/no)",
+    );
+  }
+  return parsed;
+}
+
+/** The enablement decision, computed once so off always names its reason. */
+export function resolveTelemetryState(options: {
+  flag: boolean;
+  doNotTrack: boolean;
+  endpoint: string;
+}): TelemetryState {
+  if (!options.flag) return { enabled: false, reason: "SPROUT_TELEMETRY" };
+  if (options.doNotTrack) return { enabled: false, reason: "DO_NOT_TRACK" };
+  return { enabled: true, endpoint: options.endpoint };
+}
+
+/**
+ * Bridge from the flat Config fields to the resolved state. Real configs are
+ * derived from resolveTelemetryState at load, so the defensive default only
+ * serves hand-built configs that pair enabled:false with a null reason.
+ */
+export function telemetryStateFromConfig(
+  config: Pick<
+    Config,
+    "telemetryEnabled" | "telemetryOffReason" | "telemetryEndpoint"
+  >,
+): TelemetryState {
+  if (config.telemetryEnabled) {
+    return { enabled: true, endpoint: config.telemetryEndpoint };
+  }
+  return {
+    enabled: false,
+    reason: config.telemetryOffReason ?? "SPROUT_TELEMETRY",
+  };
 }
 
 /** Mail is host-enabled: any SPROUT_MAIL_* without a host fails boot naming the host. */
@@ -444,6 +497,11 @@ export function loadConfig(): Config {
   );
   const doNotTrack = (process.env.DO_NOT_TRACK?.trim() ?? "") === "1";
   const telemetryDestination = parseTelemetryDestination();
+  const telemetry = resolveTelemetryState({
+    flag: telemetryFlag,
+    doNotTrack,
+    endpoint: telemetryDestination.endpoint,
+  });
 
   return {
     postgres: parsePostgresConfig(),
@@ -484,12 +542,8 @@ export function loadConfig(): Config {
     ),
     traefikTls: parseTraefikTls(),
     traefikForwardAuth: parseTraefikForwardAuth(),
-    telemetryEnabled: telemetryFlag && !doNotTrack,
-    telemetryOffReason: !telemetryFlag
-      ? "SPROUT_TELEMETRY"
-      : doNotTrack
-        ? "DO_NOT_TRACK"
-        : null,
+    telemetryEnabled: telemetry.enabled,
+    telemetryOffReason: telemetry.enabled ? null : telemetry.reason,
     telemetryEndpoint: telemetryDestination.endpoint,
     telemetryAuth: telemetryDestination.auth,
   };
