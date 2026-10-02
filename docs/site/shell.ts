@@ -1,10 +1,10 @@
 // Single-source page chrome for the published docs site.
 //
 // The marketing page and every docs page share one stylesheet (`theme.css`,
-// inlined) and one header/footer built here, by construction: `renderShell`
-// is the only way to produce a published `.html` page. The prompt marker is
-// the one assembly-resolved marker left; the link-check gate asserts none
-// survives.
+// inlined) and one header/sidebar/footer built here, by construction:
+// `renderShell` is the only way to produce a published `.html` page. The
+// prompt marker is the one assembly-resolved marker left; the link-check
+// gate asserts none survives.
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { dirname as posixDirname, relative as posixRelative } from "node:path/posix";
@@ -34,10 +34,18 @@ function themeCss(): string {
   return cachedTheme;
 }
 
-export type ShellNavItem = {
+// One sidebar group: the manifest owns names, order, and membership, so the
+// sidebar, the docs index, and llms.txt cannot disagree about the page set.
+type SidebarItem = {
   href: string;
   title: string;
   current?: boolean;
+};
+
+export type SidebarGroup = {
+  name: string;
+  open: boolean;
+  items: SidebarItem[];
 };
 
 // Depth-derived strings come from the artifact path being written, so a new
@@ -57,8 +65,8 @@ function locationFor(outputPath: string): {
   };
 }
 
-// The docs-nav prefix is the same depth `locationFor` already derives,
-// read from the one derivation so the nav and the footer cannot disagree.
+// The sidebar prefix is the same depth `locationFor` already derives,
+// read from the one derivation so the sidebar and the footer cannot disagree.
 export function docsPrefixFor(outputPath: string): string {
   const { toDocs } = locationFor(outputPath);
   return toDocs === "." ? "" : `${toDocs}/`;
@@ -66,36 +74,62 @@ export function docsPrefixFor(outputPath: string): string {
 
 // The mark rides inside the header wordmark link: one brand affordance per
 // page, decorative (`alt=""`) so it never double-announces the link text.
-function siteHeader(homeHref: string, markSrc: string, nav: ShellNavItem[]): string {
-  const links = nav
-    .map(
-      (item) =>
-        `      <a href="${escapeHtml(item.href)}"${item.current ? ' aria-current="page"' : ""}>${escapeHtml(item.title)}</a>`,
-    )
-    .join("\n");
+// The header carries no navigation: the sidebar owns page movement, the
+// footer owns the way back to the docs index.
+function siteHeader(homeHref: string, markSrc: string): string {
   return [
     `<header class="site">`,
     `  <p class="brand"><a href="${escapeHtml(homeHref)}"><img src="${escapeHtml(markSrc)}" alt="" width="20" height="20" />sprout</a></p>`,
-    `  <nav class="docs-nav" aria-label="Docs">`,
-    links,
-    `  </nav>`,
     `</header>`,
   ].join("\n");
 }
 
+// Two documentation entries, nothing else: Docs (the grouped index) and the
+// onboarding prompt (the agent entry point). Leaf pages live in the sidebar,
+// never here.
 function siteFooter(toRoot: string, toDocs: string): string {
   return [
     `<footer id="docs">`,
     `  <p>`,
-    `    Docs: <a href="${toDocs}/index.html">docs index</a> ·`,
-    `    <a href="${toRoot}/llms.txt">llms.txt</a> ·`,
-    `    <a href="${toDocs}/onboarding-prompt.html">onboarding prompt</a> ·`,
-    `    <a href="${toDocs}/getting-started.html">getting started</a> ·`,
-    `    <a href="${toRoot}/examples/adopting-repo/README.md">adopting-repo example</a> ·`,
+    `    <a href="${toDocs}/index.html">Docs</a> ·`,
+    `    <a href="${toDocs}/onboarding-prompt.html">Onboarding prompt</a> ·`,
     `    <a href="https://github.com/simpros/sprout">simpros/sprout</a>.`,
     `    Published from <code>docs/site/</code> via GitHub Pages.`,
     `  </p>`,
     `</footer>`,
+  ].join("\n");
+}
+
+// Grouped sidebar, generated from the manifest for every page. The current
+// group renders open so the reader's place is visible without JavaScript;
+// every other group is a plain disclosure. On narrow screens the whole
+// sidebar sits behind a CSS-only toggle (a checkbox the label flips), so the
+// menu works with scripting disabled.
+function renderSidebar(groups: SidebarGroup[]): string {
+  const sections = groups
+    .map((group) => {
+      const items = group.items
+        .map(
+          (item) =>
+            `          <li><a href="${escapeHtml(item.href)}"${item.current ? ' aria-current="page"' : ""}>${escapeHtml(item.title)}</a></li>`,
+        )
+        .join("\n");
+      return [
+        `      <details${group.open ? " open" : ""}>`,
+        `        <summary>${escapeHtml(group.name)}</summary>`,
+        `        <ul>`,
+        items,
+        `        </ul>`,
+        `      </details>`,
+      ].join("\n");
+    })
+    .join("\n");
+  return [
+    `<input class="sidebar-state" type="checkbox" id="docs-sidebar-toggle" />`,
+    `<label class="sidebar-toggle" for="docs-sidebar-toggle"><span aria-hidden="true">☰</span> Docs menu</label>`,
+    `<nav class="docs-sidebar" aria-label="Docs">`,
+    sections,
+    `</nav>`,
   ].join("\n");
 }
 
@@ -124,7 +158,7 @@ export type ShellOptions = {
   title: string;
   description: string;
   outputPath: string;
-  nav: ShellNavItem[];
+  sidebar: SidebarGroup[];
   toc: MarkdownHeading[];
   bodyHtml: string;
 };
@@ -141,7 +175,7 @@ export function renderShell(opts: ShellOptions): string {
     `<title>${escapeHtml(opts.title)}</title>`,
     `<meta name="description" content="${escapeHtml(opts.description)}" />`,
     // Brand chrome lives here once: asset hrefs derive from the page depth
-    // like the nav and footer, so no call site hand-sets a relative path.
+    // like the sidebar and footer, so no call site hand-sets a relative path.
     `<link rel="icon" type="image/png" sizes="32x32" href="${location.toRoot}/assets/favicon-32.png" />`,
     `<link rel="icon" type="image/png" sizes="192x192" href="${location.toRoot}/assets/favicon-192.png" />`,
     `<link rel="apple-touch-icon" href="${location.toRoot}/assets/apple-touch-icon.png" />`,
@@ -154,12 +188,14 @@ export function renderShell(opts: ShellOptions): string {
     siteHeader(
       location.homeHref,
       `${location.toRoot}/assets/sprout-mark.png`,
-      opts.nav,
     ),
+    '<div class="layout">',
+    renderSidebar(opts.sidebar),
     "<main>",
     ...(toc === "" ? [] : [toc]),
     opts.bodyHtml,
     "</main>",
+    "</div>",
     siteFooter(location.toRoot, location.toDocs),
     '<div class="codeblock-status" aria-live="polite"></div>',
     "</div>",

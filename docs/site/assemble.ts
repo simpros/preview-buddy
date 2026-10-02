@@ -9,7 +9,7 @@ import {
   PROMPT_MARKER,
   renderShell,
   siteEntryPath,
-  type ShellNavItem,
+  type SidebarGroup,
 } from "./shell.ts";
 import {
   extractPromptText,
@@ -31,26 +31,40 @@ export type DocsPage = {
   file: string;
   title: string;
   description: string;
+  role?: "Human" | "Agent";
   entry?: boolean;
 };
 
-// The only description of the page set: the publish list, the rendered HTML,
-// docs/index.html, and llms.txt are all derived from this.
-export const docsPages: DocsPage[] = [
-  { file: "docs/getting-started.md", title: "Getting started", description: "first preview in one sitting." },
-  { file: "docs/adopting-a-repo.md", title: "Adopting a repo", description: "sprout.yaml manifest reference and app entrypoints." },
-  { file: "docs/ci-integration.md", title: "CI integration", description: "GitLab component, GitHub reusable workflow, variables, reset, notes." },
-  { file: "docs/previews.md", title: "Previews", description: "lifecycle: database providers, seeding, services, mail." },
-  { file: "docs/operator-deploy.md", title: "Operator deploy", description: "gateway compose stack, Traefik, env reference, admin token." },
-  { file: "docs/cli-reference.md", title: "CLI reference", description: "every sprout command, debugging, tokens." },
-  { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "adopter and operator error catalogue." },
-  { file: "docs/onboarding-prompt.md", title: "Onboarding prompt", description: "copy-paste agent block (entry point for agents).", entry: true },
-  { file: "docs/herdr-integration.md", title: "Herdr integration", description: "operator-side review automation." },
+// Group order and membership live here once: the sidebar and the docs index
+// render these groups in order, so the two cannot disagree about structure.
+// Nothing published may point at the legacy `adoption`/`deploy` stubs.
+type PageGroup = { name: string; pages: DocsPage[] };
+
+export const docsGroups: PageGroup[] = [
+  { name: "Start", pages: [
+    { file: "docs/getting-started.md", title: "Getting started", description: "first preview in one sitting.", role: "Human" },
+    { file: "docs/onboarding-prompt.md", title: "Onboarding prompt", description: "copy-paste agent block (entry point for agents).", role: "Agent", entry: true },
+  ] },
+  { name: "Adopting", pages: [
+    { file: "docs/adopting-a-repo.md", title: "Adopting a repo", description: "sprout.yaml manifest reference and app entrypoints." },
+    { file: "docs/ci-integration.md", title: "CI integration", description: "GitLab component, GitHub reusable workflow, variables, reset, notes." },
+  ] },
+  { name: "Previews", pages: [
+    { file: "docs/previews.md", title: "Previews", description: "lifecycle: database providers, seeding, services, mail." },
+  ] },
+  { name: "Operating", pages: [
+    { file: "docs/operator-deploy.md", title: "Operator deploy", description: "gateway compose stack, Traefik, env reference, admin token." },
+    { file: "docs/cli-reference.md", title: "CLI reference", description: "every sprout command, debugging, tokens." },
+    { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "adopter and operator error catalogue." },
+    { file: "docs/herdr-integration.md", title: "Herdr integration", description: "operator-side review automation." },
+  ] },
 ];
 
-// The marketing page in the same manifest shape as every docs page: the
+export const docsPages: DocsPage[] = docsGroups.flatMap((g) => g.pages);
+
+// The marketing page carries the same page shape as every docs page: the
 // source fragment carries no envelope, so its title and description live
-// here, next to `docsPages`.
+// here, next to `docsGroups`.
 export const marketingPage: DocsPage = {
   file: siteEntryPath,
   title: "sprout — every pull request gets its own preview",
@@ -78,37 +92,61 @@ function renderedHtmlPages(): Set<string> {
   return new Set(docsPages.map((p) => pageHtmlFile(p.file)));
 }
 
+// One section per manifest group: the Start entries keep their Human/Agent
+// roles from the manifest, so the landing page lists every page exactly once
+// and the renderer never looks a page up by literal path.
 export function renderDocsIndexHtml(): string {
-  const item = (p: DocsPage) =>
-    `      <li><a href="${pageIndexHref(p)}">${escapeHtml(p.title)}</a> — ${escapeHtml(p.description)}</li>`;
-  const entryHref = pageIndexHref(docsEntry());
+  const item = (p: DocsPage) => {
+    const prefix = p.role ? `${p.role} — ` : "";
+    return `      <li>${prefix}<a href="${pageIndexHref(p)}">${escapeHtml(p.title)}</a> — ${escapeHtml(p.description)}</li>`;
+  };
+  const groupSection = (group: PageGroup): string =>
+    [
+      `    <section class="index-group">`,
+      `      <h2>${escapeHtml(group.name)}</h2>`,
+      `      <ul>`,
+      ...group.pages.map(item),
+      `      </ul>`,
+      `    </section>`,
+    ].join("\n");
   const bodyHtml = [
     "    <h1>sprout docs</h1>",
-    `    <p>Markdown is canonical: every page below is served as plain <code>.md</code> (agents) and as rendered <code>.html</code> (humans) from the same source. Machine-readable index: <a href="../llms.txt">llms.txt</a>. Start with the <a href="${entryHref}">onboarding prompt</a>.</p>`,
-    "    <ul>",
-    ...docsPages.map(item),
-    "    </ul>",
+    "    <p>Markdown is canonical: every page below is served as plain <code>.md</code> (agents) and as rendered <code>.html</code> (humans) from the same source. Machine-readable index: <a href=\"../llms.txt\">llms.txt</a>.</p>",
+    ...docsGroups.map(groupSection),
   ].join("\n");
   return renderShell({
     title: "sprout docs",
     description:
       "sprout docs: adopting repos, CI wiring, previews, operator deploy, CLI, troubleshooting.",
     outputPath: "docs/index.html",
-    nav: docsNav("docs/index.html"),
+    sidebar: docsSidebar("docs/index.html"),
     toc: [],
     bodyHtml,
   });
 }
 
-// Docs nav straight from the page manifest, so a new page appears
+// Grouped sidebar straight from the page manifest, so a new page appears
 // automatically. The `docs/ ↔ docs/site/` depth gap is derived from the
-// artifact path being written, never hand-set per call.
-export function docsNav(outputPath: string, current?: string): ShellNavItem[] {
+// artifact path being written, never hand-set per call. The reader's group
+// renders open; without a current page (index, marketing) the first group
+// does, so the menu is never a wall of closed disclosures. A supplied
+// `current` must be a manifest file: failing loudly keeps a typo'd page from
+// rendering with no marker and the wrong group open.
+export function docsSidebar(outputPath: string, current?: string): SidebarGroup[] {
   const prefix = docsPrefixFor(outputPath);
-  return docsPages.map((p) => ({
-    href: `${prefix}${pageIndexHref(p)}`,
-    title: p.title,
-    ...(current === p.file ? { current: true as const } : {}),
+  let currentGroup: string | undefined;
+  if (current) {
+    currentGroup = docsGroups.find((g) => g.pages.some((p) => p.file === current))?.name;
+    if (!currentGroup) throw new Error(`docsSidebar: current page not in manifest: ${current}`);
+  }
+  return docsGroups.map((group, index) => ({
+    name: group.name,
+    open: currentGroup ? currentGroup === group.name : index === 0,
+    items: group.pages.map((p) => ({
+      href: `${prefix}${pageIndexHref(p)}`,
+      title: p.title,
+      ...(current === p.file ? { current: true as const } : {}),
+    })),
   }));
 }
 
@@ -248,7 +286,7 @@ export async function assembleSite(
         title: page.title,
         description: page.description,
         outputPath: htmlFile,
-        nav: docsNav(htmlFile, file),
+        sidebar: docsSidebar(htmlFile, file),
         toc: headings,
         bodyHtml: rewritePageLinks(body, file, htmlPages),
       }),
@@ -264,7 +302,7 @@ export async function assembleSite(
       title: marketingPage.title,
       description: marketingPage.description,
       outputPath: siteEntryPath,
-      nav: docsNav(siteEntryPath),
+      sidebar: docsSidebar(siteEntryPath),
       toc: [],
       bodyHtml: resolvePrompt(marketingSource, promptFigure),
     }),

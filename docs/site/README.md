@@ -32,16 +32,19 @@ fences), and the pinned toolchain (no `/react` import anywhere).
 
 One design: `docs/site/theme.css` is the single stylesheet (extracted from
 the marketing page) and `docs/site/shell.ts` the single chrome (header with
-brand + docs nav, `<main>`, footer) — the marketing page, the docs index,
-and every docs page inline the same theme text and the same copy script, so
+brand, grouped sidebar, `<main>`, minimal footer) — the marketing page, the
+docs index, and every docs page inline the same theme text and the same copy script, so
 the surfaces cannot drift. `docs/site/marketing.html` is the source of the
 marketing page but is a body fragment, never copied verbatim: it carries
 `<!-- docs-onboarding-prompt -->` in the adopt section, resolved at
 assembly into the published `docs/site/index.html` artifact, while its title
 and description live in the `marketingPage`
-manifest next to `docsPages`. Docs pages get a docs nav
-built from `docsPages` (a new page appears automatically) and an "On this
-page" TOC from the parsed headings. The theme and the client script stay
+manifest next to `docsPages`. Every published page gets the same grouped
+sidebar built from `docsGroups` (a new page appears automatically, in its
+group; the reader's group renders open, the rest closed), and docs pages get
+an "On this
+page" TOC from the parsed headings. The sidebar collapses behind a CSS-only
+toggle on narrow screens, so the menu works with scripting disabled. The theme and the client script stay
 inlined — no external CSS/JS fetch, no new published file.
 
 Every fenced block renders as the code block component
@@ -60,8 +63,8 @@ gets the component (with copy button), published `.md` gets the fenced
 block verbatim, so agents fetching markdown get a complete prompt and the
 assembled tree never holds an unresolved marker.
 
-Every new page joins `docsPages` there — the publish list, the rendered
-HTML, `docs/index.html`, and `llms.txt` are all generated from that one
+Every new page joins its `docsGroups` group — the publish list, the rendered
+HTML, the grouped sidebar, `docs/index.html`, and `llms.txt` are all generated from that one
 manifest, and tests assert the checked-in `llms.txt` matches the generator
 byte for byte (`docs/index.html` lives only in the assembled artifact).
 
@@ -87,7 +90,7 @@ bun run docs:check
 ```
 
 `docs:check` assembles the publish set (single manifest —
-`docsPages` + `publishDirs` in `docs/site/assemble.ts`) into a temp dir
+`docsGroups` + `publishDirs` in `docs/site/assemble.ts`) into a temp dir
 and checks every HTML/markdown/text page found there with static-host semantics
 — a target must be a file (or a directory carrying its own `index.html`;
 Pages never serves generated listings), and every `#fragment` must resolve
