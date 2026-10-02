@@ -27,6 +27,8 @@ export function buildPreviewNote(input: {
   sha?: string;
   prId: number;
   reset?: { actor: string; at: string };
+  credential?: { username: string; password: string };
+  gatedLink?: boolean;
 }): string {
   const lines = [
     SPROUT_NOTE_MARKER,
@@ -38,6 +40,15 @@ export function buildPreviewNote(input: {
   ];
   if (input.mailboxUrl) lines.push(`- Mailbox: ${input.mailboxUrl}`);
   if (input.mailFrom) lines.push(`- Mail from: ${input.mailFrom}`);
+  if (input.credential) {
+    lines.push(
+      `- Access: basic auth username \`${input.credential.username}\` password \`${input.credential.password}\``,
+    );
+  } else if (input.gatedLink) {
+    lines.push(
+      `- Access: gated — reviewers need a link: \`sprout access ${input.prId}\``,
+    );
+  }
   const short = shortSha(input.sha);
   if (short) lines.push(`- Commit: \`${short}\``);
   lines.push("- Health: healthy");
@@ -366,7 +377,11 @@ export async function upsertForgeNote(
 export async function publishPreviewNote(
   deps: CliDeps,
   identity: CiIdentity,
-  note: DeploySettled & { reset?: boolean },
+  note: DeploySettled & {
+    reset?: boolean;
+    credential?: { username: string; password: string };
+    gatedLink?: boolean;
+  },
 ): Promise<Result<void>> {
   const reset = note.reset
     ? {
@@ -384,6 +399,8 @@ export async function publishPreviewNote(
       sha: identity.commitSha,
       prId: identity.prId,
       ...(reset ? { reset } : {}),
+      ...(note.credential ? { credential: note.credential } : {}),
+      ...(note.gatedLink ? { gatedLink: note.gatedLink } : {}),
     }),
   );
 }

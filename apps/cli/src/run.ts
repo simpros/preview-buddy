@@ -1,4 +1,5 @@
 import { createApiClient, type ApiClient } from "@sprout/api-client";
+import { runAccess } from "./commands/access.ts";
 import { runAdmin } from "./commands/admin.ts";
 import { runCi } from "./commands/ci.ts";
 import { runDeploy } from "./commands/deploy.ts";
@@ -29,6 +30,7 @@ type Command = {
 const COMMANDS: Record<string, Command> = {
   health: { needsToken: false, run: runHealth },
   deploy: { needsToken: true, run: runDeploy },
+  access: { needsToken: true, run: runAccess },
   teardown: { needsToken: true, run: runTeardown },
   list: { needsToken: true, run: runList },
   doctor: { needsToken: true, run: runDoctor },
@@ -50,7 +52,7 @@ export async function runCli(
   if (!name) {
     return fail(
       deps.io,
-      "usage: sprout <health|deploy|teardown|list|doctor|drop|logs|admin|ci|worktree-db> …",
+      "usage: sprout <health|deploy|access|teardown|list|doctor|drop|logs|admin|ci|worktree-db> …",
     );
   }
 

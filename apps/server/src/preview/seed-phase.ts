@@ -1,4 +1,5 @@
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
+import { previewAuthMode, type PreviewAuthSpec } from "@sprout/preview-env";
 import type { SeedImageResult, SeedImageSpec } from "../app-deployment/seed.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { markStickyPreviewFailed } from "./mark-failed.ts";
@@ -149,12 +150,14 @@ export function canSeedWithoutAppReplace(
   input: {
     appImage: string;
     hostname: string;
+    auth?: PreviewAuthSpec;
   },
 ): boolean {
   return (
     row.containerId != null &&
     row.appImage === input.appImage &&
-    row.hostname === input.hostname
+    row.hostname === input.hostname &&
+    (row.authMode ?? "none") === previewAuthMode(input.auth)
   );
 }
 

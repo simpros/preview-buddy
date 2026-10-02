@@ -15,7 +15,7 @@ import type {
   TraefikTls,
 } from "../app-deployment/labels.ts";
 import { mailConnectionEnv } from "../app-deployment/mail-env.ts";
-import type { MailConfig } from "../config.ts";
+import type { Config, MailConfig, PreviewAuthConfig } from "../config.ts";
 import { pgConnectionEnv, type AppDeployPg } from "../app-deployment/pg-env.ts";
 import { previewDbName } from "../preview-db/names.ts";
 
@@ -31,9 +31,44 @@ export type PreviewMaterializationCtx = {
     network: string;
   };
   mail?: MailConfig;
+  previewAuth?: PreviewAuthConfig;
   traefikTls?: TraefikTls;
   traefikForwardAuth?: TraefikForwardAuth;
 };
+
+/**
+ * Single composition of gateway config into the deploy materialization
+ * context. The gateway boot calls it once; the deploy gate and the
+ * container inputs read only the context, so a dropped capability here
+ * fails closed at the gate instead of silently opening previews.
+ */
+export function buildMaterializationCtx(
+  config: Config,
+): PreviewMaterializationCtx {
+  const pg = config.postgres;
+  return {
+    traefikNetwork: config.traefikNetwork,
+    ...(pg
+      ? {
+          postgres: {
+            pg: {
+              host: pg.host,
+              port: pg.port,
+              user: pg.user,
+              password: pg.password,
+            },
+            network: pg.network,
+          },
+        }
+      : {}),
+    ...(config.mail ? { mail: config.mail } : {}),
+    ...(config.previewAuth ? { previewAuth: config.previewAuth } : {}),
+    ...(config.traefikTls ? { traefikTls: config.traefikTls } : {}),
+    ...(config.traefikForwardAuth
+      ? { traefikForwardAuth: config.traefikForwardAuth }
+      : {}),
+  };
+}
 
 /**
  * Concrete materialization resolved once at the deploy boundary.

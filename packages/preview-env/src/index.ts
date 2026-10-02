@@ -6,6 +6,14 @@ import type {
   PreviewEnvMap,
 } from "./env-keys.ts";
 
+export {
+  authSpecIssueMessage,
+  parsePreviewAuthSpec,
+  previewAuthMode,
+  type PreviewAuthMode,
+  type PreviewAuthSpec,
+} from "./auth.ts";
+
 export { OWNER_ENV_KEYS, PREVIEW_ENV_KEYS } from "./env-keys.ts";
 
 export type {

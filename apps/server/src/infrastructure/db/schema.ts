@@ -29,6 +29,10 @@ export const previews = sqliteTable(
     bringUpPlan: text("bring_up_plan"),
     seedLog: text("seed_log"),
     mailFrom: text("mail_from"),
+    authMode: text("auth_mode").notNull().default("none"),
+    authSecret: text("auth_secret"),
+    authBasicUser: text("auth_basic_user"),
+    authBasicPassword: text("auth_basic_password"),
   },
   (table) => [
     primaryKey({ columns: [table.canonicalRepoId, table.prId] }),

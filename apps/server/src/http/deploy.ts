@@ -1,4 +1,5 @@
 import {
+  authSpecIssueMessage,
   dbRolesIssueMessage,
   dbSpecIssueMessage,
   isServicePort,
@@ -9,9 +10,11 @@ import {
   parseDbSpec,
   parseLabelMap,
   parseMailSpec,
+  parsePreviewAuthSpec,
   parsePreviewEnvForProvider,
   parsePreviewVolumes,
   parseServiceEnvMap,
+  previewAuthMode,
   previewVolumeIssueMessage,
   requiresDatabase,
   resolveDbRoles,
@@ -22,6 +25,7 @@ import {
   type DbSpec,
   type HealthRequest,
   type MailSpec,
+  type PreviewAuthSpec,
   type PreviewEnvMap,
   type PreviewLabels,
   type PreviewServiceSpec,
@@ -30,9 +34,11 @@ import { t } from "elysia";
 import type { AuthContext } from "../auth/middleware.ts";
 import type { SeedImageSpec } from "../app-deployment/seed.ts";
 import { resolveLabelCollisions } from "../app-deployment/label-collisions.ts";
+import { previewAccessForKeys } from "../app-deployment/preview-auth.ts";
 import {
   mailNotConfiguredDetail,
   postgresNotConfiguredDetail,
+  previewAuthNotConfiguredDetail,
 } from "../config.ts";
 import {
   teardownPreview,
@@ -91,6 +97,13 @@ const mailBody = t.Union([
   }),
 ]);
 
+const authBody = t.Union([
+  t.String(),
+  t.Object({
+    mode: t.Optional(t.String()),
+  }),
+]);
+
 export const deployBody = t.Object({
   canonical_repo_id: t.String({ minLength: 1 }),
   pr_id: t.Number(),
@@ -100,6 +113,7 @@ export const deployBody = t.Object({
   env: t.Optional(t.Record(t.String(), t.String())),
   db: t.Optional(dbBody),
   mail: t.Optional(mailBody),
+  auth: t.Optional(authBody),
   health: t.Optional(healthBody),
   seed_image: t.Optional(t.String({ minLength: 1 })),
   seed_env: t.Optional(t.Array(t.String())),
@@ -130,6 +144,7 @@ export type DeployBody = {
   env?: Record<string, string>;
   db?: { provider?: string; path?: string; file?: string; roles?: string };
   mail?: string | { mode?: string; from?: string };
+  auth?: string | { mode?: string };
   health?: HealthRequest;
   seed_image?: string;
   seed_env?: string[];
@@ -399,6 +414,33 @@ export function resolveServicesRequest(
   return { ok: true, value: out };
 }
 
+export function resolvePreviewAuthRequest(
+  body: Pick<DeployBody, "auth">,
+  gatewayPreviewAuth: { address: string } | undefined,
+  repo: string,
+):
+  | { ok: true; value: PreviewAuthSpec | undefined }
+  | { ok: false; status: number; error: string; detail?: string } {
+  const parsed = parsePreviewAuthSpec(body.auth);
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      status: 422,
+      error: "invalid_auth",
+      detail: authSpecIssueMessage(parsed.issue),
+    };
+  }
+  if (previewAuthMode(parsed.value) === "link" && !gatewayPreviewAuth) {
+    return {
+      ok: false,
+      status: 500,
+      error: "preview_auth_not_configured",
+      detail: previewAuthNotConfiguredDetail(repo),
+    };
+  }
+  return { ok: true, value: parsed.value };
+}
+
 export function resolvePreviewLabelsRequest(
   body: Pick<DeployBody, "labels">,
 ):
@@ -512,6 +554,17 @@ export function deploy(
     if (!labels.ok) {
       return unprocessable(set, labels);
     }
+    const access = resolvePreviewAuthRequest(
+      body,
+      deps.materialization.previewAuth,
+      target.value.repo,
+    );
+    if (!access.ok) {
+      set.status = access.status;
+      return access.detail
+        ? { error: access.error, detail: access.detail }
+        : { error: access.error };
+    }
     const volumes = resolvePreviewVolumesRequest(body, deploySpecs.value.spec);
     if (!volumes.ok) {
       return unprocessable(set, volumes);
@@ -532,6 +585,14 @@ export function deploy(
       labels: labels.value,
       services: services.value,
       policy: deps.materialization,
+      access: previewAccessForKeys({
+        slug: body.slug,
+        prId: target.value.prId,
+        mode: previewAuthMode(access.value),
+        ...(deps.materialization.previewAuth
+          ? { address: deps.materialization.previewAuth.address }
+          : {}),
+      }),
     });
     if (!collisions.ok) {
       set.status = 422;
@@ -554,6 +615,10 @@ export function deploy(
       appEnv: appEnv.value,
       services: services.value,
       ...(labels.value !== undefined ? { labels: labels.value } : {}),
+      ...(access.value !== undefined ? { auth: access.value } : {}),
+      ...(deps.materialization.previewAuth !== undefined
+        ? { previewAuth: deps.materialization.previewAuth }
+        : {}),
       plan,
       reseed: body.reseed === true,
       ...(deps.materialization.traefikTls !== undefined

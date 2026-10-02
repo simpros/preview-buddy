@@ -1196,3 +1196,40 @@ db:
     });
   });
 });
+
+describe("preview.auth", () => {
+  test("parses string and mapping forms, defaults to absent", () => {
+    const base = (extra: string) =>
+      parseSproutYaml(
+        `slug: myapp\npreview:\n  hostname: "pr-{pr_id}.example.com"\n${extra}`,
+      );
+    expect(base("")).toEqual({
+      ok: true,
+      value: { slug: "myapp", preview: { hostname: "pr-{pr_id}.example.com" } },
+    });
+    expect(base('  auth: basic\n')).toEqual({
+      ok: true,
+      value: {
+        slug: "myapp",
+        preview: {
+          hostname: "pr-{pr_id}.example.com",
+          auth: { mode: "basic" },
+        },
+      },
+    });
+    expect(base('  auth:\n    mode: link\n')).toEqual({
+      ok: true,
+      value: {
+        slug: "myapp",
+        preview: {
+          hostname: "pr-{pr_id}.example.com",
+          auth: { mode: "link" },
+        },
+      },
+    });
+    expect(base('  auth: oidc\n')).toEqual({
+      ok: false,
+      error: 'preview.auth must be none, basic, or link (got "oidc")',
+    });
+  });
+});

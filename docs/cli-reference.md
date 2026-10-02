@@ -21,6 +21,7 @@ monorepo via `bun run --cwd apps/cli`. Full flags per command:
 | `sprout health` | Hit gateway `/healthz` (no token). |
 | `sprout doctor` | Gateway self-check (networks, Postgres, forge, drift). |
 | `sprout logs <pr_id>` | Fetch preview container logs for debugging. |
+| `sprout access <pr_id> [--expires 7d] [--revoke]` | Print the basic credential, mint a shareable link (`link`), or revoke outstanding links (no redeploy). See [Previews](previews.md#preview-access). |
 | `sprout admin token …` | Create / list / revoke deploy tokens (admin token required). |
 | `sprout ci <preview\|teardown\|reseed\|reset\|logs>` | CI helper: build/push/deploy, teardown, reseed (data kept) or reset (data wiped), or logs from CI env. |
 | `sprout worktree-db <provision\|drop>` | Local per-worktree Postgres DB (no gateway). |

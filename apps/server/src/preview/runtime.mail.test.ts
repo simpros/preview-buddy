@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { defaultDbSpec, type DbSpec } from "@sprout/preview-env";
 import {
+  buildMaterializationCtx,
   resolvePreviewPlan,
   type PreviewMaterializationCtx,
 } from "./runtime.ts";
@@ -226,5 +227,43 @@ describe("resolvePreviewPlan mail", () => {
     });
     expect(plan.gatewayEnv).toContain("MAILFROM=noreply+42@preview.invalid");
     expect(plan.mailFrom).toBe("noreply+42@preview.invalid");
+  });
+});
+
+describe("buildMaterializationCtx", () => {
+  test("carries the preview-auth capability into deploys", () => {
+    const ctx = buildMaterializationCtx({
+      traefikNetwork: "sprout-traefik",
+      registryPullAuth: { byHost: new Map(), fallback: undefined },
+      githubToken: "",
+      gitlabToken: "",
+      extraGitlabHosts: new Set(),
+      ttlHours: 72,
+      sweepCron: "*/30 * * * *",
+      previewPortDefault: 8080,
+      seedTimeout: 180,
+      port: 7331,
+      previewAuth: {
+        secret: "sekrit",
+        address: "http://gateway:7331/v1/internal/preview-auth",
+      },
+    });
+    expect(ctx.previewAuth).toEqual({
+      secret: "sekrit",
+      address: "http://gateway:7331/v1/internal/preview-auth",
+    });
+    const bare = buildMaterializationCtx({
+      traefikNetwork: "sprout-traefik",
+      registryPullAuth: { byHost: new Map(), fallback: undefined },
+      githubToken: "",
+      gitlabToken: "",
+      extraGitlabHosts: new Set(),
+      ttlHours: 72,
+      sweepCron: "*/30 * * * *",
+      previewPortDefault: 8080,
+      seedTimeout: 180,
+      port: 7331,
+    });
+    expect(bare.previewAuth).toBeUndefined();
   });
 });

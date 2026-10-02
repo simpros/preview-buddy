@@ -1,5 +1,6 @@
 import type { DbProvider } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
+import { resolvePreviewAccessLabels } from "../app-deployment/preview-auth.ts";
 import { extractPullDetail } from "../docker/pull-failure.ts";
 import { withDbNameLock } from "./locks.ts";
 import { markPreviewFailed, markStickyPreviewFailed } from "./mark-failed.ts";
@@ -242,6 +243,12 @@ async function attachAppContainer(
   let containerId: string;
   let port: number;
   try {
+    const previewAccess = await resolvePreviewAccessLabels({
+      slug: row.slug,
+      prId: row.prId,
+      stored: row,
+      ...(input.previewAuth ? { previewAuth: input.previewAuth } : {}),
+    });
     ({ containerId, port } = await deps.app.replace({
       slug: row.slug,
       prId: row.prId,
@@ -254,6 +261,7 @@ async function attachAppContainer(
       ...(input.traefikForwardAuth !== undefined
         ? { traefikForwardAuth: input.traefikForwardAuth }
         : {}),
+      previewAccess,
     }));
   } catch {
     await markPreviewFailed(

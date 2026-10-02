@@ -26,6 +26,7 @@ import {
 import type {
   DbSpec,
   ManifestEnvValue,
+  PreviewAuthSpec,
   PreviewEnvMap,
   PreviewLabels,
   SproutYaml,
@@ -54,6 +55,7 @@ export type DeployRequest = {
   env?: PreviewEnvMap;
   db?: DbSpec;
   mail?: MailSpec;
+  auth?: PreviewAuthSpec;
   reseed?: boolean;
 };
 
@@ -323,6 +325,7 @@ export function buildDeployRequest(
     body.volumes = [...yaml.preview.volumes];
   if (yaml.db) body.db = yaml.db;
   if (yaml.mail) body.mail = { ...yaml.mail };
+  if (yaml.preview.auth) body.auth = { ...yaml.preview.auth };
 
   const services = resolveDeployServices(yaml, identity.prId, {
     service: inputs.service,

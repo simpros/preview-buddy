@@ -3,7 +3,7 @@ import type { PreviewDocker } from "../docker/port.ts";
 import { previewContainerName } from "../preview/naming.ts";
 import type { PreviewDbPlan } from "../preview/runtime.ts";
 import { materializePreviewWorkload } from "./preview-containers.ts";
-import { appRouting } from "./workload-labels.ts";
+import { appRouting, type PreviewAccessLabels } from "./workload-labels.ts";
 import type { PreviewLabels } from "@sprout/preview-env";
 
 export type ReplacePreviewAppDeps = {
@@ -21,6 +21,7 @@ export type ReplacePreviewAppInput = {
   labels?: PreviewLabels;
   traefikTls?: TraefikTls;
   traefikForwardAuth?: TraefikForwardAuth;
+  previewAccess?: PreviewAccessLabels;
 };
 
 export async function replacePreviewApp(
@@ -33,7 +34,7 @@ export async function replacePreviewApp(
     name,
     image: input.image,
     userEnv: input.appEnv,
-    routing: appRouting(input.hostname, input),
+    routing: appRouting(input.hostname, input, input.previewAccess),
     gatewayEnv: input.plan.gatewayEnv,
     volumes: input.plan.volumes,
     networkNames: input.plan.appNetworks,
