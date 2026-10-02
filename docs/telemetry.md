@@ -1,9 +1,9 @@
 # Telemetry
 
 Every gateway built as the published image reports anonymous installation
-facts and deploy outcomes to a maintainer-run ingest endpoint. It is on by
-default and stops with one variable. A build from source reports nothing
-until the two destination variables are set.
+facts and deploy outcomes to a maintainer-run ingest endpoint. Reporting is
+on by default and stops with one variable. A build from source reports
+nothing until the two destination variables are set.
 
 ```bash
 SPROUT_TELEMETRY=off  # or DO_NOT_TRACK=1 — either one stops all reporting
@@ -11,7 +11,7 @@ SPROUT_TELEMETRY=off  # or DO_NOT_TRACK=1 — either one stops all reporting
 
 ## What is sent
 
-Two events, one fixed schema. Every event carries the same envelope:
+Two events share one fixed envelope:
 
 | Field | Meaning |
 |---|---|
@@ -87,19 +87,23 @@ means the row never recorded a code:
 }
 ```
 
-Transport: one `POST` per event with a 3s timeout, fire-and-forget. A failed
-export never changes a deploy outcome — at most one warning is logged.
-There are no retries, no queue, and no batching: losing an anonymous event
-is acceptable, changing a deploy's outcome is not.
+Transport costs one `POST` per event with a 3s timeout, fire-and-forget. A
+failed export never changes a deploy outcome — at most one warning is
+logged. There are no retries, no queue, and no batching: losing an
+anonymous event is acceptable, changing a deploy's outcome is not. That is
+the whole cost: two small JSON posts per deploy plus one per day, with no
+effect on the request path when the backend is slow or dead.
 
 ## What is never sent
 
 Repo id, URL or name; PR id; slug; preview name; hostname; database name;
-image reference; container id; DSN; any credential; any value from `appEnv`,
-the injected preview env, or the manifest; request or response headers and
-bodies; error detail text; stack traces; log lines. The payload is assembled
-from a fixed field list in one module — the only free values that travel
-are the closed vocabularies `lastError`, `failureFamily` and `plan`.
+image reference; container id; DSN; any credential; any value from
+`appEnv`, the injected preview env, or the manifest; request or response
+headers and bodies; error detail text; stack traces; log lines. The payload
+is assembled from a fixed field list in one module — the only free values
+that travel are the closed vocabularies `lastError`, `failureFamily` and
+`plan`. This closed list is why the channel is safe to leave on: nothing
+the adopter types into config, env, or code can reach the payload.
 
 ## Stopping it and forgetting
 
@@ -121,8 +125,8 @@ is sent (`on (no destination)` — the usual case for a from-source build).
 The published image carries the maintainer destination baked in at image
 build time (`ARG` → `ENV` in the `Dockerfile`, supplied by the release
 workflow). That value is therefore visible in `docker inspect` for anyone
-pulling the image — by construction, so the credential is ingest-only for a
-single stream and the collector treats every record as untrusted input.
+pulling the image — by construction, so the credential is ingest-only for
+a single stream and the collector treats every record as untrusted input.
 Setting the two variables at runtime overrides what the image carries, so a
 fork or a company can redirect reporting without rebuilding.
 
@@ -133,8 +137,8 @@ opt-in trace backend an operator points at their own collector (below).
 
 Point the gateway at any OTLP/HTTP traces backend you run (a collector,
 Tempo, Jaeger, OpenObserve — anything speaking OTLP/HTTP) and deploys show
-up there as distributed traces. Nothing is exported unless you set the
-endpoint; the image carries no trace destination.
+up there as distributed traces. Nothing is exported unless the endpoint is
+set; the image carries no trace destination.
 
 ```bash
 SPROUT_OTLP_ENDPOINT=https://<openobserve-host>/api/<org>/v1/traces
@@ -151,8 +155,8 @@ SPROUT_OTLP_HEADERS=Authorization=Basic <base64 email:password>,stream-name=defa
   on every export request. Each entry splits on the first `=` only, so a
   base64 `Authorization` value keeps its padding. An entry without `=`, or
   with an empty name, fails boot naming the entry.
-- Tracing is active exactly when the endpoint is set. With no endpoint there
-  is no SDK, no export, and no boot failure — the boot line reports
+- Tracing is active exactly when the endpoint is set. With no endpoint
+  there is no SDK, no export, and no boot failure — the boot line reports
   `traces: "off"`, otherwise `traces: "<host>/<path>"`. Header values never
   appear in the boot line or the config summary (`otlpHeaders` is
   `"[set]"` / `"[empty]"`).
@@ -164,10 +168,10 @@ with `preview.db` (database provision/reset), `preview.app` (container
 replace plus health gate), and `preview.seed` (seed image run) children. The
 deploy is detached from the request that accepted it, so it is its own root
 trace correlated by attributes, not by trace id. Deploy attributes are
-`sprout.repo`, `sprout.pr`, `sprout.slug`, `sprout.plan`, and `sprout.status`;
-failures set status `ERROR` and record the exception. Export uses a batch
-processor, never the request path, with no signal handling — a slow or dead
-backend cannot block or crash the gateway.
+`sprout.repo`, `sprout.pr`, `sprout.slug`, `sprout.plan`, and
+`sprout.status`; failures set status `ERROR` and record the exception.
+Export uses a batch processor, never the request path, with no signal
+handling — a slow or dead backend cannot block or crash the gateway.
 
 Privacy: the operator's own values go to the operator's own backend — and
 still never `appEnv`, DSNs, tokens, request or response bodies, headers, or

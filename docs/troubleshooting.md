@@ -1,13 +1,8 @@
 # Troubleshooting
 
-The error catalogue for adopting repos and operators. Every entry names the
-exact error. None of these print env values — parse errors name the key or
-file without echoing the value.
-
-- Manifest keys? See [Adopting a repo](adopting-a-repo.md).
-- Lifecycle background? See [Previews](previews.md).
-- Gateway setup? See [Operator deploy](operator-deploy.md).
-- Commands? See [CLI reference](cli-reference.md).
+Match the symptom, copy the fix. Every entry names the exact error. None
+of these print env values — parse errors name the key or file without
+echoing the value.
 
 ## Adopter errors
 
@@ -19,7 +14,7 @@ file without echoing the value.
 | Downloaded release fails verification | `checksum entry missing for <asset> in <tag>/SHA256SUMS.txt …` or a `sha256sum -c` mismatch; `test "$(sprout --version)" = "…"` fails | Pin to a release that ships checksums (≥ the release that publishes `SHA256SUMS.txt`); do not hand-edit the install — the component verifies the downloaded asset. |
 | Hostname template rejected | `preview.hostname … must contain {pr_id}` / scheme/port/path/placeholder errors; service `preview.services[i].hostname` / `.path must start with /` | Keep the template a bare host with `{pr_id}` (`pr-{pr_id}.app.example.com`). Read the URL from `preview_url=` / `PREVIEW_URL` — never reconstruct it in CI. |
 | Unknown manifest key | `unknown key: <path>` (top-level, `preview.*`, `health.*`, `seed.*`, `preview.env.*`) | Rename to a key in the [manifest table](adopting-a-repo.md#manifest-keys-sproutyaml); check `preview.env` against the canonical `PG*` set and services against `name/image/hostname/path/port/env/labels`. |
-| Seed configured without health | `health block required in .sprout.yaml when seed block is configured` (or `when -s is passed`) | Add the `health:` block (quickstart snippet). The gate runs before any `docker build`. |
+| Seed configured without health | `health block required in .sprout.yaml when seed block is configured` (or `when -s is passed`) | Add the `health:` block ([Getting started](getting-started.md#1-sproutyaml-at-the-repo-root) has the shape). The gate runs before any `docker build`. |
 | Secret not supplied | deploy fails before the gateway call naming the key (declared `{ required: true }`, no file/flag provided it) | Provide it via the `SPROUT_APP_ENV` / `SPROUT_SEED_ENV` file-type variable or `--app-env[-file]` / `--seed-env[-file]`. Never commit the secret to the manifest. |
 | File-type CI variable passed via `app_env_file` / `seed_env_file` input (e.g. `inputs: { app_env_file: $MY_ENV_FILE }`) | `preview.app_env.<KEY>: required value missing` (nothing points at the input) — had the flag been passed with a bad path, the CLI would say `cannot read --app-env-file: <path>` instead | Repo-relative dotenv paths only — never pass File vars via `inputs:`; map the blob at job runtime via `variables:` (`sprout-preview: { variables: { SPROUT_APP_ENV: $MY_ENV_FILE } }`, seed: `SPROUT_SEED_ENV: $MY_SEED_FILE`). Full diagnostic in [component Troubleshooting](../templates/README.md#troubleshooting). |
 | Invalid dotenv line or flag | names the offending key or file, value never echoed | Fix the `KEY=value` line (blank lines, `#` comments, optional `export ` prefix; values may contain `=`); check `--tail` is a positive integer (`--tail must be a positive integer`). |
@@ -43,7 +38,7 @@ file without echoing the value.
 
 | Symptom | Likely cause | What to try |
 |---|---|---|
-| `curl …/healthz` fails / connection refused | Gateway not up, or host port conflict on `SPROUT_GATEWAY_HOST_PORT` | `docker compose --env-file compose.env ps`; `ss -ltnp | grep 7331` (or your host port); check `docker compose … logs gateway` |
+| `curl …/healthz` fails / connection refused | Gateway not up, or host port conflict on `SPROUT_GATEWAY_HOST_PORT` | `docker compose --env-file compose.env ps`; `ss -ltnp \| grep 7331` (or your host port); check `docker compose … logs gateway` |
 | Traefik curl on `:8880` fails | Bundled Traefik not published, or `TRAEFIK_HTTP_PORT` overridden | Confirm `TRAEFIK_HTTP_PORT` in `compose.env`; `docker compose … ps traefik` |
 | `network … not found` on external overlay | `SPROUT_*_NETWORK` names do not exist on the host | `docker network ls`; `docker network create "$SPROUT_TRAEFIK_NETWORK"` (and postgres) before `up` |
 | Gateway boot: missing env / CREATEROLE | Required vars blank, or admin DSN lacks role privileges | Diff `compose.env` against `compose.env.example`; confirm admin can `CREATE ROLE` |

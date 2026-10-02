@@ -1,9 +1,9 @@
 # Onboarding prompt
 
-One copy-paste block. Paste it into your coding harness (Claude Code, Cursor,
-Codex, …) in the repo you want to preview. The agent reads the docs itself,
-inspects your repo, confirms the domain-shaped values, and writes only the
-config + CI wiring.
+One copy-paste block for the repo being onboarded. Paste it into a coding
+harness (Claude Code, Cursor, Codex, …). The agent reads the docs, inspects
+the repo, confirms the two human values (slug, hostname template), and
+writes only config + CI wiring.
 
 ---
 

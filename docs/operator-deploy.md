@@ -1,22 +1,23 @@
 # Operator deploy
 
 Deploy **Postgres**, the **sprout gateway**, and **Traefik** once per
-environment. Adopting repos then call `sprout deploy` / `sprout teardown` from
-CI — no per-repo server setup.
+environment. Adopting repos then call `sprout deploy` / `sprout teardown`
+from CI — no per-repo server setup. Each section below is one task.
 
 ## Prerequisites
 
 - Docker Engine with Compose v2 (`docker compose`)
-- Host access to publish ports (local smoke defaults: gateway `7331`, Traefik
-  HTTP `8880`) — or readiness to join existing Docker networks for production
-- For production-shaped deploys: an existing Traefik and/or Postgres you can
+- Host access to publish ports (local smoke defaults: gateway `7331`,
+  Traefik HTTP `8880`) — or readiness to join existing Docker networks for
+  production
+- For production-shaped deploys: an existing Traefik and/or Postgres to
   attach to (Coolify-managed Traefik is fine; sprout does not call Coolify)
 - Bun is **not** required for the compose path (image build uses the
   `oven/bun` base). Bun is only needed for host `bun run dev`.
 
 ## Quick start (local smoke)
 
-From the repo root:
+Bring up the reference stack from the repo root:
 
 ```bash
 cp compose.env.example compose.env
@@ -34,23 +35,23 @@ curl -sf http://127.0.0.1:${TRAEFIK_HTTP_PORT:-8880}/ || true
 `.env` / `.env.example` are for the gateway process on the host (`bun run
 dev`).
 
-The stack in `docker-compose.yml` is the reference **operator compose stack**
-for local development and CI smoke. The **E2E acceptance harness** (`e2e/`)
-runs the same file with `--env-file e2e/compose.e2e.env` — see
+The stack in `docker-compose.yml` is the reference **operator compose
+stack** for local development and CI smoke. The **E2E acceptance harness**
+(`e2e/`) runs the same file with `--env-file e2e/compose.e2e.env` — see
 [`e2e/README.md`](../e2e/README.md) or `bun run test:e2e`. Default network
-names (`sprout-traefik`, `sprout-postgres`) are project-local so
-a smoke `up` does not collide with an existing Coolify Traefik network named
+names (`sprout-traefik`, `sprout-postgres`) are project-local so a smoke
+`up` does not collide with an existing Coolify Traefik network named
 `traefik`. Host ports are `SPROUT_GATEWAY_HOST_PORT` (default 7331) and
 `TRAEFIK_HTTP_PORT` (default 8880); the harness ports come from
 `e2e/compose.e2e.env`.
 
 ### Gateway Docker image
 
-The gateway is **one image, one process** (root `Dockerfile`), and the image
-also embeds the `sprout` CLI (same Bun lockfile / version pin as the gateway)
-so operators can `docker exec` against localhost without a host-side install.
-Compose builds it via `build: .`; you can also build and tag it alone for
-registry push or external orchestrators:
+Ship one image, one process (root `Dockerfile`). The image also embeds the
+`sprout` CLI (same Bun lockfile / version pin as the gateway) so operators
+can `docker exec` against localhost without a host-side install. Compose
+builds it via `build: .`; build and tag it alone for registry push or
+external orchestrators:
 
 ```bash
 # From the repo root (reproducible with Bun 1.4.0 base + frozen lockfile)
@@ -62,11 +63,14 @@ docker build -t ghcr.io/simpros/sprout:0.8.3 \
 ```
 
 Image label `org.opencontainers.image.version` mirrors `SPROUT_VERSION`
-(Dockerfile default tracks the monorepo pin; prefer a published release tag such
-as `v0.8.3` / image `:0.8.3` in production). Pin operators and CI to a release
-tag or GHCR digest — not an untagged local build — when publishing previews.
+(Dockerfile default tracks the monorepo pin; prefer a published release tag
+such as `v0.8.3` / image `:0.8.3` in production). Pin operators and CI to a
+release tag or GHCR digest — not an untagged local build — when publishing
+previews.
 
 ## Architecture
+
+Route PR traffic through the three services:
 
 ```text
                     ┌─────────────┐
@@ -85,12 +89,14 @@ tag or GHCR digest — not an untagged local build — when publishing previews.
                     └─────────────┘
 ```
 
-- **Postgres** hosts all preview logical databases (`sprout_<slug>_pr<id>`).
+- **Postgres** hosts all preview logical databases
+  (`sprout_<slug>_pr<id>`).
 - **Gateway** administers databases, starts preview containers, and sets
-  Traefik routing labels. It mounts the Docker socket and joins both networks.
+  Traefik routing labels. It mounts the Docker socket and joins both
+  networks.
 - **Traefik** terminates HTTP for preview hostnames. Preview app containers
-  attach only to `traefik` + `postgres`; seed containers attach to `postgres`
-  only.
+  attach only to `traefik` + `postgres`; seed containers attach to
+  `postgres` only.
 
 ### Defaults
 
@@ -109,16 +115,16 @@ Durable runtime identity uses product `sprout*` names:
 
 ### Dual network attach
 
-The gateway reads two Docker network names from the environment:
+Point the gateway at two Docker network names:
 
 | Variable | Purpose |
 |---|---|
 | `SPROUT_TRAEFIK_NETWORK` | Network shared with Traefik. Preview **app** containers join this network so Traefik can route traffic via Docker labels. |
 | `SPROUT_POSTGRES_NETWORK` | Network shared with Postgres. Gateway, preview **app**, and **seed** containers join this network so they can reach the database by hostname. |
 
-Compose declares both networks with `name: ${SPROUT_…}` so the same variable is the
-single source for the Docker network name and the gateway env (defaults are
-project-local):
+Compose declares both networks with `name: ${SPROUT_…}` so the same
+variable is the single source for the Docker network name and the gateway
+env (defaults are project-local):
 
 ```yaml
 networks:
@@ -128,46 +134,49 @@ networks:
     name: ${SPROUT_POSTGRES_NETWORK:-sprout-postgres}
 ```
 
-When the gateway creates a Postgres preview app container it attaches **both**
-networks. Postgres seed containers get **Postgres only** — they never need
-Traefik reachability. SQLite preview containers (app, services, seed) mount
-their named volume instead and join **Traefik only**; a SQLite-only gateway
-needs no `SPROUT_POSTGRES_NETWORK` at all.
+When the gateway creates a Postgres preview app container it attaches
+**both** networks. Postgres seed containers get **Postgres only** — they
+never need Traefik reachability. SQLite preview containers (app, services,
+seed) mount their named volume instead and join **Traefik only**; a
+SQLite-only gateway needs no `SPROUT_POSTGRES_NETWORK` at all.
 
 ## One-click Coolify (Docker Compose Empty)
 
-For a one-click Coolify resource with its own Postgres, paste
-[`deploy/coolify/gateway.compose.yml`](../deploy/coolify/gateway.compose.yml) and follow
-[`deploy/coolify/README.md`](../deploy/coolify/README.md) (wildcard DNS,
-preview hostname template, optional mail/forwardAuth). Both
+Stand up a gateway with its own Postgres inside Coolify. Paste
+[`deploy/coolify/gateway.compose.yml`](../deploy/coolify/gateway.compose.yml)
+and follow [`deploy/coolify/README.md`](../deploy/coolify/README.md)
+(wildcard DNS, preview hostname template, optional mail/forwardAuth). Both
 `SPROUT_TRAEFIK_NETWORK` and `SPROUT_POSTGRES_NETWORK` point at the
 predefined external `coolify` network — the only name known at template
 time that the Coolify proxy (`coolify-proxy`) is attached to.
 
 ## Production-shaped deploy (external / Coolify Traefik)
 
-sprout does **not** manage Traefik or call the Coolify API. It registers
-routes by setting standard [Traefik Docker labels](https://doc.traefik.io/traefik/providers/docker/)
-on preview app containers.
+Coexist with an **externally managed Traefik** (including Coolify's)
+without forking the reference file. sprout does **not** manage Traefik or
+call the Coolify API. It registers routes by setting standard [Traefik
+Docker
+labels](https://doc.traefik.io/traefik/providers/docker/)
+on preview app containers. Use the overlay:
 
-To coexist with an **externally managed Traefik** (including Coolify's), use the
-overlay instead of forking the reference file:
-
-1. Set `SPROUT_TRAEFIK_NETWORK` / `SPROUT_POSTGRES_NETWORK` in `compose.env` to the
-   existing network names (Coolify's predefined shared network is `coolify`).
+1. Set `SPROUT_TRAEFIK_NETWORK` / `SPROUT_POSTGRES_NETWORK` in
+   `compose.env` to the existing network names (Coolify's predefined shared
+   network is `coolify`).
 2. For HTTPS routers, set Traefik TLS knobs to match that proxy — e.g.
    `SPROUT_TRAEFIK_ENTRYPOINTS=https` and optionally
    `SPROUT_TRAEFIK_CERTRESOLVER=letsencrypt` on Coolify (HTTP-01 is fine for
-   small fleets). If you need a single wildcard / DNS-01 for rate limits or
-   fleet growth, follow [Wildcard preview certificate (DNS-01)](#wildcard-preview-certificate-dns-01)
-   — often you keep the name `letsencrypt` after converting that resolver.
-   Leave both unset for HTTP-only Traefik (bundled compose / local). Empty
-   entrypoints keeps TLS off even if certresolver is set.
+   small fleets). If a single wildcard / DNS-01 is needed for rate limits or
+   fleet growth, follow [Wildcard preview certificate
+   (DNS-01)](#wildcard-preview-certificate-dns-01) — often the name
+   `letsencrypt` is kept after converting that resolver. Leave both unset
+   for HTTP-only Traefik (bundled compose / local). Empty entrypoints keeps
+   TLS off even if certresolver is set.
 3. For an SSO gate on preview hosts (Traefik forwardAuth), set both
    `SPROUT_TRAEFIK_MIDDLEWARES` (a single name, e.g. `voidauth`) and
    `SPROUT_FORWARDAUTH_ADDRESS` (a URL Traefik can reach). The gateway emits
    the middleware **definition** and the router **attachment** as Docker
-   labels — no Traefik static/file config. Leave both empty for open previews.
+   labels — no Traefik static/file config. Leave both empty for open
+   previews.
 4. Ensure those networks exist (`docker network create …` if needed).
 5. Bring up **only the gateway** against external networks:
 
@@ -180,20 +189,20 @@ The overlay marks both networks `external: true` and disables the bundled
 `traefik` / `postgres` services (via profiles). Point
 `SPROUT_PREVIEW_POSTGRES_URL` at the external Postgres admin DSN.
 
-Also set **`SPROUT_PG_HOST`** (and `SPROUT_PG_PORT` if not 5432) to the hostname
-preview app and seed containers use to reach Postgres on
-`SPROUT_POSTGRES_NETWORK`. That is often different from the host in the admin DSN
-(dual-homed setups). The bundled default `postgres` only works when a service
-with that DNS name exists on the network.
+Also set **`SPROUT_PG_HOST`** (and `SPROUT_PG_PORT` if not 5432) to the
+hostname preview app and seed containers use to reach Postgres on
+`SPROUT_POSTGRES_NETWORK`. That is often different from the host in the
+admin DSN (dual-homed setups). The bundled default `postgres` only works
+when a service with that DNS name exists on the network.
 
 The gateway creates or syncs the preview login (`SPROUT_PG_USER` /
-`SPROUT_PG_PASSWORD`) on boot from the admin DSN — no manual `CREATE ROLE` and
-no compose one-shot. The admin role needs `CREATEROLE` (or superuser); otherwise
-boot fails with a clear error.
+`SPROUT_PG_PASSWORD`) on boot from the admin DSN — no manual `CREATE ROLE`
+and no compose one-shot. The admin role needs `CREATEROLE` (or superuser);
+otherwise boot fails with a clear error.
 
 Also ensure the external Traefik has `--providers.docker=true` and
-`--providers.docker.exposedbydefault=false` (or equivalent) so only labelled
-containers are published.
+`--providers.docker.exposedbydefault=false` (or equivalent) so only
+labelled containers are published.
 
 Label conventions the gateway applies:
 
@@ -210,10 +219,10 @@ When TLS is enabled (`SPROUT_TRAEFIK_ENTRYPOINTS` non-empty), also:
 
 TLS is opt-in: unset/blank entrypoints → HTTP labels only (works with the
 bundled Traefik `web` entrypoint). Entrypoints without certresolver uses
-Traefik's default/builtin cert. Entrypoint and certresolver names are **not**
-Coolify-specific — set them to match your Traefik (e.g. Coolify often uses
-`https` + `letsencrypt`; stock Traefik quickstarts often use `websecure` + a
-custom resolver name).
+Traefik's default/builtin cert. Entrypoint and certresolver names are
+**not** Coolify-specific — set them to match the Traefik in use (e.g.
+Coolify often uses `https` + `letsencrypt`; stock Traefik quickstarts often
+use `websecure` + a custom resolver name).
 
 When forwardAuth is enabled (both `SPROUT_TRAEFIK_MIDDLEWARES` and
 `SPROUT_FORWARDAUTH_ADDRESS` non-empty), also:
@@ -226,10 +235,11 @@ When forwardAuth is enabled (both `SPROUT_TRAEFIK_MIDDLEWARES` and
 (`<mw>` is the single middleware name from `SPROUT_TRAEFIK_MIDDLEWARES`.)
 
 ForwardAuth is opt-in and Coolify-safe: Coolify's Traefik uses the Docker
-provider only, so sprout must emit **both** the middleware definition and the
-router attachment on preview containers (no Traefik file/static config).
-Both env vars must be set together (or both empty); setting only one fails at
-gateway boot. `SPROUT_TRAEFIK_MIDDLEWARES` is one name (commas rejected).
+provider only, so sprout must emit **both** the middleware definition and
+the router attachment on preview containers (no Traefik file/static
+config). Both env vars must be set together (or both empty); setting only
+one fails at gateway boot. `SPROUT_TRAEFIK_MIDDLEWARES` is one name
+(commas rejected).
 
 Per-repo alternative: adopting repos can attach their own previews to
 Traefik routers or middlewares defined outside the gateway with
@@ -240,50 +250,52 @@ manifest keys change one repo's previews. Gateway-emitted keys stay
 reserved — a manifest key colliding with one fails the deploy fast instead
 of silently overriding routing.
 
-**VoidAuth / SSO setup:** add the preview domain (e.g. `*.internal.example.com`)
-in the VoidAuth UI, then point `SPROUT_FORWARDAUTH_ADDRESS` at the forward-auth
-endpoint (e.g. `https://auth.example.com/api/authz/forward-auth`). That URL
-must be reachable from Traefik (not only from browsers). Unauthenticated
-visits redirect to login; authenticated visits reach the preview app.
+**VoidAuth / SSO setup:** add the preview domain (e.g.
+`*.internal.example.com`) in the VoidAuth UI, then point
+`SPROUT_FORWARDAUTH_ADDRESS` at the forward-auth endpoint (e.g.
+`https://auth.example.com/api/authz/forward-auth`). That URL must be
+reachable from Traefik (not only from browsers). Unauthenticated visits
+redirect to login; authenticated visits reach the preview app.
 
-Coolify-managed Traefik already watches the Docker socket; sprout
-preview containers appear alongside Coolify apps as long as they share the
-Traefik network.
+Coolify-managed Traefik already watches the Docker socket; sprout preview
+containers appear alongside Coolify apps as long as they share the Traefik
+network.
 
 ### Per-preview access gate (`preview.auth`)
 
-Adopters opt in per repo with `preview.auth: basic | link` (see
+Offer adopters the per-repo opt-in (`preview.auth: basic | link`, see
 [Previews](previews.md#preview-access)). `basic` needs nothing from the
 operator. `link` needs both `SPROUT_PREVIEW_AUTH_SECRET` (HMAC root for
 shareable tokens) and `SPROUT_PREVIEW_AUTH_ADDRESS` (the gateway's
 in-network forwardAuth URL, e.g.
 `http://gateway:7331/v1/internal/preview-auth`) — set together or both
-empty; a partial set fails gateway boot naming the missing key. The
-address must be Traefik-reachable without leaving the Docker network:
-that is the whole point (an external auth service has no Cloudflare-free
-path to the preview edge, and Cloudflare rewrites `X-Forwarded-Host`, so
-an external gate authorised everything). Never point it at a public URL.
+empty; a partial set fails gateway boot naming the missing key. The address
+must be Traefik-reachable without leaving the Docker network: that is the
+whole point (an external auth service has no Cloudflare-free path to the
+preview edge, and Cloudflare rewrites `X-Forwarded-Host`, so an external
+gate authorised everything). Never point it at a public URL.
 
 ### Wildcard preview certificate (DNS-01)
 
-Per-preview Let's Encrypt certs hit the **50 certificates / registered domain /
-week** rate limit under fleet growth or ACME-store wipes. One wildcard on the
-preview domain (`*.previews.example.com`) removes per-deploy issuance: Traefik
-serves the stored cert for every preview host without ordering a new one.
+Stop per-preview Let's Encrypt issuance under fleet growth. Per-preview
+certs hit the **50 certificates / registered domain / week** rate limit
+under fleet growth or ACME-store wipes. One wildcard on the preview domain
+(`*.previews.example.com`) removes per-deploy issuance: Traefik serves the
+stored cert for every preview host without ordering a new one.
 
-sprout still emits optional `tls.certresolver` labels (#102). Traefik resolves
-via that named resolver and must find a covering cert in **that** resolver's
-store. With `*.PREVIEW_DOMAIN` already there, Traefik should log a store hit /
-`No ACME certificate generation required` for the preview FQDN — not a new LE
-order. Wrong resolver name → per-host orders resume (the rate-limit failure
-mode).
+sprout still emits optional `tls.certresolver` labels (#102). Traefik
+resolves via that named resolver and must find a covering cert in
+**that** resolver's store. With `*.PREVIEW_DOMAIN` already there, Traefik
+should log a store hit / `No ACME certificate generation required` for the
+preview FQDN — not a new LE order. Wrong resolver name → per-host orders
+resume (the rate-limit failure mode).
 
 Ready-to-apply fragments (placeholders only):
 [`deploy/traefik/README.md`](../deploy/traefik/README.md).
 
 #### Prerequisites (secrets / access — not in this repo)
 
-You need these before executing the runbook; the repo ships fragments only:
+Collect these before the runbook; the repo ships fragments only:
 
 | Need | Why |
 |---|---|
@@ -292,8 +304,8 @@ You need these before executing the runbook; the repo ships fragments only:
 | Ability to inject provider env vars into the Traefik process | Provider plugins read tokens from the environment (names are provider-specific) |
 | Durable volume (or equivalent) for ACME storage | Cert + account must survive Traefik restarts/upgrades |
 
-Do **not** invent provider field names here — look up Traefik's docs for your
-DNS provider. Fill placeholders in
+Do **not** invent provider field names here — look up Traefik's docs for the
+DNS provider in use. Fill placeholders in
 [`deploy/traefik/certificates-resolver.dns.yml`](../deploy/traefik/certificates-resolver.dns.yml)
 for the resolver body used in step 2.
 
@@ -302,34 +314,36 @@ for the resolver body used in step 2.
 | Path | When | Gateway certresolver |
 |---|---|---|
 | **Default (simple)** | Traefik's job for this zone is preview TLS, or DNS API creds already cover every host Traefik terminates | Keep existing name (e.g. `letsencrypt`) |
-| **Coexistence (optional)** | You must leave Coolify / other apps on HTTP-01 | Point sprout at the new DNS-01 name (e.g. `letsencrypt-dns`) |
+| **Coexistence (optional)** | Coexistence with HTTP-01 for other apps must remain | Point sprout at the new DNS-01 name (e.g. `letsencrypt-dns`) |
 
 #### Runbook
 
-1. **Identify the DNS provider** for the preview domain (the zone that serves
-   `*.previews.example.com`). Create API credentials with permission to manage
-   TXT records for ACME. Record the Traefik provider name and required env vars
-   from Traefik's DNS Providers list.
+1. **Identify the DNS provider** for the preview domain (the zone that
+   serves `*.previews.example.com`). Create API credentials with permission
+   to manage TXT records for ACME. Record the Traefik provider name and
+   required env vars from Traefik's DNS Providers list.
 
 2. **Resolver setup** — pick one branch from the table above:
 
-   - **Default — convert in place.** In Traefik static config (or Coolify proxy
-     settings), replace the existing resolver's `httpChallenge` block with the
-     `dnsChallenge` shape from
+   - **Default — convert in place.** In Traefik static config (or Coolify
+     proxy settings), replace the existing resolver's `httpChallenge` block
+     with the `dnsChallenge` shape from
      [`deploy/traefik/certificates-resolver.dns.yml`](../deploy/traefik/certificates-resolver.dns.yml)
-     (same key, often `letsencrypt`; keep the **same** durable `storage` path).
-     Converting replaces the challenge type for **every** consumer of that
-     resolver name — if any other app must stay on HTTP-01, stop and use
-     coexistence instead. Inject `<DNS_PROVIDER_ENV_*>` into the Traefik
-     process. No second resolver, no second `acme.json`, no rename dance.
+     (same key, often `letsencrypt`; keep the **same** durable `storage`
+     path). Converting replaces the challenge type for **every** consumer
+     of that resolver name — if any other app must stay on HTTP-01, stop
+     and use coexistence instead. Inject `<DNS_PROVIDER_ENV_*>` into the
+     Traefik process. No second resolver, no second `acme.json`, no rename
+     dance.
 
-   - **Coexistence — add a second resolver.** Traefik requires one storage file
-     per certificates resolver — reusing the HTTP-01 path (e.g. `/data/acme.json`)
-     causes init conflicts or a corrupted store. Copy the fragment body under a
-     **new** key (e.g. `letsencrypt-dns:`), set `storage` to a distinct path
-     (e.g. `/data/acme-dns.json`), and leave the HTTP-01 resolver untouched.
-     Paste **under** your existing `certificatesResolvers:` map (do not overwrite
-     the whole static ACME document). Merged shape:
+   - **Coexistence — add a second resolver.** Traefik requires one storage
+     file per certificates resolver — reusing the HTTP-01 path (e.g.
+     `/data/acme.json`) causes init conflicts or a corrupted store. Copy
+     the fragment body under a **new** key (e.g. `letsencrypt-dns:`), set
+     `storage` to a distinct path (e.g. `/data/acme-dns.json`), and leave
+     the HTTP-01 resolver untouched. Paste **under** the existing
+     `certificatesResolvers:` map (do not overwrite the whole static ACME
+     document). Merged shape:
 
      ```yaml
      certificatesResolvers:
@@ -366,12 +380,12 @@ for the resolver body used in step 2.
    docker compose -f deploy/traefik/wildcard-bootstrap.compose.yml down
    ```
 
-   The bootstrap compose attaches `tls.domains[0].main=*.${PREVIEW_DOMAIN}` so
-   Traefik requests a wildcard (DNS-01), not a single-host cert for
+   The bootstrap compose attaches `tls.domains[0].main=*.${PREVIEW_DOMAIN}`
+   so Traefik requests a wildcard (DNS-01), not a single-host cert for
    `bootstrap.*`.
 
-4. **Point sprout at that resolver** (names must match Traefik). Default keeps
-   Coolify quickstart unchanged; coexistence points at the new name:
+4. **Point sprout at that resolver** (names must match Traefik). Default
+   keeps Coolify quickstart unchanged; coexistence points at the new name:
 
    ```bash
    # compose.env / gateway env
@@ -382,33 +396,33 @@ for the resolver body used in step 2.
    Deploy a preview. Traefik should terminate TLS with the stored wildcard;
    **no new LE order** for that hostname (store hit / `No ACME certificate
    generation required` in Traefik ACME logs). Other Coolify apps can keep
-   using `letsencrypt` (HTTP-01) on the coexistence path; preview hosts must
-   use the resolver that holds `*.PREVIEW_DOMAIN`.
+   using `letsencrypt` (HTTP-01) on the coexistence path; preview hosts
+   must use the resolver that holds `*.PREVIEW_DOMAIN`.
 
-5. **Monitor renewal.** Let's Encrypt wildcards renew before expiry (~30 days
-   out). Confirm Traefik still has DNS credentials and that ACME storage is
-   writable (the DNS-01 resolver's path — coexistence: the distinct second
-   file). Optionally dry-run against the staging CA (`caServer`) on a
-   non-prod Traefik first.
+5. **Monitor renewal.** Let's Encrypt wildcards renew before expiry (~30
+   days out). Confirm Traefik still has DNS credentials and that ACME
+   storage is writable (the DNS-01 resolver's path — coexistence: the
+   distinct second file). Optionally dry-run against the staging CA
+   (`caServer`) on a non-prod Traefik first.
 
 #### Managed Traefik notes (Coolify and similar)
 
 sprout does not configure Coolify's proxy. On a managed Traefik:
 
 - Find where that product exposes **certificates resolvers** / ACME storage
-  (static config, UI, or generated compose). You need a `dnsChallenge`
-  resolver there — Docker labels alone cannot add one.
+  (static config, UI, or generated compose). A `dnsChallenge` resolver is
+  needed there — Docker labels alone cannot add one.
 - Prefer converting the existing resolver when this Traefik only terminates
-  hosts your DNS creds cover; use the coexistence branch only when HTTP-01
+  hosts the DNS creds cover; use the coexistence branch only when HTTP-01
   must remain for other apps.
-- Ensure every ACME JSON path is on **persistent storage**, not an ephemeral
-  container filesystem. Dual resolvers need **two** durable files.
+- Ensure every ACME JSON path is on **persistent storage**, not an
+  ephemeral container filesystem. Dual resolvers need **two** durable files.
 - Provider credentials belong in the **proxy** environment, not in sprout
   gateway env.
 - Gateway knobs stay the same: `SPROUT_TRAEFIK_ENTRYPOINTS` +
-  `SPROUT_TRAEFIK_CERTRESOLVER` must match the managed proxy's entrypoint and
-  the resolver that holds the wildcard. If the managed proxy cannot add or
-  convert to DNS-01, you keep per-host issuance and rate limits.
+  `SPROUT_TRAEFIK_CERTRESOLVER` must match the managed proxy's entrypoint
+  and the resolver that holds the wildcard. If the managed proxy cannot add
+  or convert to DNS-01, per-host issuance and rate limits remain.
 
 #### Verification (zero LE orders per deploy)
 
@@ -421,33 +435,37 @@ After the wildcard is in the store:
 | New preview → **zero new LE orders** | Note LE account order count or Traefik ACME log cursor. `sprout deploy` a fresh PR host. Confirm logs show a store hit / `No ACME certificate generation required` for that FQDN against the resolver that holds the wildcard — **no** `Obtain` / new order; `openssl s_client` (or browser) shows the wildcard cert (`CN`/`SAN` includes `*.previews.example.com`). |
 | Rate-limit safety | Optional: temporarily revoke network to the DNS API and deploy again — TLS should still work from the store (renewal would fail later; issuance on deploy must not be required). |
 
-Acceptance from [#105](https://github.com/simpros/sprout/issues/105): new preview deploys order zero LE certificates (store hit); ACME storage survives Traefik restarts/upgrades; renewal observed or staging dry-run verified.
+Acceptance from [#105](https://github.com/simpros/sprout/issues/105): new
+preview deploys order zero LE certificates (store hit); ACME storage
+survives Traefik restarts/upgrades; renewal observed or staging dry-run
+verified.
 
 ## Preview mail (Mailpit)
 
-The reference compose stack ships a Mailpit service for preview mail, and
-the gateway joins its `mail` network (`SPROUT_MAIL_NETWORK`, default
-`sprout-mail`). Preview app, companion-service, and seed containers
-receive the canonical `MAIL*` env (see [Previews](previews.md#email-from-a-preview)) and join that
-network, so they reach Mailpit by hostname. Mail is never provisioned per
-preview: one shared Mailpit, one shared inbox for the whole gateway.
+Give previews a shared mailbox. The reference compose stack ships a Mailpit
+service for preview mail, and the gateway joins its `mail` network
+(`SPROUT_MAIL_NETWORK`, default `sprout-mail`). Preview app,
+companion-service, and seed containers receive the canonical `MAIL*` env
+(see [Previews](previews.md#email-from-a-preview)) and join that network,
+so they reach Mailpit by hostname. Mail is never provisioned per preview:
+one shared Mailpit, one shared inbox for the whole gateway.
 
-Pointing at an external Mailpit (a Mailpit running outside the preview
+Point at an external Mailpit (a Mailpit running outside the preview
 networks, or a long-lived instance shared across environments):
 
 1. Set `SPROUT_MAIL_HOST` to the hostname preview containers use to reach
    it on `SPROUT_MAIL_NETWORK` — a container-network DNS name, mirroring
    how `SPROUT_PG_HOST` names Postgres. That is often different from the
    host an operator's browser uses.
-2. Set `SPROUT_MAIL_NETWORK` to the Docker network Mailpit is attached
-   to (create it first if needed). Preview app containers join it
-   alongside Traefik (+ Postgres for `postgres` previews); seed
-   containers join it whenever a seed can run.
+2. Set `SPROUT_MAIL_NETWORK` to the Docker network Mailpit is attached to
+   (create it first if needed). Preview app containers join it alongside
+   Traefik (+ Postgres for `postgres` previews); seed containers join it
+   whenever a seed can run.
 3. Set `SPROUT_MAIL_UI_URL` to the inbox URL humans open (surfaced in the
    MR note, `sprout list`, and deploy output).
 4. Leave `SPROUT_MAIL_PORT` at `1025` unless the instance listens
-   elsewhere; leave `SPROUT_MAIL_USER` / `SPROUT_MAIL_PASSWORD` empty
-   when Mailpit accepts any credentials (the bundled service does —
+   elsewhere; leave `SPROUT_MAIL_USER` / `SPROUT_MAIL_PASSWORD` empty when
+   Mailpit accepts any credentials (the bundled service does —
    `MP_SMTP_AUTH_ACCEPT_ANY=1`), otherwise set both.
 
 Unset group = no mail: with no `SPROUT_MAIL_*` set, previews deploy
@@ -456,15 +474,15 @@ gateway boot (`Incomplete mail configuration: missing SPROUT_MAIL_HOST`).
 
 ### How the mailbox is protected
 
-The bundled compose publishes Mailpit's UI (`8025`) and SMTP (`1025`) on
-host ports for local smoke. In production, treat the mailbox as internal:
+Treat the mailbox as internal. The bundled compose publishes Mailpit's UI
+(`8025`) and SMTP (`1025`) on host ports for local smoke; in production:
 
 - Put basic auth on the Mailpit UI and API with Mailpit's own knobs
   (`MP_UI_AUTH` as `user:password`, or `MP_UI_AUTH_FILE` pointing at a
   file holding it) and restrict serving with `MP_ALLOWED_HOSTS` — see the
   Mailpit docs for exact semantics.
-- Do not publish the SMTP port beyond the preview networks; previews
-  reach it over `SPROUT_MAIL_NETWORK`, browsers need only the UI.
+- Do not publish the SMTP port beyond the preview networks; previews reach
+  it over `SPROUT_MAIL_NETWORK`, browsers need only the UI.
 - Never use a preview to send real customer mail. The default
   `SPROUT_MAIL_FROM_DOMAIN=preview.invalid` is a reserved suffix that can
   never deliver for real — keep it unless the fleet has a dedicated,
@@ -472,11 +490,11 @@ host ports for local smoke. In production, treat the mailbox as internal:
 
 ## Dashboard (read-only, opt-in)
 
-The gateway can serve a single human-readable page of live previews at
-`GET /dashboard` — one row per preview with repository slug, PR id linked to
-the forge PR, status, clickable preview URL, database name and provider,
-created and last-deploy timestamps, mail identity when mail is configured,
-and the last deploy outcome or error code. It renders from the same state the
+Serve a human-readable page of live previews at `GET /dashboard` — one row
+per preview with repository slug, PR id linked to the forge PR, status,
+clickable preview URL, database name and provider, created and last-deploy
+timestamps, mail identity when mail is configured, and the last deploy
+outcome or error code. It renders from the same state the
 `GET /v1/previews` read surface reads, costs one state query per request
 regardless of preview count (no per-preview container inspection), and ships
 as server-rendered HTML with inline styles only: no frontend toolchain, no
@@ -506,11 +524,12 @@ credential material.
 
 ## Env var reference
 
-Canonical compose keys live in [`compose.env.example`](../compose.env.example).
-Host `bun run dev` uses [`.env.example`](../.env.example) (same gateway names;
-different defaults for host networking). Keep `POSTGRES_*` and
-`SPROUT_PREVIEW_POSTGRES_URL` in sync in `compose.env`; do not synthesize the
-DSN from the raw password in YAML.
+Set gateway env from this table. Canonical compose keys live in
+[`compose.env.example`](../compose.env.example). Host `bun run dev` uses
+[`.env.example`](../.env.example) (same gateway names; different defaults
+for host networking). Keep `POSTGRES_*` and
+`SPROUT_PREVIEW_POSTGRES_URL` in sync in `compose.env`; do not synthesize
+the DSN from the raw password in YAML.
 
 ### Compose project (`compose.env`)
 
@@ -560,16 +579,16 @@ DSN from the raw password in YAML.
 Forge kind is chosen **per repo** from the canonical URL (`github.com` /
 `gitlab.com`) or `SPROUT_FORGE_HOSTS` — not a gateway-wide forge switch.
 
-Registry: the deploy request carries a fully-qualified `app_image`; there is no
-separate registry-host env. Host `docker login` does not help gateway-initiated
-Engine API pulls — set registry auth when images are private. Malformed
-`SPROUT_REGISTRY_AUTHS_JSON` fails at boot.
+Registry: the deploy request carries a fully-qualified `app_image`; there
+is no separate registry-host env. Host `docker login` does not help
+gateway-initiated Engine API pulls — set registry auth when images are
+private. Malformed `SPROUT_REGISTRY_AUTHS_JSON` fails at boot.
 
 ### Optional gateway tuning (host `.env` / non-compose)
 
-Compose pins `SPROUT_PORT=7331` inside the container. These tuning knobs are in
-`.env.example` for host runs (and may be added to compose `environment:` if you
-need non-defaults):
+Compose pins `SPROUT_PORT=7331` inside the container. These tuning knobs
+are in `.env.example` for host runs (and may be added to compose
+`environment:` for non-defaults):
 
 | Variable | Default |
 |---|---|
@@ -587,26 +606,26 @@ need non-defaults):
 | `SPROUT_POSTGRES_MAX_CONNECTIONS` | `off` (`100` in the compose example) |
 
 `SPROUT_SWEEP_CRON` is a cron expression (local gateway time); an invalid
-value fails gateway boot. The first sweep pass lands on the next boundary —
-never at boot.
+value fails gateway boot. The first sweep pass lands on the next boundary
+— never at boot.
 
 Unbounded by default: with TTL/idle/caps all `off` the gateway keeps every
-running preview until PR close and logs a loud boot warning. Rows that never
-complete a deploy are still collected by the legacy creation-age bound
-(`SPROUT_TTL_HOURS`). The self-serve compose
-stack sets `SPROUT_PREVIEW_TTL=7d` so a new operator is safe without
-configuring anything; an existing deployment upgrades with no new required
-env and identical behaviour apart from that warning.
+running preview until PR close and logs a loud boot warning. Rows that
+never complete a deploy are still collected by the legacy creation-age
+bound (`SPROUT_TTL_HOURS`). The self-serve compose stack sets
+`SPROUT_PREVIEW_TTL=7d` so a new operator is safe without configuring
+anything; an existing deployment upgrades with no new required env and
+identical behaviour apart from that warning.
 
 ### Preview caps and connection budget
 
-Caps fail fast and loudly: exceeding `SPROUT_MAX_PREVIEWS` or
-`SPROUT_MAX_PREVIEWS_PER_REPO` fails the deploy with `preview_limit_reached`
-naming the cap, its value, and the current count — no container and no
-database is created. The sweep logs over-cap state but never deletes to fix
-it; close a PR or raise the cap.
+Enforce caps instead of discovering overload afterwards. Exceeding
+`SPROUT_MAX_PREVIEWS` or `SPROUT_MAX_PREVIEWS_PER_REPO` fails the deploy
+with `preview_limit_reached` naming the cap, its value, and the current
+count — no container and no database is created. The sweep logs over-cap
+state but never deletes to fix it; close a PR or raise the cap.
 
-Connection arithmetic the gateway enforces instead of discovering afterwards:
+Connection arithmetic the gateway enforces:
 
 `projected = (active previews + 1) × SPROUT_PREVIEW_MAX_DB_CONNECTIONS`
 against `SPROUT_POSTGRES_MAX_CONNECTIONS`. A deploy beyond the projection
@@ -617,18 +636,20 @@ silently enforcing nothing.
 Measured case: each preview app holds two long-lived pools at default size,
 so ~12 idle connections per preview; ~8 previews fill a 100-slot Postgres
 instance with zero traffic (`remaining connection slots are reserved for
-SUPERUSER`, SQLSTATE 53300). Set `SPROUT_PREVIEW_MAX_DB_CONNECTIONS=12` and
-`SPROUT_POSTGRES_MAX_CONNECTIONS=100` to enforce that shape. The figure is
-only accurate for apps that honour the injected cap — a repo that raises its
-pool sizes bypasses the budget, and the gateway must not assume otherwise.
-Raising `max_connections` is headroom, not a bound.
+SUPERUSER`, SQLSTATE 53300). Set `SPROUT_PREVIEW_MAX_DB_CONNECTIONS=12`
+and `SPROUT_POSTGRES_MAX_CONNECTIONS=100` to enforce that shape. The figure
+is only accurate for apps that honour the injected cap — a repo that raises
+its pool sizes bypasses the budget, and the gateway must not assume
+otherwise. Raising `max_connections` is headroom, not a bound.
 
 For HTTPS behind an external Traefik, set entrypoints (and optionally
-certresolver) to that proxy's names. Example Coolify-shaped values (operator
-choice, not sprout defaults): `SPROUT_TRAEFIK_ENTRYPOINTS=https` and
-`SPROUT_TRAEFIK_CERTRESOLVER=letsencrypt` (HTTP-01, or the same name after a
-DNS-01 convert — see [Wildcard preview certificate (DNS-01)](#wildcard-preview-certificate-dns-01);
-use `letsencrypt-dns` only on the coexistence path).
+certresolver) to that proxy's names. Example Coolify-shaped values
+(operator choice, not sprout defaults):
+`SPROUT_TRAEFIK_ENTRYPOINTS=https` and
+`SPROUT_TRAEFIK_CERTRESOLVER=letsencrypt` (HTTP-01, or the same name after
+a DNS-01 convert — see [Wildcard preview certificate
+(DNS-01)](#wildcard-preview-certificate-dns-01); use `letsencrypt-dns` only
+on the coexistence path).
 
 For SSO via Traefik forwardAuth (e.g. VoidAuth), set both
 `SPROUT_TRAEFIK_MIDDLEWARES=voidauth` and
@@ -636,18 +657,19 @@ For SSO via Traefik forwardAuth (e.g. VoidAuth), set both
 
 ## Install telemetry
 
-The published image reports anonymous installation facts and deploy
-outcomes to a maintainer-run endpoint — on by default, one variable to stop
-(`SPROUT_TELEMETRY=off`, or `DO_NOT_TRACK=1`). Full schema and off switches:
+Leave the defaults unless the fleet opts out. The published image reports
+anonymous installation facts and deploy outcomes to a maintainer-run
+endpoint — on by default, one variable to stop (`SPROUT_TELEMETRY=off`,
+or `DO_NOT_TRACK=1`). Schema, payloads, and off switches:
 [Telemetry](telemetry.md).
 
-- `SPROUT_TELEMETRY` is the on/off knob (`on`/`off`, `1`/`0`, `true`/`false`,
-  `yes`/`no`, case-insensitive; anything else fails boot).
+- `SPROUT_TELEMETRY` is the on/off knob (`on`/`off`, `1`/`0`,
+  `true`/`false`, `yes`/`no`, case-insensitive; anything else fails boot).
 - `SPROUT_TELEMETRY_ENDPOINT` + `SPROUT_TELEMETRY_AUTH` are the destination
   pair: both set means reporting is active, exactly one set fails boot,
   neither set means nothing is sent.
 - A from-source build carries no destination (the `Dockerfile` `ARG`
-  defaults are empty), so it reports nothing until you set the pair. To opt
+  defaults are empty), so it reports nothing until the pair is set. To opt
   a source build in, pass the same two variables as build args:
 
 ```bash
@@ -669,38 +691,41 @@ separate opt-in feature (`SPROUT_OTLP_*`, #262) — never both in one knob.
 **Fresh Postgres, zero SQL.** Point `SPROUT_PREVIEW_POSTGRES_URL` at a new
 instance whose admin has `CREATEROLE` (or is superuser), set
 `SPROUT_PG_USER` / `SPROUT_PG_PASSWORD`, start the gateway — no
-`CREATE ROLE`, no init scripts, no compose one-shot. Compose no longer ships
-an `ensure-preview-role` service; the gateway owns role ensure on boot
-(and again before each `CREATE DATABASE`).
+`CREATE ROLE`, no init scripts, no compose one-shot. Compose no longer
+ships an `ensure-preview-role` service; the gateway owns role ensure on
+boot (and again before each `CREATE DATABASE`).
 
-If `SPROUT_PG_USER` is missing the gateway runs
-`CREATE ROLE … LOGIN PASSWORD …`; if present it
-`ALTER ROLE … LOGIN PASSWORD …` so password rotation is
-`change SPROUT_PG_PASSWORD` + restart. Role names must match the lowercase
-`SAFE_ROLE` guard. Without `CREATEROLE` (or superuser), boot fails with a
-clear error instead of a later `CREATE DATABASE … OWNER` failure.
+If `SPROUT_PG_USER` is missing the gateway runs `CREATE ROLE … LOGIN
+PASSWORD …`; if present it `ALTER ROLE … LOGIN PASSWORD …` so password
+rotation is `change SPROUT_PG_PASSWORD` + restart. Role names must match
+the lowercase `SAFE_ROLE` guard. Without `CREATEROLE` (or superuser), boot
+fails with a clear error instead of a later `CREATE DATABASE … OWNER`
+failure.
 
 An optional manual helper remains at
-`deploy/postgres/ensure-preview-role.sh` for pre-provisioning without starting
-the gateway.
+`deploy/postgres/ensure-preview-role.sh` for pre-provisioning without
+starting the gateway.
 
-The gateway preview-db module grants that role ownership when it creates each
-`sprout_<slug>_pr<id>` database, and — for `dual` previews (`db.roles`,
-see [Adopting a repo](adopting-a-repo.md)) — also creates a per-DB restricted companion
+The gateway preview-db module grants that role ownership when it creates
+each `sprout_<slug>_pr<id>` database, and — for `dual` previews
+(`db.roles`, see [Adopting a
+repo](adopting-a-repo.md)) — also creates a per-DB restricted companion
 LOGIN (`<dbName>_app`) with `CONNECT` + schema `USAGE`. Containers receive
-owner credentials as `PGUSER`/`PGPASSWORD` and, in `dual` only, companion credentials as
-`PGAPPUSER`/`PGAPPPASSWORD` (remappable via `preview.env` — see [Adopting a repo](adopting-a-repo.md)). Teardown drops the database then the companion role when one was provisioned.
+owner credentials as `PGUSER`/`PGPASSWORD` and, in `dual` only, companion
+credentials as `PGAPPUSER`/`PGAPPPASSWORD` (remappable via `preview.env` —
+see [Adopting a repo](adopting-a-repo.md)). Teardown drops the database
+then the companion role when one was provisioned.
 
 ## Bootstrap admin token
 
-On every boot where the raw bearer is known (pinned `SPROUT_ADMIN_TOKEN`, or
-first-time auto-generate), the gateway writes it to `SPROUT_ADMIN_TOKEN_PATH`
-(mode `0600`). Compose and the gateway image publish
-`SPROUT_ADMIN_TOKEN_PATH=/data/admin-token` so the embedded CLI does not guess
-from the SQLite path. Later boots with a hashed-only admin require that file to
-still be readable (missing/empty → boot fails). When `SPROUT_ADMIN_TOKEN` is
-unset or blank on first generate, the raw token is also printed once in gateway
-logs:
+Persist the admin bearer across boots. On every boot where the raw bearer
+is known (pinned `SPROUT_ADMIN_TOKEN`, or first-time auto-generate), the
+gateway writes it to `SPROUT_ADMIN_TOKEN_PATH` (mode `0600`). Compose and
+the gateway image publish `SPROUT_ADMIN_TOKEN_PATH=/data/admin-token` so
+the embedded CLI does not guess from the SQLite path. Later boots with a
+hashed-only admin require that file to still be readable (missing/empty →
+boot fails). When `SPROUT_ADMIN_TOKEN` is unset or blank on first
+generate, the raw token is also printed once in gateway logs:
 
 ```bash
 docker compose --env-file compose.env logs gateway | grep -i admin
@@ -708,10 +733,10 @@ docker compose --env-file compose.env logs gateway | grep -i admin
 
 Create a **deploy token** for each adopting repo by exec'ing the CLI already
 in the gateway image (`SPROUT_URL` defaults to `http://127.0.0.1:7331`).
-Against that loopback URL the CLI resolves a bearer as:
-`SPROUT_TOKEN` → `SPROUT_ADMIN_TOKEN` → `SPROUT_ADMIN_TOKEN_PATH` (default
-`admin-token`; `/data/admin-token` in-container), so bare `docker exec` works
-for pinned and auto-generated admin tokens:
+Against that loopback URL the CLI resolves a bearer as: `SPROUT_TOKEN` →
+`SPROUT_ADMIN_TOKEN` → `SPROUT_ADMIN_TOKEN_PATH` (default `admin-token`;
+`/data/admin-token` in-container), so bare `docker exec` works for pinned
+and auto-generated admin tokens:
 
 ```bash
 # Primary path: CLI embedded in the gateway image (no SPROUT_TOKEN needed)
@@ -729,9 +754,9 @@ Store the deploy token in the adopting repo's CI secrets as `SPROUT_TOKEN`.
 
 ## Worktree DB (local provisioner)
 
-Parallel agents / herdr worktrees on one machine can clash on shared Postgres
-credentials. The CLI provisions an isolated DB + LOGIN role per worktree
-**without** talking to the gateway:
+Isolate per-worktree Postgres credentials for parallel agents / herdr
+worktrees on one machine. The CLI provisions an isolated DB + LOGIN role
+per worktree **without** talking to the gateway:
 
 ```bash
 sprout worktree-db provision --slug <name> --env-file <path> --admin-url "$ADMIN_DSN"
@@ -746,15 +771,17 @@ sprout worktree-db drop --slug <name> --admin-url "$ADMIN_DSN"
   underscores). `drop` refuses any name outside the `sprout_wt_` prefix.
 - Worktree key rule (CLI `--slug`; distinct from adopting-repo **slug**):
   lowercase, `[^a-z0-9-]` → `-`, collapse runs, max 40 characters.
-- `provision` is idempotent: a second run re-ensures the role/DB and rewrites
-  connection vars in `--env-file` (creates the file if missing; atomic
-  temp+rename). When `PGPASSWORD` is already present in the env file, that
-  password is reused so live connections are not rotated. Defaults write
-  `DATABASE_URL` plus canonical `PGHOST` / `PGPORT` / `PGUSER` /
-  `PGPASSWORD` / `PGDATABASE`; rename with
-  `--rename LOGICAL=NAME` (logical keys: `DATABASE_URL`, `PGHOST`, …).
+- `provision` is idempotent: a second run re-ensures the role/DB and
+  rewrites connection vars in `--env-file` (creates the file if missing;
+  atomic temp+rename). When `PGPASSWORD` is already present in the env
+  file, that password is reused so live connections are not rotated.
+  Defaults write `DATABASE_URL` plus canonical `PGHOST` / `PGPORT` /
+  `PGUSER` / `PGPASSWORD` / `PGDATABASE`; rename with `--rename
+  LOGICAL=NAME` (logical keys: `DATABASE_URL`, `PGHOST`, …).
 
 ## Upgrade / redeploy
+
+Pull latest operator files, then rebuild + recreate:
 
 ```bash
 # Pull latest operator files, then rebuild + recreate
@@ -763,19 +790,22 @@ docker compose --env-file compose.env up -d --build
 curl -sf http://127.0.0.1:7331/healthz
 ```
 
-- Changing `SPROUT_PG_PASSWORD` (or other role env) → restart the gateway so
-  boot re-syncs the preview login.
+- Changing `SPROUT_PG_PASSWORD` (or other role env) → restart the gateway
+  so boot re-syncs the preview login.
 - Changing network names or moving to the external overlay → recreate the
-  gateway against the new networks (`up -d --build gateway` with the overlay
-  files as needed).
+  gateway against the new networks (`up -d --build gateway` with the
+  overlay files as needed).
 - Upgrading from legacy `preview-buddy*` / `pb*` / `prev_*` defaults is a
-  **wipe-and-redeploy**: tear down volumes, networks, and control-plane state,
-  then bring the stack up again. There is no in-place migrator. Pin
-  `SPROUT_TRAEFIK_NETWORK` / `SPROUT_POSTGRES_NETWORK` / `SPROUT_STATE_DB_PATH` /
-  `SPROUT_ADMIN_TOKEN_PATH` (and role env vars) only when you intentionally use
-  non-default names (external Traefik, Coolify, etc.).
+  **wipe-and-redeploy**: tear down volumes, networks, and control-plane
+  state, then bring the stack up again. There is no in-place migrator. Pin
+  `SPROUT_TRAEFIK_NETWORK` / `SPROUT_POSTGRES_NETWORK` /
+  `SPROUT_STATE_DB_PATH` / `SPROUT_ADMIN_TOKEN_PATH` (and role env vars)
+  only when intentionally using non-default names (external Traefik,
+  Coolify, etc.).
 
 ## Teardown
+
+Remove the stack:
 
 ```bash
 docker compose --env-file compose.env down
@@ -791,10 +821,10 @@ docker compose -f docker-compose.yml -f docker-compose.external.yml \
 
 ## Smoke checklist
 
-`POSTGRES_PASSWORD` and the password embedded in `SPROUT_PREVIEW_POSTGRES_URL` are
-two spellings of one secret — keep them identical in `compose.env`. Drift is a
-known risk of this dual-write; catch it with the login vs redacted-URL check
-below.
+`POSTGRES_PASSWORD` and the password embedded in
+`SPROUT_PREVIEW_POSTGRES_URL` are two spellings of one secret — keep them
+identical in `compose.env`. Drift is a known risk of this dual-write; catch
+it with the login vs redacted-URL check below.
 
 | Check | Command |
 |---|---|

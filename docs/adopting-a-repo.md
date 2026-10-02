@@ -1,28 +1,25 @@
 # Adopting a repo
 
-`.sprout.yaml` is the config-as-code file in an adopting repo: slug, preview
-hostname template, optional health-check settings, optional companion service
-routing metadata, optional `build` / `seed` image blocks, optional `db`
-provider block, and computed env values. This page is the contract.
+Write the `.sprout.yaml` config-as-code file at the repo root and the app
+entrypoint that runs inside the preview. Each section below is one task.
 
-- First preview? Start in [Getting started](getting-started.md).
-- CI wiring for your forge? See [CI integration](ci-integration.md).
-- Lifecycle (databases, seeding, services, mail)? See [Previews](previews.md).
-- Commands and debugging? See [CLI reference](cli-reference.md).
+- First preview: [Getting started](getting-started.md).
+- CI wiring for the forge: [CI integration](ci-integration.md).
+- Lifecycle (databases, seeding, services, mail): [Previews](previews.md).
+- Commands and debugging: [CLI reference](cli-reference.md).
 
 Copy-paste app files live in
 [`examples/adopting-repo/README.md`](../examples/adopting-repo/README.md).
 
 ## Manifest keys (`.sprout.yaml`)
 
-The CLI reads this file locally and sends parsed values to the gateway.
-Unknown keys are rejected (`unknown key: <path>`). This table is the
-contract; the notes directly below it (connection env, value grammar, merge
-order) are part of the contract. Seeding order lives in
+Look up any key here. The CLI reads this file locally and sends parsed
+values to the gateway. Unknown keys are rejected (`unknown key: <path>`).
+The table plus the three subsections directly below it (connection env,
+value grammar, merge order) are the contract. Seeding order lives in
 [Previews](previews.md#seed-run-order-and-resume), service merge rules in
 [Previews](previews.md#service-images-merge-leave-clear-lifecycle), mail in
-[Previews](previews.md#email-from-a-preview). Test
-pointers live in [CLI reference](cli-reference.md#test-coverage-maintainers).
+[Previews](previews.md#email-from-a-preview).
 
 | Key | Required | Default | Purpose |
 |---|---|---|---|
@@ -61,8 +58,9 @@ pointers live in [CLI reference](cli-reference.md#test-coverage-maintainers).
 
 ### Connection env: names, roles, reservation, port
 
-The gateway injects these connection variables into preview app, service,
-and seed containers. Which set you get follows `db.provider`:
+Read this before naming a connection variable. The gateway injects these
+connection variables into preview app, service, and seed containers. Which
+set arrives follows `db.provider`:
 
 Postgres (`db.provider: postgres`, the default):
 
@@ -72,15 +70,12 @@ PGAPPUSER  PGAPPPASSWORD   (dual only — see db.roles below)
 ```
 
 `db.roles` selects the Postgres credential axis (`single` | `dual`,
-Postgres only; rejected on `sqlite` / `none`). `dual` provisions the
-restricted companion role and injects `PGAPPUSER` / `PGAPPPASSWORD`
-exactly as before; `single` provisions no companion and injects neither
-name anywhere. The default is derived: `dual` when `preview.env`
-remaps `PGAPPUSER` or `PGAPPPASSWORD`, otherwise `single` — an adopter
-who never mentions the companion never gets one, and existing remap
-users keep working with zero config change. An explicit `db.roles`
-wins over the derivation, and explicit `db.roles: single` plus a
-companion remap fails fast at manifest parse and at the deploy route
+Postgres only; rejected on `sqlite` / `none`). The default is derived:
+`dual` when `preview.env` remaps `PGAPPUSER` or `PGAPPPASSWORD`,
+otherwise `single` — a repo that never mentions the companion gets none,
+and existing remap users keep working with no config change. An explicit
+`db.roles` wins over the derivation, and explicit `db.roles: single` plus
+a companion remap fails fast at manifest parse and at the deploy route
 (`preview.env.<KEY> conflicts with db.roles single`).
 
 SQLite (`db.provider: sqlite`):
@@ -94,12 +89,12 @@ at all — every `preview.env` entry is rejected at manifest parse
 (`preview.env.PGHOST requires db.provider postgres`) and at the gateway
 deploy route, and a `seed:` block is rejected the same way
 (`seed requires db.provider postgres or sqlite (db.provider is none)`).
-See [Previews](previews.md#no-database-previews) for the lifecycle.
+See [Previews](previews.md#no-database-previews).
 
 No `PG*` keys are injected for a SQLite preview, and no `DATABASE_URL`
 for a Postgres one — `preview.env` entries for the other backend fail at
 manifest parse (`preview.env.PGHOST requires db.provider postgres`).
-See [Previews](previews.md#sqlite-previews) for the volume behaviour.
+See [Previews](previews.md#sqlite-previews).
 
 - **Owner** (`PGUSER` / `PGPASSWORD`): the static preview login
   (`SPROUT_PG_USER`). Owns each preview database — use this for migrations.
@@ -135,23 +130,24 @@ example, and the opt-out live in exactly one place —
 
 ### Env value grammar
 
-`preview.app_env` / `seed.env` values are a plain string, `{ generate:
-stable_per_pr }`, or `{ required: true }`. Strings may interpolate
-`{hostname}`, `{pr_id}`, `{commit_sha}` (`{commit_sha}` follows the forge
-SHA, `CI_COMMIT_SHA` on GitLab / `GITHUB_SHA` on GitHub). `generate`
-derives a per-MR secret (HMAC of repo, MR, key, keyed by the deploy token
-— keep the token stable for the MR lifetime). `required` must be supplied
-by CI; missing keys fail before the gateway call naming the key.
+Write `preview.app_env` / `seed.env` values in one of three forms: a plain
+string, `{ generate: stable_per_pr }`, or `{ required: true }`. Strings
+may interpolate `{hostname}`, `{pr_id}`, `{commit_sha}` (`{commit_sha}`
+follows the forge SHA, `CI_COMMIT_SHA` on GitLab / `GITHUB_SHA` on
+GitHub). `generate` derives a per-MR secret (HMAC of repo, MR, key, keyed
+by the deploy token — keep the token stable for the MR lifetime).
+`required` must be supplied by CI; missing keys fail before the gateway
+call naming the key.
 
 ### Env merge order
 
-App: yaml first, then `SPROUT_APP_ENV` / each `--app-env-file` in order,
-then `--app-env` flags (later wins per key). Seed: yaml first, then
-`SPROUT_SEED_ENV` / each `--seed-env-file` in order, then `--seed-env`
-flags. Seed args: yaml `seed.args` first, then `--seed-arg` flags
-appended.
+Layer env so later wins per key. App: yaml first, then `SPROUT_APP_ENV` /
+each `--app-env-file` in order, then `--app-env` flags. Seed: yaml first,
+then `SPROUT_SEED_ENV` / each `--seed-env-file` in order, then
+`--seed-env` flags. Seed args: yaml `seed.args` first, then `--seed-arg`
+flags appended.
 
-Minimal app-only manifest (defaults apply):
+Write a minimal app-only manifest (defaults apply):
 
 ```yaml
 slug: myapp
@@ -159,53 +155,52 @@ preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"
 ```
 
-Seeded manifest (as in the quickstart): add `health:` + `seed:`. `seed: {}`
-alone enables seeding with the conventional `Dockerfile.seed`.
+Write a seeded manifest (as in the quickstart): add `health:` + `seed:`.
+`seed: {}` alone enables seeding with the conventional `Dockerfile.seed`.
 
 ## App image: migrate at startup
 
-Contract above is normative; this section is entrypoint examples only.
-Connection names, owner/companion roles, and the port rule live in
-Connection env — snippets below assume the default `PG*` map (`dual`
-adds `PGAPP*`; `single` omits them).
-
-Your app image must:
+Make the app entrypoint do these three things in order. The connection
+names, owner/companion roles, and the port rule live in Connection env —
+snippets below assume the default `PG*` map (`dual` adds `PGAPP*`;
+`single` omits them):
 
 1. Wait until Postgres accepts connections.
 2. Run migrations as the **owner** against the injected database name
    (default `PGDATABASE`); `GRANT` to the companion role for RLS instead
    of creating roles.
 3. Start the web server, connecting runtime queries as `PGAPPUSER` when
-   you need RLS.
+   RLS scoping is needed.
 
-There is **no mandatory wrapper image** from sprout. Copy an entrypoint
-that fits your stack.
+There is no mandatory wrapper image from sprout. Copy an entrypoint that
+fits the stack. Migrations must be **idempotent** — synchronize
+re-deploys keep the same database and re-run migrate on every container
+start.
 
 ### Dual-role (RLS) previews
 
-Set `db.roles: dual` for product databases that use a privileged owner
-+ restricted RLS role — previews then work without cluster `CREATEROLE`
-on the preview login (without the flag there is no companion role and
-no `PGAPP*` names to read):
+Scope product databases that use a privileged owner + restricted RLS role.
+Set `db.roles: dual` so previews work without cluster `CREATEROLE` on the
+preview login (without it there is no companion role and no `PGAPP*` names
+to read):
 
 1. Migrate with `PGUSER` / `PGPASSWORD` (owner).
 2. `GRANT` the needed table/sequence privileges to the role in `PGAPPUSER`
    (and enable RLS / policies as in production).
 3. Open the app pool with `PGAPPUSER` / `PGAPPPASSWORD` (remap via
-   `preview.env` if that matches your product env names).
+   `preview.env` when the product env names differ).
 
 ### Extra app env (non-connection)
 
-Example only — grammar, merge order, and the gateway reservation rule
-live above. Adopters often need runtime env beyond the connection fields
-(`BETTER_AUTH_SECRET`, app URLs, trusted origins, etc.): pass those as
-`preview.app_env` / `seed.env` in `.sprout.yaml`, a masked file-type
-`SPROUT_APP_ENV` / `SPROUT_SEED_ENV` dotenv blob, repeatable
-`--app-env-file` / `--seed-env-file`, or repeatable `--app-env KEY=VALUE` /
-`--seed-env KEY=VALUE`. Forge File-var wiring lives in
-[`templates/README.md`](../templates/README.md); placeholders expand in
-every layer. File-type CI variables do NOT survive component `inputs:`
-expansion — map file-type blobs at job runtime via `variables:`
+Pass runtime env beyond the connection fields (`BETTER_AUTH_SECRET`, app
+URLs, trusted origins) as `preview.app_env` / `seed.env` in
+`.sprout.yaml`, a masked file-type `SPROUT_APP_ENV` / `SPROUT_SEED_ENV`
+dotenv blob, repeatable `--app-env-file` / `--seed-env-file`, or
+repeatable `--app-env KEY=VALUE` / `--seed-env KEY=VALUE`. Grammar, merge
+order, and the gateway reservation rule live above. Forge File-var wiring
+lives in [`templates/README.md`](../templates/README.md); placeholders
+expand in every layer. File-type CI variables do NOT survive component
+`inputs:` expansion — map file-type blobs at job runtime via `variables:`
 (`SPROUT_APP_ENV: $MY_ENV_FILE`), never as `app_env_file:` inputs.
 
 Example:
@@ -225,7 +220,7 @@ preview:
 
 ### Shell entrypoint (any runtime)
 
-See [`examples/adopting-repo/docker-entrypoint.sh`](../examples/adopting-repo/docker-entrypoint.sh)
+Copy [`examples/adopting-repo/docker-entrypoint.sh`](../examples/adopting-repo/docker-entrypoint.sh)
 (default `PG*` names):
 
 ```bash
@@ -246,12 +241,11 @@ bun run db:migrate
 exec bun run start
 ```
 
-Migrations must be **idempotent** — synchronize re-deploys keep the same
-database and re-run migrate on every container start.
-
 ## Deploy token setup
 
-One-time per adopting repo (operator or lead dev with admin token):
+Mint one deploy token per adopting repo (operator or lead dev with the
+admin token), then store the returned token as the repo's `SPROUT_TOKEN`
+secret:
 
 ```bash
 export SPROUT_URL=https://sprout.example.com
@@ -260,8 +254,6 @@ sprout admin token create \
   --scope deploy \
   --repo "https://github.com/${GITHUB_REPOSITORY}"
 ```
-
-Add the returned token to the repo's `SPROUT_TOKEN` secret.
 
 Reviewers may see brief 502 responses while the app migrates and starts —
 Traefik routes exist before the app is healthy.

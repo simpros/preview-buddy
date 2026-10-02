@@ -46,7 +46,7 @@ export const docsGroups: PageGroup[] = [
     { file: "docs/onboarding-prompt.md", title: "Onboarding prompt", description: "copy-paste agent block (entry point for agents).", role: "Agent", entry: true },
   ] },
   { name: "Adopting", pages: [
-    { file: "docs/adopting-a-repo.md", title: "Adopting a repo", description: "sprout.yaml manifest reference and app entrypoints." },
+    { file: "docs/adopting-a-repo.md", title: "Adopting a repo", description: "write .sprout.yaml and the app entrypoint." },
     { file: "docs/ci-integration.md", title: "CI integration", description: "GitLab component, GitHub reusable workflow, variables, reset, notes." },
   ] },
   { name: "Previews", pages: [
@@ -55,8 +55,8 @@ export const docsGroups: PageGroup[] = [
   { name: "Operating", pages: [
     { file: "docs/operator-deploy.md", title: "Operator deploy", description: "gateway compose stack, Traefik, env reference, admin token." },
     { file: "docs/cli-reference.md", title: "CLI reference", description: "every sprout command, debugging, tokens." },
-    { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "adopter and operator error catalogue." },
-    { file: "docs/telemetry.md", title: "Telemetry", description: "anonymous install reporting and how to stop it." },
+    { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "symptom → fix catalogue for adopters and operators." },
+    { file: "docs/telemetry.md", title: "Telemetry", description: "what is sent, what it costs, how to stop it." },
     { file: "docs/herdr-integration.md", title: "Herdr integration", description: "operator-side review automation." },
   ] },
 ];
