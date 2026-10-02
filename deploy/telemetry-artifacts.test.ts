@@ -8,11 +8,13 @@ const repoRoot = join(deployDir, "..");
 const ENDPOINT_KEY = "SPROUT_TELEMETRY_ENDPOINT";
 const AUTH_KEY = "SPROUT_TELEMETRY_AUTH";
 
-// A value assignment is KEY= followed by a non-space value that is not a
-// variable reference ($...); empty defaults and ${...} templates are allowed.
+// A value assignment is KEY= followed by a non-space value. Quoted and
+// unquoted variable references ($..., "${...}") are the documented wiring,
+// not values; everything else is a leak.
 const ASSIGNMENT = new RegExp(
   `SPROUT_TELEMETRY_(?:ENDPOINT|AUTH)=(\\S+)`,
 );
+const REFERENCE = /^\$|^["']\$/;
 
 async function trackedFiles(): Promise<string[]> {
   const proc = Bun.spawnSync(["git", "ls-files"], {
@@ -84,7 +86,7 @@ describe("telemetry destination hygiene", () => {
       }
       for (const line of text.split("\n")) {
         const match = ASSIGNMENT.exec(line);
-        if (match && !match[1]?.startsWith("$")) {
+        if (match && !REFERENCE.test(match[1] ?? "")) {
           offenders.push(`${rel}: ${line.trim()}`);
         }
       }

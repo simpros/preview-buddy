@@ -7,4 +7,5 @@ These docs are for agents. Start with the onboarding prompt.
 - [Operator deploy](https://simpros.github.io/sprout/docs/operator-deploy.md): gateway compose stack, Traefik, env reference, admin token.
 - [CLI reference](https://simpros.github.io/sprout/docs/cli-reference.md): every sprout command, debugging, tokens.
 - [Troubleshooting](https://simpros.github.io/sprout/docs/troubleshooting.md): adopter and operator error catalogue.
+- [Telemetry](https://simpros.github.io/sprout/docs/telemetry.md): anonymous install reporting and how to stop it.
 - [Herdr integration](https://simpros.github.io/sprout/docs/herdr-integration.md): operator-side review automation.
