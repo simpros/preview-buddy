@@ -10,7 +10,6 @@ import {
   DEPLOY_FAILED_EVENT_KEYS,
   DEPLOY_SUCCESS_EVENT_KEYS,
   INSTALL_EVENT_KEYS,
-  parseTelemetryPlan,
   sproutVersion,
   TELEMETRY_CAPABILITY_VOCABULARY,
   telemetryPlatform,
@@ -73,11 +72,13 @@ describe("telemetry payload", () => {
     const event = buildDeployEvent({
       installId: INSTALL_ID,
       config: testConfig(),
-      outcome: "running",
-      plan: "full_replace",
-      seeded: false,
-      durationMs: 1234.6,
-      phaseMs: { db: 10.2, app: 800 },
+      outcome: {
+        outcome: "running",
+        plan: "full_replace",
+        seeded: false,
+        durationMs: 1234.6,
+        phaseMs: { db: 10.2, app: 800 },
+      },
       now: NOW,
     });
     expect([...Object.keys(event)].sort()).toEqual(
@@ -96,13 +97,15 @@ describe("telemetry payload", () => {
     const event = buildDeployEvent({
       installId: INSTALL_ID,
       config: testConfig(),
-      outcome: "failed",
-      plan: "seed_resume",
-      seeded: false,
-      durationMs: 42,
-      phaseMs: { app: 40 },
-      failureClass: "seed_failed",
-      failureFamily: "seed_incomplete",
+      outcome: {
+        outcome: "failed",
+        plan: "seed_resume",
+        seeded: false,
+        durationMs: 42,
+        phaseMs: { app: 40 },
+        failureClass: "seed_failed",
+        failureFamily: "seed_incomplete",
+      },
       now: NOW,
     });
     expect([...Object.keys(event)].sort()).toEqual(
@@ -118,13 +121,15 @@ describe("telemetry payload", () => {
     const event = buildDeployEvent({
       installId: INSTALL_ID,
       config: testConfig(),
-      outcome: "failed",
-      plan: "full_replace",
-      seeded: false,
-      durationMs: 7,
-      phaseMs: {},
-      failureClass: null,
-      failureFamily: null,
+      outcome: {
+        outcome: "failed",
+        plan: "full_replace",
+        seeded: false,
+        durationMs: 7,
+        phaseMs: {},
+        failureClass: null,
+        failureFamily: null,
+      },
       now: NOW,
     });
     expect(event.failure_class).toBe("unknown");
@@ -135,11 +140,13 @@ describe("telemetry payload", () => {
     const event = buildDeployEvent({
       installId: INSTALL_ID,
       config: testConfig(),
-      outcome: "running",
-      plan: "close",
-      seeded: true,
-      durationMs: 5,
-      phaseMs: { db: 1, pull: 99 } as unknown as { db: number },
+      outcome: {
+        outcome: "running",
+        plan: "close",
+        seeded: true,
+        durationMs: 5,
+        phaseMs: { db: 1, pull: 99 } as unknown as { db: number },
+      },
       now: NOW,
     });
     expect(event.phase_ms).toEqual({ db: 1 });
@@ -193,11 +200,5 @@ describe("telemetry payload", () => {
         "custom_forge_hosts",
       ]),
     );
-  });
-
-  test("unknown plans fall back to full_replace", () => {
-    expect(parseTelemetryPlan(null)).toBe("full_replace");
-    expect(parseTelemetryPlan("sync_close")).toBe("sync_close");
-    expect(parseTelemetryPlan("injected-plan")).toBe("full_replace");
   });
 });

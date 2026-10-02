@@ -1,5 +1,7 @@
 /** Display form of a configured telemetry endpoint, never the credential. */
 
+export type TelemetryOffReason = "SPROUT_TELEMETRY" | "DO_NOT_TRACK";
+
 export function formatTelemetryDestination(endpoint: string): string {
   try {
     const url = new URL(endpoint);
@@ -13,7 +15,7 @@ export function formatTelemetryDestination(endpoint: string): string {
 /** Boot-line and summary form of the telemetry state. */
 export function describeTelemetryState(options: {
   enabled: boolean;
-  offReason: "SPROUT_TELEMETRY" | "DO_NOT_TRACK" | null;
+  offReason: TelemetryOffReason | null;
   endpoint: string;
 }): string {
   if (!options.enabled) return `off (${options.offReason ?? "SPROUT_TELEMETRY"})`;

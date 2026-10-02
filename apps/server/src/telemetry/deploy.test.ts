@@ -170,8 +170,11 @@ describe("deploy telemetry", () => {
         [...DEPLOY_FAILED_EVENT_KEYS].sort(),
       );
       expect(event?.outcome).toBe("failed");
-      expect(event?.failure_class).toBe("preview_app_pull_failed");
-      expect(event?.failure_family).toBeNull();
+      if (event?.outcome !== "failed") {
+        throw new Error("expected a failed deploy event");
+      }
+      expect(event.failure_class).toBe("preview_app_pull_failed");
+      expect(event.failure_family).toBeNull();
       const serialized = JSON.stringify(event);
       expect(serialized).not.toContain(CANARY_DETAIL);
       expect(serialized).not.toContain("lastErrorDetail");

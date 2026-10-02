@@ -1,5 +1,3 @@
-import { describeTelemetryState } from "./destination.ts";
-
 /** Daily heartbeat: boot plus every 24h on the gateway's local clock. */
 export const TELEMETRY_HEARTBEAT_CRON = "0 0 * * *";
 
@@ -21,12 +19,4 @@ export function startTelemetryHeartbeat(
       job.stop();
     },
   };
-}
-
-export function telemetryStateLine(options: {
-  enabled: boolean;
-  offReason: "SPROUT_TELEMETRY" | "DO_NOT_TRACK" | null;
-  endpoint: string;
-}): string {
-  return `telemetry ${describeTelemetryState(options)}`;
 }

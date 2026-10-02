@@ -49,6 +49,21 @@ export type LifecycleDeps = {
   previewDb: PreviewDbRouter;
   app: PreviewAppOps;
   dataVolumes: PreviewDataVolumes;
+  /**
+   * Per-deploy phase stopwatch. Absent on the synchronous path, which
+   * reports nothing; the async path installs a collector before bringing
+   * the preview up.
+   */
+  phaseTimer?: PhaseTimer;
+};
+
+/** Bring-up phases with a telemetry interest, nothing more. */
+export type PreviewPhase = "db" | "app" | "seed";
+
+export type PreviewPhaseMs = { [K in PreviewPhase]?: number };
+
+export type PhaseTimer = {
+  record(phase: PreviewPhase, ms: number): void;
 };
 
 export type ProvisionInput = {

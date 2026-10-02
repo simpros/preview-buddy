@@ -647,7 +647,6 @@ describe("telemetry config", () => {
     const config = loadConfig();
     expect(config.telemetryEnabled).toBe(true);
     expect(config.telemetryOffReason).toBeNull();
-    expect(configSummary(config).telemetry).toBe("on (no destination)");
     expect(configSummary(config).telemetryAuth).toBe("[empty]");
   });
 
@@ -657,7 +656,6 @@ describe("telemetry config", () => {
     const config = loadConfig();
     expect(config.telemetryEnabled).toBe(false);
     expect(config.telemetryOffReason).toBe("DO_NOT_TRACK");
-    expect(configSummary(config).telemetry).toBe("off (DO_NOT_TRACK)");
   });
 
   test("SPROUT_TELEMETRY=off names its own switch", () => {
@@ -666,7 +664,6 @@ describe("telemetry config", () => {
     const config = loadConfig();
     expect(config.telemetryEnabled).toBe(false);
     expect(config.telemetryOffReason).toBe("SPROUT_TELEMETRY");
-    expect(configSummary(config).telemetry).toBe("off (SPROUT_TELEMETRY)");
   });
 
   test("both switches together report SPROUT_TELEMETRY", () => {
@@ -713,9 +710,6 @@ describe("telemetry config", () => {
       "https://telemetry.example.com/api/o/s/_json",
     );
     const summary = configSummary(config);
-    expect(String(summary.telemetry)).toStartWith("on → ");
-    expect(String(summary.telemetry)).toContain("telemetry.example.com");
-    expect(String(summary.telemetry)).not.toContain("secret");
     expect(summary.telemetryAuth).toBe("[set]");
     expect(JSON.stringify(summary)).not.toContain("secret");
   });

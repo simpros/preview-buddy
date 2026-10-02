@@ -2,7 +2,6 @@ import type { DbProvider } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import { resolvePreviewAccessLabels } from "../app-deployment/preview-auth.ts";
 import { extractPullDetail } from "../docker/pull-failure.ts";
-import type { TelemetryPhaseMs } from "../telemetry/payload.ts";
 import { withDbNameLock } from "./locks.ts";
 import { markPreviewFailed, markStickyPreviewFailed } from "./mark-failed.ts";
 import {
@@ -24,6 +23,7 @@ import type {
   PreviewSnapshot,
   ProvisionInput,
 } from "./types.ts";
+import { timed } from "./timing.ts";
 import { previewSnapshotFromRow } from "./snapshot.ts";
 
 const clearLastError = {
@@ -33,7 +33,7 @@ const clearLastError = {
   seedLog: null,
 } as const;
 
-function parseBringUpPlan(raw: string | null): BringUpPlan {
+export function parseBringUpPlan(raw: string | null): BringUpPlan {
   switch (raw) {
     case "seed_resume":
     case "sync_close":
@@ -240,89 +240,83 @@ async function attachAppContainer(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
-  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewRow>> {
-  const appStart = Date.now();
-  try {
+  return timed(deps, "app", async () => {
     let containerId: string;
     let port: number;
-  try {
-    const previewAccess = await resolvePreviewAccessLabels({
-      slug: row.slug,
-      prId: row.prId,
-      stored: row,
-      ...(input.previewAuth ? { previewAuth: input.previewAuth } : {}),
-    });
-    ({ containerId, port } = await deps.app.replace({
-      slug: row.slug,
-      prId: row.prId,
-      hostname: input.hostname,
-      image: input.appImage,
-      appEnv: input.appEnv,
-      plan: input.plan,
-      ...(input.labels !== undefined ? { labels: input.labels } : {}),
-      ...(input.traefikTls !== undefined ? { traefikTls: input.traefikTls } : {}),
-      ...(input.traefikForwardAuth !== undefined
-        ? { traefikForwardAuth: input.traefikForwardAuth }
-        : {}),
-      previewAccess,
-    }));
-  } catch {
-    await markPreviewFailed(
+    try {
+      const previewAccess = await resolvePreviewAccessLabels({
+        slug: row.slug,
+        prId: row.prId,
+        stored: row,
+        ...(input.previewAuth ? { previewAuth: input.previewAuth } : {}),
+      });
+      ({ containerId, port } = await deps.app.replace({
+        slug: row.slug,
+        prId: row.prId,
+        hostname: input.hostname,
+        image: input.appImage,
+        appEnv: input.appEnv,
+        plan: input.plan,
+        ...(input.labels !== undefined ? { labels: input.labels } : {}),
+        ...(input.traefikTls !== undefined ? { traefikTls: input.traefikTls } : {}),
+        ...(input.traefikForwardAuth !== undefined
+          ? { traefikForwardAuth: input.traefikForwardAuth }
+          : {}),
+        previewAccess,
+      }));
+    } catch {
+      await markPreviewFailed(
+        deps.db,
+        row.canonicalRepoId,
+        row.prId,
+        "preview_app_deploy_failed",
+      );
+      return { ok: false, status: 500, error: "preview_app_deploy_failed" };
+    }
+
+    const now = utcIsoNow();
+    const starting = await updatePreviewRow(
       deps.db,
-      row.canonicalRepoId,
-      row.prId,
-      "preview_app_deploy_failed",
+      row,
+      {
+        hostname: input.hostname,
+        appImage: input.appImage,
+        containerId,
+        status: "starting",
+        ...clearLastError,
+        updatedAt: now,
+      },
+      "preview_row_missing_on_app_attach",
     );
-    return { ok: false, status: 500, error: "preview_app_deploy_failed" };
-  }
 
-  const now = utcIsoNow();
-  const starting = await updatePreviewRow(
-    deps.db,
-    row,
-    {
-      hostname: input.hostname,
-      appImage: input.appImage,
+    const outcome = await deps.app.waitHealthy(
       containerId,
-      status: "starting",
-      ...clearLastError,
-      updatedAt: now,
-    },
-    "preview_row_missing_on_app_attach",
-  );
+      port,
+      input.health,
+      input.plan.appNetworks,
+    );
+    if (outcome === "timeout") {
+      console.warn("health:timeout");
+      return failUnhealthyAttach(deps, row, "health_timeout");
+    }
 
-  const outcome = await deps.app.waitHealthy(
-    containerId,
-    port,
-    input.health,
-    input.plan.appNetworks,
-  );
-  if (outcome === "timeout") {
-    console.warn("health:timeout");
-    return failUnhealthyAttach(deps, row, "health_timeout");
-  }
-
-  return { ok: true, value: starting };
-  } finally {
-    if (timings) timings.app = Date.now() - appStart;
-  }
+    return { ok: true, value: starting };
+  });
 }
 
 async function attachThenPromote(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
-  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
-  const attached = await attachAppContainer(deps, row, input, timings);
+  const attached = await attachAppContainer(deps, row, input);
   if (!attached.ok) return attached;
   const starting = attached.value;
   const promoted = await promoteAfterHealthy(
     deps,
     starting,
     deployEphemerals(input),
-    timings,
   );
   if (!promoted.ok) return promoted;
   return finishAfterPromote(deps, starting, input);
@@ -332,13 +326,12 @@ async function ensureThenAttach(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
-  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
-  const dbStart = Date.now();
-  const ensured = await ensureDatabase(deps, row, input);
-  if (timings && input.plan.dbName != null) {
-    timings.db = Date.now() - dbStart;
-  }
+  // A nameless plan provisions no database, so there is no db phase to time.
+  const ensured =
+    input.plan.dbName != null
+      ? await timed(deps, "db", () => ensureDatabase(deps, row, input))
+      : await ensureDatabase(deps, row, input);
   if (!ensured.ok) {
     await markPreviewFailed(
       deps.db,
@@ -348,7 +341,7 @@ async function ensureThenAttach(
     );
     return ensured;
   }
-  return attachThenPromote(deps, row, input, timings);
+  return attachThenPromote(deps, row, input);
 }
 
 async function pullImageOrFail(
@@ -401,7 +394,6 @@ export async function completeBringUp(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
-  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
   switch (parseBringUpPlan(row.bringUpPlan)) {
     case "seed_resume": {
@@ -418,7 +410,6 @@ export async function completeBringUp(
         deps,
         row,
         deployEphemerals(input),
-        timings,
       );
       if (!seeded.ok) return seeded;
       return finishAfterPromote(deps, row, input);
@@ -428,6 +419,6 @@ export async function completeBringUp(
     case "close":
       return closeRunning(deps, row);
     case "full_replace":
-      return ensureThenAttach(deps, row, input, timings);
+      return ensureThenAttach(deps, row, input);
   }
 }

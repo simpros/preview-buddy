@@ -1,4 +1,5 @@
 import type { Result } from "./result.ts";
+import { parseBringUpPlan } from "./bring-up.ts";
 import {
   claimDeployIntent,
   getPreviewRow,
@@ -12,12 +13,12 @@ import {
 import {
   parsePreviewStatus,
 } from "./snapshot.ts";
-import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
-import {
-  parseTelemetryPlan,
-  type TelemetryOutcome,
-  type TelemetryPhaseMs,
-} from "../telemetry/payload.ts";
+import { createPhaseCollector } from "./timing.ts";
+import type { BringUpPlan } from "./types.ts";
+import type {
+  TelemetryDeployHook,
+  TelemetryDeployOutcome,
+} from "../telemetry/reporter.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -78,16 +79,18 @@ export async function runAsyncDeploy(
 ): Promise<void> {
   const key = previewKey(input.repo, input.prId);
   const startedAt = Date.now();
-  const timings: TelemetryPhaseMs = {};
-  let plan = parseTelemetryPlan(null);
+  const phases = createPhaseCollector();
+  // The stored bring-up plan and the telemetry plan share one vocabulary,
+  // so the preview parser feeds the deploy report with no telemetry import.
+  let plan: BringUpPlan = "full_replace";
   try {
     const intent = await getPreviewRow(deps.db, input.repo, input.prId);
-    plan = parseTelemetryPlan(intent?.bringUpPlan ?? null);
+    plan = parseBringUpPlan(intent?.bringUpPlan ?? null);
   } catch {
-    plan = parseTelemetryPlan(null);
+    // The stored plan is advisory; a lost row read keeps the default.
   }
   try {
-    await provisionPreview(deps, input, timings);
+    await provisionPreview({ ...deps, phaseTimer: phases.timer }, input);
   } catch (err) {
     console.warn("provision:background_failed", err);
     try {
@@ -106,31 +109,35 @@ export async function runAsyncDeploy(
     } catch {
     }
   } finally {
-    inFlightDeploys.delete(key);
-    // The export itself is fire-and-forget; only the local row read waits.
+    // The terminal row is read while the in-flight marker still blocks a
+    // successor deploy for this key, so the event describes this deploy and
+    // never the next one. Only the fire-and-forget export leaves the lock.
     const telemetry = deps.telemetry;
+    let outcome: TelemetryDeployOutcome | undefined;
     if (telemetry) {
       try {
         const row = await getPreviewRow(deps.db, input.repo, input.prId);
-        const outcome: TelemetryOutcome =
-          row?.status === "running" ? "running" : "failed";
-        telemetry.reportDeployOutcome({
-          outcome,
+        const failed = row?.status !== "running";
+        const base = {
           plan,
           seeded: row?.seededAt != null,
           durationMs: Date.now() - startedAt,
-          phaseMs: timings,
-          ...(outcome === "failed"
-            ? {
-                failureClass: row?.lastError ?? null,
-                failureFamily: row?.failureFamily ?? null,
-              }
-            : {}),
-        });
+          phaseMs: phases.phaseMs,
+        };
+        outcome = failed
+          ? {
+            ...base,
+            outcome: "failed" as const,
+            failureClass: row?.lastError ?? null,
+            failureFamily: row?.failureFamily ?? null,
+          }
+          : { ...base, outcome: "running" as const };
       } catch {
         // Telemetry must never change a deploy outcome.
       }
     }
+    inFlightDeploys.delete(key);
+    if (telemetry && outcome) telemetry.reportDeployOutcome(outcome);
   }
 }
 

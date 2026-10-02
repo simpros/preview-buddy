@@ -30,8 +30,6 @@ export type TelemetryPlan =
   | "sync_close"
   | "close";
 
-export type TelemetryOutcome = "running" | "failed";
-
 export type TelemetryPhaseMs = {
   db?: number;
   app?: number;
@@ -55,16 +53,26 @@ export type TelemetryInstallEvent = TelemetryEnvelope & {
   deploys_total: number;
 };
 
-export type TelemetryDeployEvent = TelemetryEnvelope & {
-  event: "deploy";
-  outcome: TelemetryOutcome;
-  plan: TelemetryPlan;
-  seeded: boolean;
-  duration_ms: number;
-  phase_ms: TelemetryPhaseMs;
-  failure_class?: string;
-  failure_family?: string | null;
-};
+export type TelemetryDeployEvent = TelemetryEnvelope & (
+  | {
+    event: "deploy";
+    outcome: "running";
+    plan: TelemetryPlan;
+    seeded: boolean;
+    duration_ms: number;
+    phase_ms: TelemetryPhaseMs;
+  }
+  | {
+    event: "deploy";
+    outcome: "failed";
+    plan: TelemetryPlan;
+    seeded: boolean;
+    duration_ms: number;
+    phase_ms: TelemetryPhaseMs;
+    failure_class: string;
+    failure_family: string | null;
+  }
+);
 
 export type TelemetryEvent = TelemetryInstallEvent | TelemetryDeployEvent;
 
@@ -142,17 +150,28 @@ export function capabilitiesFromConfig(
   return out;
 }
 
-export function parseTelemetryPlan(raw: string | null | undefined): TelemetryPlan {
-  switch (raw) {
-    case "seed_resume":
-    case "sync_close":
-    case "close":
-    case "full_replace":
-      return raw;
-    default:
-      return "full_replace";
+/**
+ * Deploy-report contract: a success never carries failure fields, a failure
+ * always carries both. Callers build one variant; the builder maps it onto
+ * the matching event shape with no conditional spreads.
+ */
+export type TelemetryDeployOutcome =
+  | {
+    outcome: "running";
+    plan: TelemetryPlan;
+    seeded: boolean;
+    durationMs: number;
+    phaseMs: TelemetryPhaseMs;
   }
-}
+  | {
+    outcome: "failed";
+    plan: TelemetryPlan;
+    seeded: boolean;
+    durationMs: number;
+    phaseMs: TelemetryPhaseMs;
+    failureClass: string | null;
+    failureFamily: string | null;
+  };
 
 function baseEnvelope(options: {
   installId: string;
@@ -193,36 +212,52 @@ export function buildInstallEvent(options: {
 export function buildDeployEvent(options: {
   installId: string;
   config: Config;
-  outcome: TelemetryOutcome;
-  plan: TelemetryPlan;
-  seeded: boolean;
-  durationMs: number;
-  phaseMs: TelemetryPhaseMs;
-  failureClass?: string | null;
-  failureFamily?: string | null;
+  outcome: Extract<TelemetryDeployOutcome, { outcome: "running" }>;
+  now?: number;
+}): Extract<TelemetryDeployEvent, { outcome: "running" }>;
+export function buildDeployEvent(options: {
+  installId: string;
+  config: Config;
+  outcome: Extract<TelemetryDeployOutcome, { outcome: "failed" }>;
+  now?: number;
+}): Extract<TelemetryDeployEvent, { outcome: "failed" }>;
+export function buildDeployEvent(options: {
+  installId: string;
+  config: Config;
+  outcome: TelemetryDeployOutcome;
+  now?: number;
+}): TelemetryDeployEvent;
+export function buildDeployEvent(options: {
+  installId: string;
+  config: Config;
+  outcome: TelemetryDeployOutcome;
   now?: number;
 }): TelemetryDeployEvent {
-  const event: TelemetryDeployEvent = {
+  const outcome = options.outcome;
+  const shared = {
     ...baseEnvelope({
       installId: options.installId,
       config: options.config,
       now: options.now ?? Date.now(),
     }),
-    event: "deploy",
-    outcome: options.outcome,
-    plan: options.plan,
-    seeded: options.seeded,
-    duration_ms: Math.max(0, Math.round(options.durationMs)),
-    phase_ms: phaseMsOnly(options.phaseMs),
+    event: "deploy" as const,
+    plan: outcome.plan,
+    seeded: outcome.seeded,
+    duration_ms: Math.max(0, Math.round(outcome.durationMs)),
+    phase_ms: phaseMsOnly(outcome.phaseMs),
   };
-  if (options.outcome === "failed") {
-    // The stored code is absent only when the row never recorded one.
-    event.failure_class = options.failureClass ?? "unknown";
-    event.failure_family = options.failureClass == null
-      ? "unknown"
-      : (options.failureFamily ?? null);
+  if (outcome.outcome === "running") {
+    return { ...shared, outcome: "running" as const };
   }
-  return event;
+  // The stored code is absent only when the row never recorded one.
+  return {
+    ...shared,
+    outcome: "failed" as const,
+    failure_class: outcome.failureClass ?? "unknown",
+    failure_family: outcome.failureClass == null
+      ? "unknown"
+      : (outcome.failureFamily ?? null),
+  };
 }
 
 /** Only the closed-vocabulary phase keys travel; everything else is dropped. */

@@ -67,6 +67,29 @@ describe("telemetry reporter", () => {
     }
   });
 
+  test("describe names the destination host, never the credential", async () => {
+    setGatewayEnv({
+      SPROUT_TELEMETRY_ENDPOINT:
+        "https://telemetry.example.com/api/o/s/_json",
+      SPROUT_TELEMETRY_AUTH: "Basic test-value",
+    });
+    const { db, cleanup } = await createTestDb();
+    const tmp = await tempTelemetryDir();
+    try {
+      const reporter = createTelemetryReporter({
+        config: loadConfig(),
+        db,
+        stateDbPath: tmp.stateDbPath,
+      });
+      expect(reporter.describe()).toStartWith("on → ");
+      expect(reporter.describe()).toContain("telemetry.example.com");
+      expect(reporter.describe()).not.toContain("test-value");
+    } finally {
+      await cleanup();
+      await tmp.cleanup();
+    }
+  });
+
   test("install heartbeat counts rows and writes the id file", async () => {
     const receiver = await startTelemetryReceiver();
     const { db, cleanup } = await createTestDb();

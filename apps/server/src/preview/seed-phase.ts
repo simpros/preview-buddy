@@ -2,7 +2,6 @@ import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import { previewAuthMode, type PreviewAuthSpec } from "@sprout/preview-env";
 import type { SeedImageResult, SeedImageSpec } from "../app-deployment/seed.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
-import type { TelemetryPhaseMs } from "../telemetry/payload.ts";
 import { markStickyPreviewFailed } from "./mark-failed.ts";
 import type { Result } from "./result.ts";
 import {
@@ -10,11 +9,13 @@ import {
   utcIsoNow,
   type PreviewRow,
 } from "./row.ts";
-import type { BringUpPlan } from "./types.ts";
+import type { BringUpPlan, PhaseTimer } from "./types.ts";
+import { timed } from "./timing.ts";
 
 export type SeedPhaseDeps = {
   db: StateDb;
   app: Pick<PreviewAppOps, "runSeed">;
+  phaseTimer?: PhaseTimer;
 };
 
 import type { PreviewDbPlan } from "./runtime.ts";
@@ -126,18 +127,14 @@ export async function promoteAfterHealthy(
   deps: SeedPhaseDeps,
   starting: PreviewRow,
   ephemerals: DeployEphemerals,
-  timings?: TelemetryPhaseMs,
 ): Promise<Result<true>> {
   const { seed } = ephemerals;
   const shouldSeed = seedWorkOutstanding(starting, seed, ephemerals.reseed);
 
   if (shouldSeed && seed) {
-    const seedStart = Date.now();
-    try {
-      return await runSeedPhase(deps, starting, { ...ephemerals, seed });
-    } finally {
-      if (timings) timings.seed = Date.now() - seedStart;
-    }
+    return timed(deps, "seed", () =>
+      runSeedPhase(deps, starting, { ...ephemerals, seed }),
+    );
   }
 
   await updatePreviewRow(
@@ -172,9 +169,9 @@ export async function resumeIncompleteSeed(
   deps: SeedPhaseDeps,
   row: PreviewRow,
   ephemerals: DeployEphemerals,
-  timings?: TelemetryPhaseMs,
 ): Promise<Result<true>> {
-  if (!ephemerals.seed) {
+  const seed = ephemerals.seed;
+  if (!seed) {
     await markStickyPreviewFailed(deps.db, row.canonicalRepoId, row.prId, {
       error: "seed_image_required_to_resume_seeding",
       family: "seed_incomplete",
@@ -186,13 +183,7 @@ export async function resumeIncompleteSeed(
       error: "seed_image_required_to_resume_seeding",
     };
   }
-  const seedStart = Date.now();
-  try {
-    return await runSeedPhase(deps, row, {
-      ...ephemerals,
-      seed: ephemerals.seed,
-    });
-  } finally {
-    if (timings) timings.seed = Date.now() - seedStart;
-  }
+  return timed(deps, "seed", () =>
+    runSeedPhase(deps, row, { ...ephemerals, seed }),
+  );
 }

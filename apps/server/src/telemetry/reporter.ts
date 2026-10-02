@@ -10,23 +10,12 @@ import { loadOrCreateInstallId, stateDbPathFromEnv } from "./install-id.ts";
 import {
   buildDeployEvent,
   buildInstallEvent,
-  type TelemetryDeployEvent,
+  type TelemetryDeployOutcome,
   type TelemetryEvent,
-  type TelemetryOutcome,
-  type TelemetryPhaseMs,
-  type TelemetryPlan,
 } from "./payload.ts";
 import { sendTelemetryEvent } from "./transport.ts";
 
-export type TelemetryDeployOutcome = {
-  outcome: TelemetryOutcome;
-  plan: TelemetryPlan;
-  seeded: boolean;
-  durationMs: number;
-  phaseMs: TelemetryPhaseMs;
-  failureClass?: string | null;
-  failureFamily?: string | null;
-};
+export type { TelemetryDeployOutcome } from "./payload.ts";
 
 /** Deploy-path hook: runAsyncDeploy reports through this, never the reporter. */
 export type TelemetryDeployHook = {
@@ -55,12 +44,12 @@ export function createTelemetryReporter(deps: {
   const active = config.telemetryEnabled && config.telemetryEndpoint !== "";
 
   async function exportEvent(
-    build: (installId: string) => TelemetryEvent,
+    build: (installId: string) => TelemetryEvent | Promise<TelemetryEvent>,
   ): Promise<void> {
     if (!active) return;
     try {
       const installId = await loadOrCreateInstallId(stateDbPath);
-      send(config.telemetryEndpoint, config.telemetryAuth, build(installId));
+      send(config.telemetryEndpoint, config.telemetryAuth, await build(installId));
     } catch (error) {
       console.warn(
         `telemetry export failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -83,48 +72,24 @@ export function createTelemetryReporter(deps: {
 
   function reportInstall(): void {
     if (!active) return;
-    void (async () => {
-      try {
-        const installId = await loadOrCreateInstallId(stateDbPath);
-        const counts = await installCounts();
-        send(
-          config.telemetryEndpoint,
-          config.telemetryAuth,
-          buildInstallEvent({
-            installId,
-            config,
-            previewsTotal: counts.previewsTotal,
-            deploysTotal: counts.deploysTotal,
-            now: now(),
-          }),
-        );
-      } catch (error) {
-        console.warn(
-          `telemetry export failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    })().catch(() => {});
+    void exportEvent(async (installId) => {
+      const counts = await installCounts();
+      return buildInstallEvent({
+        installId,
+        config,
+        previewsTotal: counts.previewsTotal,
+        deploysTotal: counts.deploysTotal,
+        now: now(),
+      });
+    });
   }
 
   function reportDeployOutcome(outcome: TelemetryDeployOutcome): void {
-    void exportEvent((installId): TelemetryDeployEvent => {
-      return buildDeployEvent({
-        installId,
-        config,
-        outcome: outcome.outcome,
-        plan: outcome.plan,
-        seeded: outcome.seeded,
-        durationMs: outcome.durationMs,
-        phaseMs: outcome.phaseMs,
-        ...(outcome.failureClass !== undefined
-          ? { failureClass: outcome.failureClass }
-          : {}),
-        ...(outcome.failureFamily !== undefined
-          ? { failureFamily: outcome.failureFamily }
-          : {}),
-        now: now(),
-      });
-    }).catch(() => {});
+    // exportEvent never rejects; the single guarded builder above owns the
+    // only failure path, so there is nothing to catch here.
+    void exportEvent((installId) =>
+      buildDeployEvent({ installId, config, outcome, now: now() }),
+    );
   }
 
   return {

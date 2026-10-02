@@ -2,7 +2,7 @@ import type {
   TraefikForwardAuth,
   TraefikTls,
 } from "./app-deployment/labels.ts";
-import { describeTelemetryState } from "./telemetry/destination.ts";
+import type { TelemetryOffReason } from "./telemetry/destination.ts";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -108,7 +108,6 @@ export type PreviewAuthConfig = {
   /** In-network forwardAuth address Traefik calls, e.g. http://gateway:7331/v1/internal/preview-auth. */
   address: string;
 };
-export type TelemetryOffReason = "SPROUT_TELEMETRY" | "DO_NOT_TRACK";
 
 export type DashboardConfig = {
   enabled: boolean;
@@ -573,11 +572,6 @@ export function configSummary(config: Config): Record<string, string | number> {
     traefikForwardAuth: formatTraefikForwardAuthSummary(
       config.traefikForwardAuth,
     ),
-    telemetry: describeTelemetryState({
-      enabled: config.telemetryEnabled,
-      offReason: config.telemetryOffReason,
-      endpoint: config.telemetryEndpoint,
-    }),
     telemetryAuth: config.telemetryAuth === "" ? "[empty]" : "[set]",
   };
 }
