@@ -52,7 +52,6 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
     ...(row.lastErrorDetail != null
       ? { last_error_detail: row.lastErrorDetail }
       : {}),
-    reset_request_marker: row.resetRequestMarker,
   };
 }
 

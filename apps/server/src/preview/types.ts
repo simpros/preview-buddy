@@ -93,7 +93,6 @@ export type PreviewSnapshot = {
   mail_from_name?: string;
   last_error?: string;
   last_error_detail?: string;
-  reset_request_marker: string | null;
 };
 
 export type TeardownSnapshot = {
