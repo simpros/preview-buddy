@@ -151,8 +151,19 @@ describe("none previews", () => {
         hostname: "pr-42.myapp.preview.example.com",
         status: "running",
         created_at: expect.any(String),
+        last_activity_at: expect.any(String),
+        expires_at: null,
+        expiry_reason: null,
       },
     ]);
+    // A governed deploy with both bounds off records activity with null
+    // bounds, so a running preview is unbounded (the legacy creation-age
+    // bound only collects rows that never completed a deploy).
+    const listed = body.previews[0] as {
+      created_at: string;
+      expires_at: string | null;
+    };
+    expect(listed.expires_at).toBeNull();
   });
 
   test("companion services start with no database env", async () => {

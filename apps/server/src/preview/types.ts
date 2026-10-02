@@ -1,4 +1,9 @@
-import type { HealthSpec, PreviewAuthSpec, PreviewLabels } from "@sprout/preview-env";
+import type {
+  EffectiveGovernanceMs,
+  HealthSpec,
+  PreviewAuthSpec,
+  PreviewLabels,
+} from "@sprout/preview-env";
 import type {
   PreviewAppOps,
   PreviewServiceSpec,
@@ -54,6 +59,9 @@ export type LifecycleDeps = {
    * the preview up.
    */
   phaseTimer?: PhaseTimer;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms) for the read surface,
+   * so responses show the same deadline the sweep enforces. */
+  legacyTtlMs: number;
 };
 
 /** Bring-up phases with a telemetry interest, nothing more. */
@@ -114,6 +122,7 @@ export type ProvisionInput = {
   traefikForwardAuth?: TraefikForwardAuth;
   auth?: PreviewAuthSpec;
   previewAuth?: PreviewAuthConfig;
+  governanceMs: EffectiveGovernanceMs;
 };
 
 export type TeardownInput = {
@@ -121,11 +130,24 @@ export type TeardownInput = {
   prId: number;
 };
 
+/** Removal cause recorded on the tombstone. Eviction ("sweep:pr-not-open")
+ * and expiry share the tombstone shape with manual teardown; only the
+ * recorded reason differs. See destroyPreviewRow. */
+export type PreviewExpiryReason =
+  | "sweep:ttl-expired"
+  | "sweep:idle-expired"
+  | "sweep:pr-not-open";
+
 export type RemovePreviewInput = {
   repo: string;
   prId: number;
   expectedDbName: string | null;
   expectedCreatedAt: string;
+  /** Staleness guard on the expiry signal: a refresh advances last activity
+   * without changing createdAt, so a plan built before the refresh must not
+   * drop. Compared exactly like expectedCreatedAt. */
+  expectedLastActivityAt: string | null;
+  expiryReason?: PreviewExpiryReason;
 };
 
 export type PreviewSnapshot = {
@@ -142,6 +164,9 @@ export type PreviewSnapshot = {
   mail_from_name?: string;
   last_error?: string;
   last_error_detail?: string;
+  last_activity_at: string | null;
+  expires_at: string | null;
+  expiry_reason: string | null;
 };
 
 export type TeardownSnapshot = {

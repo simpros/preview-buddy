@@ -23,6 +23,42 @@ This page owns the lifecycle: database providers, seeding, services, mail.
 
 Synchronize re-deploys keep the same database; only a reset wipes it.
 
+## Preview TTL and idle teardown
+
+A preview that nobody closes still disappears on a bound. Two manifest keys,
+both optional durations (`30m`, `2h`, `7d`) or `off`:
+
+```yaml
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+  ttl: 7d
+  idle_teardown: 2h
+```
+
+- `preview.ttl` — lifetime measured from the last successful deploy; a push
+  (or `ci reset` / `ci reseed`) refreshes the deadline.
+- `preview.idle_teardown` — idle lifetime measured from the same signal.
+
+The activity signal is exactly one thing: the last successful deploy,
+including reseed and reset. There is no per-preview access-log pipeline in
+this release and no edge traffic accounting — a quiet preview that receives
+HTTP traffic but no deploy still expires. The gateway's sweep
+(`SPROUT_SWEEP_CRON`, in-process `Bun.cron`) removes expired previews
+through the same path `teardown` uses (stop container, drop database; the
+seed watermark is kept on the tombstone and reset when the next deploy
+writes its provisioning intent), holding the per-preview lock so a preview
+mid-deploy is never expired. The expiry reason
+(`sweep:ttl-expired` / `sweep:idle-expired`) is stored on the row and
+`GET /v1/previews` plus the single-preview read return `expires_at`,
+`last_activity_at`, and the reason; the CI note carries an `- Expires:` line.
+
+Manifest keys override the gateway defaults (`SPROUT_PREVIEW_TTL`,
+`SPROUT_PREVIEW_IDLE_TEARDOWN`); `off` at the effective level disables that
+bound. With nothing configured the gateway is unbounded apart from PR-close
+teardown and logs a loud boot warning. The legacy creation-age bound
+(`SPROUT_TTL_HOURS`, default 72h) only collects rows that never completed
+a deploy; a running preview with both bounds off has no deadline.
+
 ## Preview database roles (`db.roles`)
 
 Postgres previews run with one (`single`) or two (`dual`) database

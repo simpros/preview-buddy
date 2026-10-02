@@ -574,15 +574,54 @@ need non-defaults):
 | Variable | Default |
 |---|---|
 | `SPROUT_PORT` | `7331` |
-| `SPROUT_TTL_HOURS` | `72` |
+| `SPROUT_TTL_HOURS` | `72` (legacy creation-age sweep; new governance below is off by default) |
 | `SPROUT_SWEEP_CRON` | `*/30 * * * *` |
 | `SPROUT_TELEMETRY` | `on` |
 | `SPROUT_PREVIEW_PORT_DEFAULT` | `8080` |
 | `SPROUT_SEED_TIMEOUT` | `180` |
+| `SPROUT_PREVIEW_TTL` | `off` (`7d` in the self-serve compose stack) |
+| `SPROUT_PREVIEW_IDLE_TEARDOWN` | `off` |
+| `SPROUT_MAX_PREVIEWS_PER_REPO` | `off` |
+| `SPROUT_MAX_PREVIEWS` | `off` |
+| `SPROUT_PREVIEW_MAX_DB_CONNECTIONS` | `off` |
+| `SPROUT_POSTGRES_MAX_CONNECTIONS` | `off` (`100` in the compose example) |
 
 `SPROUT_SWEEP_CRON` is a cron expression (local gateway time); an invalid
 value fails gateway boot. The first sweep pass lands on the next boundary —
 never at boot.
+
+Unbounded by default: with TTL/idle/caps all `off` the gateway keeps every
+running preview until PR close and logs a loud boot warning. Rows that never
+complete a deploy are still collected by the legacy creation-age bound
+(`SPROUT_TTL_HOURS`). The self-serve compose
+stack sets `SPROUT_PREVIEW_TTL=7d` so a new operator is safe without
+configuring anything; an existing deployment upgrades with no new required
+env and identical behaviour apart from that warning.
+
+### Preview caps and connection budget
+
+Caps fail fast and loudly: exceeding `SPROUT_MAX_PREVIEWS` or
+`SPROUT_MAX_PREVIEWS_PER_REPO` fails the deploy with `preview_limit_reached`
+naming the cap, its value, and the current count — no container and no
+database is created. The sweep logs over-cap state but never deletes to fix
+it; close a PR or raise the cap.
+
+Connection arithmetic the gateway enforces instead of discovering afterwards:
+
+`projected = (active previews + 1) × SPROUT_PREVIEW_MAX_DB_CONNECTIONS`
+against `SPROUT_POSTGRES_MAX_CONNECTIONS`. A deploy beyond the projection
+fails with `preview_connection_budget_exceeded`. The two vars are a pair —
+set both or neither; setting exactly one fails gateway boot instead of
+silently enforcing nothing.
+
+Measured case: each preview app holds two long-lived pools at default size,
+so ~12 idle connections per preview; ~8 previews fill a 100-slot Postgres
+instance with zero traffic (`remaining connection slots are reserved for
+SUPERUSER`, SQLSTATE 53300). Set `SPROUT_PREVIEW_MAX_DB_CONNECTIONS=12` and
+`SPROUT_POSTGRES_MAX_CONNECTIONS=100` to enforce that shape. The figure is
+only accurate for apps that honour the injected cap — a repo that raises its
+pool sizes bypasses the budget, and the gateway must not assume otherwise.
+Raising `max_connections` is headroom, not a bound.
 
 For HTTPS behind an external Traefik, set entrypoints (and optionally
 certresolver) to that proxy's names. Example Coolify-shaped values (operator

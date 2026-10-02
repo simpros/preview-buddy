@@ -177,6 +177,7 @@ async function syncPreviewServices(
 async function closeRunning(
   deps: LifecycleDeps,
   row: PreviewRow,
+  input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
   const now = utcIsoNow();
   const updated = await updatePreviewRow(
@@ -186,13 +187,17 @@ async function closeRunning(
       status: "running",
       bringUpPlan: null,
       ...clearLastError,
+      lastActivityAt: now,
+      ttlMs: input.governanceMs.ttlMs,
+      idleMs: input.governanceMs.idleMs,
+      expiryReason: null,
       updatedAt: now,
     },
     "preview_row_missing_on_running",
   );
   return {
     ok: true,
-    value: previewSnapshotFromRow(updated),
+    value: previewSnapshotFromRow(updated, deps.legacyTtlMs),
   };
 }
 
@@ -217,7 +222,7 @@ async function syncThenCloseRunning(
     services: input.services,
   });
   if (!synced.ok) return synced;
-  return closeRunning(deps, row);
+  return closeRunning(deps, row, input);
 }
 
 async function finishAfterPromote(
@@ -226,7 +231,7 @@ async function finishAfterPromote(
   input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
   if (input.services === undefined) {
-    return closeRunning(deps, row);
+    return closeRunning(deps, row, input);
   }
   return syncThenCloseRunning(deps, row, input);
 }
@@ -421,7 +426,7 @@ export async function completeBringUp(
     case "sync_close":
       return syncThenCloseRunning(deps, row, input);
     case "close":
-      return closeRunning(deps, row);
+      return closeRunning(deps, row, input);
     case "full_replace":
       return ensureThenAttach(deps, row, input);
   }

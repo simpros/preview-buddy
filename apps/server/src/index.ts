@@ -2,6 +2,7 @@ import { bindPreviewOps } from "./app-deployment/ops.ts";
 import { bootstrapAdminToken } from "./auth/bootstrap-admin.ts";
 import {
   configSummary,
+  governanceUnboundedWarning,
   loadConfig,
 } from "./config.ts";
 import { createDockerEngineClient } from "./docker/engine.ts";
@@ -19,6 +20,8 @@ import { createTraces } from "./telemetry/traces.ts";
 
 const config = loadConfig();
 console.log("sprout starting", configSummary(config));
+const unbounded = governanceUnboundedWarning(config);
+if (unbounded) console.warn(unbounded);
 
 const traces = createTraces(config);
 

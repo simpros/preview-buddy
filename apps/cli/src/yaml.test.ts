@@ -1233,3 +1233,56 @@ describe("preview.auth", () => {
     });
   });
 });
+
+describe("preview.ttl / preview.idle_teardown", () => {
+  const base = (extra: string) =>
+    parseSproutYaml(
+      `slug: myapp\npreview:\n  hostname: "pr-{pr_id}.example.com"\n${extra}`,
+    );
+
+  test("absent governance keys stay absent", () => {
+    expect(base("")).toEqual({
+      ok: true,
+      value: { slug: "myapp", preview: { hostname: "pr-{pr_id}.example.com" } },
+    });
+  });
+
+  test("parses durations and forwards the normalized string", () => {
+    expect(base("  ttl: 7d\n  idle_teardown: 2h\n")).toEqual({
+      ok: true,
+      value: {
+        slug: "myapp",
+        preview: {
+          hostname: "pr-{pr_id}.example.com",
+          ttl: "7d",
+          idle_teardown: "2h",
+        },
+      },
+    });
+  });
+
+  test("off disables and forwards as off", () => {
+    expect(base("  ttl: off\n  idle_teardown: OFF\n")).toEqual({
+      ok: true,
+      value: {
+        slug: "myapp",
+        preview: {
+          hostname: "pr-{pr_id}.example.com",
+          ttl: "off",
+          idle_teardown: "off",
+        },
+      },
+    });
+  });
+
+  test("rejects malformed governance with the key named", () => {
+    expect(base("  ttl: forever\n")).toEqual({
+      ok: false,
+      error: 'preview.ttl is invalid (expected e.g. 7d, 2h, 30m or off, got "forever")',
+    });
+    expect(base("  idle_teardown: 0\n")).toEqual({
+      ok: false,
+      error: 'preview.idle_teardown is invalid (expected e.g. 7d, 2h, 30m or off, got "0")',
+    });
+  });
+});

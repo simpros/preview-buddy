@@ -1,4 +1,5 @@
 import { deriveMailFromName } from "@sprout/preview-env";
+import { resolveRowExpiry } from "./governance.ts";
 import type { Result } from "./result.ts";
 import type { PreviewRow } from "./row.ts";
 import type {
@@ -27,7 +28,28 @@ export function parsePreviewStatus(status: string): Result<PreviewStatus> {
   }
 }
 
-export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
+/**
+ * Read-surface expiry: the displayed deadline and the sweep's deletion
+ * decision come from one derivation (`resolveRowExpiry`), over the same
+ * parsed instants, governance bounds, and legacy creation-age bound.
+ * Tombstones report null, matching the pre-derivation display.
+ */
+function expiresAtForRow(
+  row: Pick<
+    PreviewRow,
+    "status" | "lastActivityAt" | "createdAt" | "ttlMs" | "idleMs"
+  >,
+  legacyTtlMs: number,
+): string | null {
+  if (row.status === "removed") return null;
+  const { expiresAtMs } = resolveRowExpiry(row, legacyTtlMs);
+  return expiresAtMs === null ? null : new Date(expiresAtMs).toISOString();
+}
+
+export function previewSnapshotFromRow(
+  row: PreviewRow,
+  legacyTtlMs: number,
+): PreviewSnapshot {
   const status = parsePreviewStatus(row.status);
   const parsed = status.ok ? status.value : "failed";
   const effectiveFrom = row.mailFrom ?? undefined;
@@ -52,6 +74,9 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
     ...(row.lastErrorDetail != null
       ? { last_error_detail: row.lastErrorDetail }
       : {}),
+    last_activity_at: row.lastActivityAt ?? null,
+    expires_at: expiresAtForRow(row, legacyTtlMs),
+    expiry_reason: row.expiryReason ?? null,
   };
 }
 
@@ -63,8 +88,9 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
 export function presentPreviewSnapshot(
   row: PreviewRow,
   mailboxUrl: string | undefined,
+  legacyTtlMs: number,
 ): PreviewSnapshot {
-  const snapshot = previewSnapshotFromRow(row);
+  const snapshot = previewSnapshotFromRow(row, legacyTtlMs);
   if (snapshot.mail_from === undefined || mailboxUrl === undefined) {
     return snapshot;
   }
@@ -82,6 +108,9 @@ export type ListedPreview = {
   mailbox_url?: string;
   mail_from?: string;
   mail_from_name?: string;
+  last_activity_at: string | null;
+  expires_at: string | null;
+  expiry_reason: string | null;
 };
 
 /**
@@ -93,8 +122,9 @@ export function presentListedPreview(
   row: PreviewRow,
   mailboxUrl: string | undefined,
   status: DisplayPreviewStatus,
+  legacyTtlMs: number,
 ): ListedPreview {
-  const snap = presentPreviewSnapshot(row, mailboxUrl);
+  const snap = presentPreviewSnapshot(row, mailboxUrl, legacyTtlMs);
   return {
     canonical_repo_id: snap.canonical_repo_id,
     pr_id: snap.pr_id,
@@ -103,6 +133,9 @@ export function presentListedPreview(
     hostname: snap.hostname,
     status,
     created_at: row.createdAt,
+    last_activity_at: snap.last_activity_at,
+    expires_at: snap.expires_at,
+    expiry_reason: snap.expiry_reason,
     ...(snap.mail_from !== undefined ? { mail_from: snap.mail_from } : {}),
     ...(snap.mail_from_name !== undefined
       ? { mail_from_name: snap.mail_from_name }

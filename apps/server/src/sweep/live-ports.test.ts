@@ -8,7 +8,10 @@ import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
+import { offGovernanceConfig } from "../preview/governance-fixtures.ts";
 import { runSweepPass } from "./reconcile.ts";
+
+const offGovernance = offGovernanceConfig();
 
 function stubPreviewDb(
   partial: Partial<PreviewDbRouter> &
@@ -60,6 +63,7 @@ describe("createLiveSweepPorts", () => {
       containerId: "ctr-10",
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -80,7 +84,8 @@ describe("createLiveSweepPorts", () => {
       forge: {
         listOpenPrIds: async () => [],
       },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
       log: () => {},
     });
 
@@ -95,7 +100,7 @@ describe("createLiveSweepPorts", () => {
     expect(rows[0]?.containerId).toBeNull();
   });
 
-  test("parses ISO-Z createdAt into createdAtMs", async () => {
+  test("parses ISO-Z createdAt with no invalid-instant log", async () => {
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
 
@@ -112,9 +117,12 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
+    const droppedDbs: string[] = [];
+    const logs: string[] = [];
     const docker = createFakeDockerClient();
     const ports = createLiveSweepPorts({
       db: testDb.db,
@@ -124,14 +132,16 @@ describe("createLiveSweepPorts", () => {
         listPreviewDatabases: async () => [],
       }),
       forge: { listOpenPrIds: async () => [1] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
+      log: (message) => {
+        logs.push(message);
+      },
     });
 
     const listed = await ports.listPreviews();
     expect(listed[0]?.createdAt).toBe("2026-09-02T12:00:00.000Z");
-    expect(listed[0]?.createdAtMs).toBe(
-      Date.parse("2026-09-02T12:00:00.000Z"),
-    );
+    expect(logs.some((m) => m.includes("invalid createdAt"))).toBe(false);
   });
 
   test("invalid createdAt skips TTL but protects catalog from orphan GC", async () => {
@@ -152,6 +162,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "not-a-timestamp",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -169,7 +180,8 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [1] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
       log: (message) => {
         logs.push(message);
       },
@@ -177,7 +189,6 @@ describe("createLiveSweepPorts", () => {
 
     const listed = await ports.listPreviews();
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.createdAtMs).toBeNull();
     expect(logs.some((m) => m.includes("invalid createdAt"))).toBe(true);
 
     const result = await runSweepPass(ports);
@@ -206,6 +217,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-02 12:00:00",
+      lastActivityAt: null,
       updatedAt: "2026-09-02 12:00:00",
     });
 
@@ -223,7 +235,8 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [1] },
-      ttlHours: 1,
+      governance: offGovernance,
+      legacyTtlMs: 3600_000,
       log: (message) => {
         logs.push(message);
       },
@@ -231,7 +244,6 @@ describe("createLiveSweepPorts", () => {
 
     const listed = await ports.listPreviews();
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.createdAtMs).toBeNull();
     expect(logs.some((m) => m.includes("invalid createdAt"))).toBe(true);
 
     const result = await runSweepPass(ports);
@@ -260,6 +272,7 @@ describe("createLiveSweepPorts", () => {
       containerId: "ctr-10",
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -278,7 +291,8 @@ describe("createLiveSweepPorts", () => {
         }),
       }),
       forge: { listOpenPrIds: async () => [] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
       log: (message) => {
         logs.push(message);
       },
@@ -312,6 +326,7 @@ describe("createLiveSweepPorts", () => {
       containerId: "ctr-10",
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -332,7 +347,8 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
       log: () => {},
     });
 
@@ -346,6 +362,7 @@ describe("createLiveSweepPorts", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
     expect(droppedDbs).toEqual(["sprout_widgets_pr10"]);
@@ -373,6 +390,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-03T11:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T11:00:00.000Z",
     });
 
@@ -387,7 +405,8 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [42] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -397,6 +416,7 @@ describe("createLiveSweepPorts", () => {
       slug: "old",
       dbName: "sprout_old_pr42",
       createdAt: "2026-08-01T12:00:00.000Z",
+      lastActivityAt: null,
     });
     expect(removed).toBe(false);
     expect(droppedDbs).toEqual([]);
@@ -423,6 +443,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-03T11:55:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T11:55:00.000Z",
     });
 
@@ -437,7 +458,8 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [42] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -447,6 +469,7 @@ describe("createLiveSweepPorts", () => {
       slug: "widgets",
       dbName: "sprout_widgets_pr42",
       createdAt: "2026-08-01T12:00:00.000Z",
+      lastActivityAt: null,
     });
     expect(removed).toBe(false);
     expect(droppedDbs).toEqual([]);
@@ -472,6 +495,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -492,7 +516,8 @@ describe("createLiveSweepPorts", () => {
           return [42];
         },
       },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -502,6 +527,7 @@ describe("createLiveSweepPorts", () => {
       slug: "widgets",
       dbName: "sprout_widgets_pr42",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
     });
     expect(removed).toBe(false);
     expect(forgeCalls).toBe(1);
@@ -525,6 +551,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "provisioning",
       createdAt: "2026-09-03T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T12:00:00.000Z",
     });
 
@@ -539,7 +566,8 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [42] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -569,6 +597,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "provisioning",
       createdAt: "2026-09-03T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T12:00:00.000Z",
     });
 
@@ -581,7 +610,8 @@ describe("createLiveSweepPorts", () => {
         listPreviewDatabases: async () => [],
       }),
       forge: { listOpenPrIds: async () => [42] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -608,7 +638,8 @@ describe("createLiveSweepPorts", () => {
         listPreviewDatabases: async () => [],
       }),
       forge: { listOpenPrIds: async () => [] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -642,7 +673,8 @@ describe("createLiveSweepPorts", () => {
         }),
       }),
       forge: { listOpenPrIds: async () => [] },
-      ttlHours: 72,
+      governance: offGovernance,
+      legacyTtlMs: 72 * 3600_000,
       log: () => {},
     });
 

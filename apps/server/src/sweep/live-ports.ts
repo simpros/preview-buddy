@@ -1,3 +1,4 @@
+import type { GovernanceConfig } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { ForgeClient } from "../forge/client.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
@@ -8,9 +9,11 @@ import {
   dropOrphanDatabase,
   dropOrphanDataVolume,
   removePreview,
+  tryRemovePreview,
   type TeardownDeps,
 } from "../preview/lifecycle.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import type { PreviewExpiryReason } from "../preview/types.ts";
 import type {
   SweepDeletion,
   SweepPorts,
@@ -23,7 +26,8 @@ export type LiveSweepDeps = {
   app: Pick<PreviewAppOps, "list" | "remove">;
   dataVolumes: PreviewDataVolumes;
   forge: ForgeClient;
-  ttlHours: number;
+  legacyTtlMs: number;
+  governance: GovernanceConfig;
   log?: SweepPorts["log"];
 };
 
@@ -38,31 +42,52 @@ function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
 
 async function removeControlPlane(
   deps: LiveSweepDeps,
-  deletion: Extract<
-    SweepDeletion,
-    { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
-  >,
+  deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
 ): Promise<boolean> {
-  const result = await removePreview(teardownDeps(deps), {
-    repo: deletion.canonicalRepoId,
-    prId: deletion.prId,
-    expectedDbName: deletion.dbName,
-    expectedCreatedAt: deletion.createdAt,
-  });
+  const result = await removePreview(
+    teardownDeps(deps),
+    controlPlaneInput(deletion),
+  );
   if (!result.ok) throw new Error(result.error);
   return result.value;
 }
 
+/** Non-blocking expiry removal: false when a deploy holds the preview lock. */
+async function tryRemoveControlPlane(
+  deps: LiveSweepDeps,
+  deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
+): Promise<boolean> {
+  const result = await tryRemovePreview(
+    teardownDeps(deps),
+    controlPlaneInput(deletion),
+  );
+  if (!result.ok) throw new Error(result.error);
+  return result.value;
+}
+
+function controlPlaneInput(
+  deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
+) {
+  return {
+    repo: deletion.canonicalRepoId,
+    prId: deletion.prId,
+    expectedDbName: deletion.dbName,
+    expectedCreatedAt: deletion.createdAt,
+    expectedLastActivityAt: deletion.lastActivityAt,
+    expiryReason: deletion.reason,
+  };
+}
+
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
   return {
-    ttlHours: deps.ttlHours,
+    legacyTtlMs: deps.legacyTtlMs,
+    governance: deps.governance,
     log: deps.log,
     listPreviews: async () => {
       const rows = await deps.db.select().from(previews);
       const out: SweepPreview[] = [];
       for (const row of rows) {
-        const createdAtMs = parseUnambiguousUtcMs(row.createdAt);
-        if (createdAtMs === null) {
+        if (parseUnambiguousUtcMs(row.createdAt) === null) {
           deps.log?.(
             `sweep preview invalid createdAt ${row.createdAt} (${row.slug}:${row.prId})`,
           );
@@ -73,8 +98,10 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           slug: row.slug,
           dbName: row.dbName,
           createdAt: row.createdAt,
-          createdAtMs,
+          lastActivityAt: row.lastActivityAt ?? null,
           status: row.status,
+          ttlMs: row.ttlMs ?? null,
+          idleMs: row.idleMs ?? null,
         });
       }
       return out;
@@ -109,7 +136,8 @@ async function dropDeletion(
 ): Promise<boolean> {
   switch (deletion.reason) {
     case "sweep:ttl-expired":
-      return removeControlPlane(deps, deletion);
+    case "sweep:idle-expired":
+      return tryRemoveControlPlane(deps, deletion);
     case "sweep:pr-not-open": {
       const open = await deps.forge.listOpenPrIds(deletion.canonicalRepoId);
       if (open.includes(deletion.prId)) return false;

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createForgeClient } from "../forge/client.ts";
 import { forgeApiError } from "../forge/types.ts";
+import { governanceConfig } from "../preview/governance-fixtures.ts";
 import {
   runSweepPass,
   type CatalogDbRef,
@@ -60,7 +61,8 @@ function memoryPorts(seed: {
       deletions.push(deletion);
       return true;
     },
-    ttlHours: 72,
+    legacyTtlMs: 72 * 3600_000,
+    governance: governanceConfig(),
     log: (message, deletion) => {
       logs.push(message);
       seed.log?.(message, deletion);
@@ -85,8 +87,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr10",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       openPrs: { "https://github.com/acme/widgets": [99] },
@@ -102,6 +106,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
   });
@@ -116,8 +121,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr5",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       openPrs: { "https://github.com/acme/widgets": [5] },
@@ -132,6 +139,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr5",
         createdAt: "2026-08-01T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
     expect(forgeCalls).toEqual([]);
@@ -214,8 +222,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr3",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       catalog: [{ dbName: "sprout_widgets_pr3", slug: "widgets", prId: 3 }],
@@ -296,8 +306,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr10",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://github.com/acme/widgets",
@@ -305,8 +317,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr11",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       catalog: [{ dbName: "sprout_widgets_pr99", slug: "widgets", prId: 99 }],
@@ -325,6 +339,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-08-01T12:00:00.000Z",
+        lastActivityAt: null,
       },
       {
         reason: "sweep:orphan-db",
@@ -346,8 +361,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr10",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://github.com/acme/widgets",
@@ -355,8 +372,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr11",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       catalog: [{ dbName: "sprout_widgets_pr99", slug: "widgets", prId: 99 }],
@@ -377,6 +396,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-08-01T12:00:00.000Z",
+        lastActivityAt: null,
       },
       {
         reason: "sweep:orphan-db",
@@ -397,8 +417,10 @@ describe("runSweepPass", () => {
           slug: "repoa",
           dbName: "sprout_repoa_pr1",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://github.com/acme/repo-b",
@@ -406,8 +428,10 @@ describe("runSweepPass", () => {
           slug: "repob",
           dbName: "sprout_repob_pr2",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       openPrs: {
@@ -428,6 +452,7 @@ describe("runSweepPass", () => {
         slug: "repob",
         dbName: "sprout_repob_pr2",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
   });
@@ -456,8 +481,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr10",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://gitlab.com/acme/sprouts",
@@ -465,8 +492,10 @@ describe("runSweepPass", () => {
           slug: "sprouts",
           dbName: "sprout_sprouts_pr20",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://github.com/acme/widgets",
@@ -474,8 +503,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr11",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://gitlab.com/acme/sprouts",
@@ -483,8 +514,10 @@ describe("runSweepPass", () => {
           slug: "sprouts",
           dbName: "sprout_sprouts_pr21",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
     });
@@ -500,6 +533,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr11",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
       {
         reason: "sweep:pr-not-open",
@@ -508,6 +542,7 @@ describe("runSweepPass", () => {
         slug: "sprouts",
         dbName: "sprout_sprouts_pr21",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
   });
@@ -522,8 +557,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr3",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       openPrs: {
@@ -551,8 +588,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr3",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       openPrs: {
@@ -575,8 +614,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr10",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://github.com/acme/widgets",
@@ -584,8 +625,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr11",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       catalog: [{ dbName: "sprout_widgets_pr99", slug: "widgets", prId: 99 }],
@@ -606,6 +649,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-08-01T12:00:00.000Z",
+        lastActivityAt: null,
       },
       {
         reason: "sweep:orphan-db",
@@ -620,6 +664,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr11",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
   });
@@ -634,8 +679,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr10",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       catalog: new Error("postgres catalog boom"),
@@ -654,6 +701,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-08-01T12:00:00.000Z",
+        lastActivityAt: null,
       },
       {
         reason: "sweep:orphan-container",
@@ -683,8 +731,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr3",
           createdAt: "2026-09-02T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       catalog: [{ dbName: "sprout_widgets_pr3", slug: "widgets", prId: 3 }],
@@ -707,8 +757,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr1",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
         {
           canonicalRepoId: "https://github.com/acme/widgets",
@@ -716,8 +768,10 @@ describe("runSweepPass", () => {
           slug: "widgets",
           dbName: "sprout_widgets_pr2",
           createdAt: "2026-08-01T12:00:00.000Z",
-          createdAtMs: Date.parse("2026-08-01T12:00:00.000Z"),
+          lastActivityAt: null,
           status: "running",
+          ttlMs: null,
+          idleMs: null,
         },
       ],
       dropErrorFor: (deletion) =>
@@ -734,6 +788,7 @@ describe("runSweepPass", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr2",
         createdAt: "2026-08-01T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
   });

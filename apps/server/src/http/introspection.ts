@@ -50,7 +50,11 @@ export type DropBody = {
   yes?: boolean;
 };
 
-export function listPreviews(db: StateDb, mailboxUrl?: string) {
+export function listPreviews(
+  db: StateDb,
+  mailboxUrl: string | undefined,
+  legacyTtlMs: number,
+) {
   return async ({ set }: { set: { status?: number | string } }) => {
     const rows = await db
       .select()
@@ -65,7 +69,12 @@ export function listPreviews(db: StateDb, mailboxUrl?: string) {
         return { error: status.error };
       }
       listed.push(
-        presentListedPreview(row, mailboxUrl, toDisplayStatus(status.value)),
+        presentListedPreview(
+          row,
+          mailboxUrl,
+          toDisplayStatus(status.value),
+          legacyTtlMs,
+        ),
       );
     }
 

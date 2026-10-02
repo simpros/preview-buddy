@@ -155,6 +155,9 @@ describe("POST /v1/deploy", () => {
       hostname: "pr-42.myapp.preview.example.com",
       status: "running",
       preview_url: "https://pr-42.myapp.preview.example.com",
+      last_activity_at: expect.any(String),
+      expires_at: null,
+      expiry_reason: null,
     });
     expect(fakePreviewDb!.created).toEqual(["sprout_myapp_pr42"]);
 
@@ -165,6 +168,14 @@ describe("POST /v1/deploy", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
+    // Read surface and sweep share one derivation: a governed deploy with
+    // both bounds off records activity with null bounds, so the preview is
+    // unbounded (the legacy creation-age bound only collects rows that
+    // never completed a governed deploy).
+    const snap = res.body as {
+      expires_at: string | null;
+    };
+    expect(snap.expires_at).toBeNull();
     expect(row).toMatchObject({
       canonicalRepoId: REPO,
       prId: 42,

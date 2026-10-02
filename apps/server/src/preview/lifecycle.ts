@@ -3,7 +3,11 @@ import { previewAuthMode } from "@sprout/preview-env";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { completeBringUp, pullImagesOutsideLock } from "./bring-up.ts";
-import { withDbNameLock, withPreviewLock } from "./locks.ts";
+import {
+  tryWithPreviewLock,
+  withDbNameLock,
+  withPreviewLock,
+} from "./locks.ts";
 import { markPreviewFailed } from "./mark-failed.ts";
 import { desiredPreviewAuthState } from "./auth.ts";
 import {
@@ -22,6 +26,7 @@ import type {
   BringUpPlan,
   DisplayPreviewStatus,
   LifecycleDeps,
+  PreviewExpiryReason,
   PreviewSnapshot,
   PreviewStatus,
   ProvisionInput,
@@ -36,6 +41,7 @@ export type {
   BringUpPlan,
   DisplayPreviewStatus,
   LifecycleDeps,
+  PreviewExpiryReason,
   PreviewSnapshot,
   PreviewStatus,
   ProvisionInput,
@@ -44,7 +50,11 @@ export type {
   TeardownInput,
   TeardownSnapshot,
 } from "./types.ts";
-export { withPreviewLock, withDbNameLock } from "./locks.ts";
+export {
+  tryWithPreviewLock,
+  withDbNameLock,
+  withPreviewLock,
+} from "./locks.ts";
 export {
   markPreviewFailed,
   markStickyPreviewFailed,
@@ -185,7 +195,10 @@ async function writeProvisioningIntent(
       ...authColumnsFor(previewAuthMode(input.auth), stored),
       ...clearLastError,
       // New generation: TTL means age of this intent, not birth of the row key.
+      // A live row never carries a tombstone reason: re-provisioning a
+      // removed row must not advertise the previous expiry.
       createdAt: now,
+      expiryReason: null,
       updatedAt: now,
     },
     "preview_row_missing_on_intent_write",
@@ -216,6 +229,9 @@ async function patchAccept(
       lastError: null,
       lastErrorDetail: null,
       seedLog: null,
+      // Accepting a deploy clears any tombstone reason from a previous
+      // removal; closeRunning clears it again at completion.
+      expiryReason: null,
       ...(fields.remint ? { createdAt: now } : {}),
       updatedAt: now,
     },
@@ -427,6 +443,7 @@ async function destroyPreviewRow(
   deps: TeardownDeps,
   existing: PreviewRow,
   disposition: DestroyDisposition,
+  expiryReason?: PreviewExpiryReason,
 ): Promise<Result<TeardownSnapshot>> {
   const repo = existing.canonicalRepoId;
   const prId = existing.prId;
@@ -469,6 +486,13 @@ async function destroyPreviewRow(
         .set({
           status: "removed",
           containerId: null,
+          // The tombstone records why the preview went away; manual
+          // teardown leaves the reason null while sweep passes its
+          // deletion reason. The seed watermark is deliberately kept:
+          // every redeploy of a removed row goes through
+          // writeProvisioningIntent, which already resets it, so clearing
+          // here would only make the two removal paths diverge.
+          expiryReason: expiryReason ?? null,
           updatedAt: utcIsoNow(),
         })
         .where(
@@ -573,28 +597,56 @@ export function purgePreview(
   });
 }
 
+async function removePreviewUnlocked(
+  deps: TeardownDeps,
+  input: RemovePreviewInput,
+): Promise<Result<boolean>> {
+  const existing = await getPreviewRow(deps.db, input.repo, input.prId);
+  if (!existing || existing.status === "removed") {
+    return { ok: true, value: false };
+  }
+  if (existing.dbName !== input.expectedDbName) {
+    return { ok: true, value: false };
+  }
+  if (existing.createdAt !== input.expectedCreatedAt) {
+    return { ok: true, value: false };
+  }
+  if ((existing.lastActivityAt ?? null) !== input.expectedLastActivityAt) {
+    return { ok: true, value: false };
+  }
+
+  const status = parsePreviewStatus(existing.status);
+  if (!status.ok) return status;
+
+  const result = await destroyPreviewRow(
+    deps,
+    existing,
+    "tombstone",
+    input.expiryReason,
+  );
+  if (!result.ok) return result;
+  return { ok: true, value: true };
+}
+
 export function removePreview(
   deps: TeardownDeps,
   input: RemovePreviewInput,
 ): Promise<Result<boolean>> {
-  return withPreviewLock(input.repo, input.prId, async () => {
-    const existing = await getPreviewRow(deps.db, input.repo, input.prId);
-    if (!existing || existing.status === "removed") {
-      return { ok: true, value: false };
-    }
-    if (existing.dbName !== input.expectedDbName) {
-      return { ok: true, value: false };
-    }
-    if (existing.createdAt !== input.expectedCreatedAt) {
-      return { ok: true, value: false };
-    }
+  return withPreviewLock(input.repo, input.prId, () =>
+    removePreviewUnlocked(deps, input),
+  );
+}
 
-    const status = parsePreviewStatus(existing.status);
-    if (!status.ok) return status;
-
-    const result = await destroyPreviewRow(deps, existing, "tombstone");
-    if (!result.ok) return result;
-    return { ok: true, value: true };
+/** Sweep expiry never steals a preview mid-deploy: skip when the lock is held. */
+export function tryRemovePreview(
+  deps: TeardownDeps,
+  input: RemovePreviewInput,
+): Promise<Result<boolean>> {
+  return tryWithPreviewLock(input.repo, input.prId, () =>
+    removePreviewUnlocked(deps, input),
+  ).then((attempt) => {
+    if (!attempt.acquired) return { ok: true as const, value: false };
+    return attempt.value;
   });
 }
 

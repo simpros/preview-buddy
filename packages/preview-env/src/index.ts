@@ -112,6 +112,16 @@ export {
 } from "./volumes.ts";
 
 export {
+  governanceIssueMessage,
+  parseDurationMs,
+  parsePreviewGovernanceField,
+  type ConnectionBudget,
+  type EffectiveGovernanceMs,
+  type GovernanceConfig,
+  type GovernanceManifest,
+} from "./governance.ts";
+
+export {
   DEFAULT_MAIL_FROM_DOMAIN,
   deriveMailFromName,
   mailIntent,

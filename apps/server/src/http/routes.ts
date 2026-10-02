@@ -4,6 +4,7 @@ import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { DashboardConfig } from "../config.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
 import type { LifecycleDeps } from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
@@ -41,6 +42,10 @@ export type RouteDeps = {
   extraGitlabHosts?: ReadonlySet<string>;
   telemetry: TelemetryDeployHook;
   tracesPlugin?: TracesHandle["plugin"];
+  governance: GovernanceConfig;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms), computed once in
+   * loadConfig; routes never convert units themselves. */
+  legacyTtlMs: number;
 };
 
 function stubNotImplemented({
@@ -58,11 +63,13 @@ export function createRoutes(deps: RouteDeps) {
     previewDb: deps.previewDb,
     app: deps.app,
     dataVolumes: deps.dataVolumes,
+    legacyTtlMs: deps.legacyTtlMs,
   };
   const deployDeps = {
     ...lifecycle,
     materialization: deps.materialization,
     telemetry: deps.telemetry,
+    governance: deps.governance,
   };
   const mailboxUrl = deps.materialization.mail?.uiUrl;
   const accessDeps = {
@@ -104,9 +111,13 @@ export function createRoutes(deps: RouteDeps) {
           })
           .delete("/tokens/:id", revokeToken(deps.db)),
       )
-      .get("/previews", listPreviews(deps.db, mailboxUrl), {
-        beforeHandle: requireAdmin,
-      })
+      .get(
+        "/previews",
+        listPreviews(deps.db, mailboxUrl, deps.legacyTtlMs),
+        {
+          beforeHandle: requireAdmin,
+        },
+      )
       .get("/previews/access", getPreviewAccess(accessDeps), {
         query: accessQuery,
       })
@@ -125,7 +136,9 @@ export function createRoutes(deps: RouteDeps) {
         body: dropBody,
       })
       .post("/deploy", deploy(deployDeps), { body: deployBody })
-      .get("/preview", getPreview(lifecycle, mailboxUrl), { query: previewQuery })
+      .get("/preview", getPreview(lifecycle, mailboxUrl), {
+        query: previewQuery,
+      })
       .post("/teardown", teardown(lifecycle), { body: teardownBody })
       .all("/*", stubNotImplemented),
   );

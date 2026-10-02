@@ -1,12 +1,12 @@
-import type { DataVolumeRef } from "@sprout/preview-env";
+import type { DataVolumeRef, GovernanceConfig } from "@sprout/preview-env";
 import { isForgeApiError } from "../forge/types.ts";
-
-export type SweepReason =
-  | "sweep:pr-not-open"
-  | "sweep:ttl-expired"
-  | "sweep:orphan-db"
-  | "sweep:orphan-container"
-  | "sweep:orphan-data-volume";
+import {
+  evaluateGovernance,
+  governanceStatus,
+  resolveRowExpiry,
+  violationMessage,
+} from "../preview/governance.ts";
+import type { PreviewExpiryReason } from "../preview/types.ts";
 
 export type PreviewRef = { slug: string; prId: number };
 
@@ -18,18 +18,21 @@ export type SweepPreview = {
   slug: string;
   dbName: string | null;
   createdAt: string;
-  createdAtMs: number | null;
+  lastActivityAt: string | null;
   status: string;
+  ttlMs: number | null;
+  idleMs: number | null;
 };
 
 export type SweepDeletion =
   | {
-      reason: "sweep:pr-not-open" | "sweep:ttl-expired";
+      reason: PreviewExpiryReason;
       canonicalRepoId: string;
       prId: number;
       slug: string;
       dbName: string | null;
       createdAt: string;
+      lastActivityAt: string | null;
     }
   | { reason: "sweep:orphan-db"; slug: string; prId: number; dbName: string }
   | {
@@ -46,7 +49,10 @@ export type SweepPorts = {
   listOpenPrIds: (canonicalRepoId: string) => Promise<number[]>;
   /** True if resources were removed; false if the plan was stale. */
   drop: (deletion: SweepDeletion) => Promise<boolean>;
-  ttlHours: number;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms), computed once in
+   * loadConfig; the sweep never converts units itself. */
+  legacyTtlMs: number;
+  governance: GovernanceConfig;
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
 
@@ -171,28 +177,35 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
     );
   }
 
-  const cutoff = Date.now() - ports.ttlHours * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const legacyTtlMs = ports.legacyTtlMs;
   const previewKeys = new Set<string>();
+  const live: SweepPreview[] = [];
   const remainingPreviews: SweepPreview[] = [];
-  const ttlDeletions: SweepDeletion[] = [];
+  const expiryDeletions: SweepDeletion[] = [];
 
   for (const preview of previews) {
     if (preview.status === "removed") continue;
 
     previewKeys.add(`${preview.slug}:${preview.prId}`);
-    if (preview.createdAtMs !== null && preview.createdAtMs < cutoff) {
-      ttlDeletions.push({
-        reason: "sweep:ttl-expired",
+    live.push(preview);
+    const governanceExpiry = planGovernanceExpiry(preview, nowMs, legacyTtlMs);
+    if (governanceExpiry) {
+      expiryDeletions.push({
+        reason: governanceExpiry,
         canonicalRepoId: preview.canonicalRepoId,
         prId: preview.prId,
         slug: preview.slug,
         dbName: preview.dbName,
         createdAt: preview.createdAt,
+        lastActivityAt: preview.lastActivityAt,
       });
     } else {
       remainingPreviews.push(preview);
     }
   }
+
+  logOverCap(ports, live);
 
   const orphanDeletions = planOrphans({
     previewKeys,
@@ -241,14 +254,43 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
       slug: preview.slug,
       dbName: preview.dbName,
       createdAt: preview.createdAt,
+      lastActivityAt: preview.lastActivityAt,
     });
   }
 
   const deletions = await dropSettled(
     ports,
-    [...ttlDeletions, ...orphanDeletions, ...prNotOpenDeletions],
+    [...expiryDeletions, ...orphanDeletions, ...prNotOpenDeletions],
     (d) => `deleted (${d.reason})`,
   );
 
   return { forgeRepoFailures, deletions };
+}
+
+/**
+ * Governance expiry from the shared row derivation: one place decides the
+ * base, the earlier bound, and which bound won. Returns the reason, or
+ * null to keep. The cheap activity signal is the last successful deploy
+ * (including reseed/reset); see docs/previews.md. The legacy creation-age
+ * bound only collects rows that never completed a governed deploy. Expiry
+ * reads only the bounds snapshotted on the row at deploy time: live
+ * gateway config intentionally does not re-bound running previews (a
+ * config change takes effect on the next deploy).
+ * `ports.governance` feeds only the over-cap log below, never expiry.
+ */
+export function planGovernanceExpiry(
+  preview: SweepPreview,
+  nowMs: number,
+  legacyTtlMs: number,
+): "sweep:ttl-expired" | "sweep:idle-expired" | null {
+  const { expiresAtMs, bound } = resolveRowExpiry(preview, legacyTtlMs);
+  if (expiresAtMs === null || nowMs < expiresAtMs) return null;
+  return bound === "ttl" ? "sweep:ttl-expired" : "sweep:idle-expired";
+}
+
+function logOverCap(ports: SweepPorts, live: SweepPreview[]): void {
+  const status = governanceStatus(live);
+  for (const violation of evaluateGovernance(ports.governance, status, null)) {
+    ports.log?.(`sweep over governance limit: ${violationMessage(violation)}`);
+  }
 }

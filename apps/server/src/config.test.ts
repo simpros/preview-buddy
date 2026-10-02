@@ -10,10 +10,13 @@ import {
   POSTGRES_REQUIRED_ENV,
   postgresNotConfiguredDetail,
   parseExtraGitlabHosts,
+  parseGatewayCap,
+  parseGatewayDurationMs,
   parseOtlpHeaders,
   previewAuthNotConfiguredDetail,
   REQUIRED_ENV,
 } from "./config.ts";
+import { testConfig } from "./config.fixtures.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
 
 const TEST_POSTGRES_VALUES: Record<(typeof POSTGRES_REQUIRED_ENV)[number], string> = {
@@ -78,6 +81,12 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_OTLP_ENDPOINT;
   delete process.env.SPROUT_OTLP_HEADERS;
   delete process.env.DO_NOT_TRACK;
+  delete process.env.SPROUT_PREVIEW_TTL;
+  delete process.env.SPROUT_PREVIEW_IDLE_TEARDOWN;
+  delete process.env.SPROUT_MAX_PREVIEWS_PER_REPO;
+  delete process.env.SPROUT_MAX_PREVIEWS;
+  delete process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS;
+  delete process.env.SPROUT_POSTGRES_MAX_CONNECTIONS;
 }
 
 afterEach(() => {
@@ -370,72 +379,55 @@ describe("loadConfig", () => {
   });
 
   test("configSummary marks unset forge tokens", () => {
-    const summary = configSummary({
-      postgres: {
-        url: "postgres://admin@localhost:5432/postgres",
-        host: "postgres",
-        port: 5432,
-        user: "sprout_preview",
-        password: "x",
-        network: "postgres",
-      },
-      traefikNetwork: "traefik",
-      registryPullAuth: { byHost: new Map() },
-      githubToken: "",
-      gitlabToken: "",
-      extraGitlabHosts: new Set(),
-      ttlHours: 72,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      dashboard: { enabled: false, user: "", password: "" },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-    });
+    const summary = configSummary(
+      testConfig({
+        postgres: {
+          url: "postgres://admin@localhost:5432/postgres",
+          host: "postgres",
+          port: 5432,
+          user: "sprout_preview",
+          password: "x",
+          network: "postgres",
+        },
+      }),
+    );
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
   });
 
   test("configSummary redacts secrets", () => {
-    const summary = configSummary({
-      postgres: {
-        url: "postgres://admin:sekrit@localhost:5432/postgres",
-        host: "postgres",
-        port: 5432,
-        user: "sprout_preview",
-        password: "preview-secret",
-        network: "postgres",
-      },
-      traefikNetwork: "traefik",
-      registryPullAuth: {
-        byHost: new Map([
-          ["ghcr.io", { username: "gh", password: "secret" }],
-        ]),
-        fallback: { username: "puller", password: "registry-secret" },
-      },
-      githubToken: "gh",
-      gitlabToken: "gl",
-      extraGitlabHosts: new Set(["git.example.com"]),
-      ttlHours: 72,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      traefikTls: { entrypoints: "https", certResolver: "letsencrypt" },
-      traefikForwardAuth: {
-        middleware: "voidauth",
-        address: "https://auth.example.com/forward",
-      },
-      dashboard: {
-        enabled: true,
-        host: "dashboard.internal",
-        user: "op",
-        password: "pw",
-      },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-    });
+    const summary = configSummary(
+      testConfig({
+        postgres: {
+          url: "postgres://admin:sekrit@localhost:5432/postgres",
+          host: "postgres",
+          port: 5432,
+          user: "sprout_preview",
+          password: "preview-secret",
+          network: "postgres",
+        },
+        registryPullAuth: {
+          byHost: new Map([
+            ["ghcr.io", { username: "gh", password: "secret" }],
+          ]),
+          fallback: { username: "puller", password: "registry-secret" },
+        },
+        githubToken: "gh",
+        gitlabToken: "gl",
+        extraGitlabHosts: new Set(["git.example.com"]),
+        traefikTls: { entrypoints: "https", certResolver: "letsencrypt" },
+        traefikForwardAuth: {
+          middleware: "voidauth",
+          address: "https://auth.example.com/forward",
+        },
+        dashboard: {
+          enabled: true,
+          host: "dashboard.internal",
+          user: "op",
+          password: "pw",
+        },
+      }),
+    );
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
     expect(summary.previewPgPassword).toBe("[set]");
@@ -454,29 +446,18 @@ describe("loadConfig", () => {
   });
 
   test("configSummary marks anonymous registry auth", () => {
-    const summary = configSummary({
-      postgres: {
-        url: "postgres://admin@localhost:5432/postgres",
-        host: "postgres",
-        port: 5432,
-        user: "sprout_preview",
-        password: "x",
-        network: "postgres",
-      },
-      traefikNetwork: "traefik",
-      registryPullAuth: { byHost: new Map() },
-      githubToken: "",
-      gitlabToken: "",
-      extraGitlabHosts: new Set(),
-      ttlHours: 72,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      dashboard: { enabled: false, user: "", password: "" },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-    });
+    const summary = configSummary(
+      testConfig({
+        postgres: {
+          url: "postgres://admin@localhost:5432/postgres",
+          host: "postgres",
+          port: 5432,
+          user: "sprout_preview",
+          password: "x",
+          network: "postgres",
+        },
+      }),
+    );
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");
     expect(summary.traefikTls).toBe("[unset]");
@@ -572,6 +553,78 @@ describe("loadConfig", () => {
     process.env.SPROUT_MAIL_PORT = "1025";
     process.env.SPROUT_MAIL_SECURE = "maybe";
     expect(() => loadConfig()).toThrow("Invalid SPROUT_MAIL_SECURE");
+  });
+});
+
+describe("preview governance env", () => {
+  test("gateway durations accept off and reject garbage", () => {
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", undefined)).toBeNull();
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "off")).toBeNull();
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "7d")).toBe(
+      7 * 24 * 60 * 60 * 1000,
+    );
+    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "2h")).toBe(
+      2 * 60 * 60 * 1000,
+    );
+    expect(() =>
+      parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "forever"),
+    ).toThrow("Invalid SPROUT_PREVIEW_TTL");
+  });
+
+  test("gateway caps accept off and reject garbage", () => {
+    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", undefined)).toBeNull();
+    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "off")).toBeNull();
+    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "10")).toBe(10);
+    expect(() => parseGatewayCap("SPROUT_MAX_PREVIEWS", "0")).toThrow(
+      "Invalid SPROUT_MAX_PREVIEWS",
+    );
+  });
+
+  test("legacy bound derives once from SPROUT_TTL_HOURS", () => {
+    setRequiredEnv();
+    const config = loadConfig();
+    expect(config.ttlHours).toBe(OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS);
+    expect(config.legacyTtlMs).toBe(
+      OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS * 3600_000,
+    );
+    expect(config.governance).toEqual({
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      connectionBudget: null,
+    });
+  });
+
+  test("governance env loads parsed bounds", () => {
+    setRequiredEnv();
+    process.env.SPROUT_PREVIEW_TTL = "7d";
+    process.env.SPROUT_PREVIEW_IDLE_TEARDOWN = "2h";
+    process.env.SPROUT_MAX_PREVIEWS_PER_REPO = "3";
+    process.env.SPROUT_MAX_PREVIEWS = "10";
+    process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS = "12";
+    process.env.SPROUT_POSTGRES_MAX_CONNECTIONS = "100";
+    const config = loadConfig();
+    expect(config.governance).toEqual({
+      previewTtlMs: 7 * 86400_000,
+      previewIdleMs: 2 * 3600_000,
+      maxPreviewsPerRepo: 3,
+      maxPreviews: 10,
+      connectionBudget: { perPreview: 12, ceiling: 100 },
+    });
+  });
+
+  test("half-configured connection budget fails boot naming the missing key", () => {
+    setRequiredEnv();
+    process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS = "12";
+    expect(() => loadConfig()).toThrow(
+      "Incomplete preview connection budget: missing SPROUT_POSTGRES_MAX_CONNECTIONS",
+    );
+    delete process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS;
+    process.env.SPROUT_POSTGRES_MAX_CONNECTIONS = "100";
+    expect(() => loadConfig()).toThrow(
+      "Incomplete preview connection budget: missing SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+    );
   });
 });
 

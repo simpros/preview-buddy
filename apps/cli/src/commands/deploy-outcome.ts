@@ -7,6 +7,7 @@ export type DeploySnapshotFields = {
   mail_from?: string | null;
   last_error?: string | null;
   last_error_detail?: string | null;
+  expires_at?: string | null;
 };
 
 /** Settled deploy presentation shared by core, poll, and forge-note. */
@@ -14,6 +15,7 @@ export type DeploySettled = {
   previewUrl: string;
   mailboxUrl?: string;
   mailFrom?: string;
+  expiresAt?: string;
 };
 
 export type DeployOutcome =
@@ -46,12 +48,15 @@ export function deployOutcome(data: DeploySnapshotFields): DeployOutcome {
       typeof data.mailbox_url === "string" ? data.mailbox_url.trim() : "";
     const fromRaw =
       typeof data.mail_from === "string" ? data.mail_from.trim() : "";
+    const expiresRaw =
+      typeof data.expires_at === "string" ? data.expires_at.trim() : "";
     return {
       kind: "ready",
       settled: {
         previewUrl: data.preview_url,
         ...(mailboxRaw !== "" ? { mailboxUrl: mailboxRaw } : {}),
         ...(fromRaw !== "" ? { mailFrom: fromRaw } : {}),
+        ...(expiresRaw !== "" ? { expiresAt: expiresRaw } : {}),
       },
     };
   }
@@ -65,5 +70,8 @@ export function printSettled(io: CliIo, settled: DeploySettled): void {
   }
   if (settled.mailFrom) {
     io.stdout(`mail_from=${settled.mailFrom}`);
+  }
+  if (settled.expiresAt) {
+    io.stdout(`expires_at=${settled.expiresAt}`);
   }
 }

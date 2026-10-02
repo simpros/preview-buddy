@@ -30,6 +30,8 @@ import type {
   PostgresConfig,
   PreviewAuthConfig,
 } from "../config.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
+import { governanceConfig } from "../preview/governance-fixtures.ts";
 import { NO_TELEMETRY, type TelemetryDeployHook } from "../telemetry/contract.ts";
 import type { TracesHandle } from "../telemetry/traces.ts";
 
@@ -109,6 +111,8 @@ export async function createTestApp(
         extraGitlabHosts?: ReadonlySet<string>;
         telemetry?: TelemetryDeployHook;
         tracesPlugin?: TracesHandle["plugin"];
+        governance?: GovernanceConfig;
+        legacyTtlMs?: number;
       }
     | string = {},
 ): Promise<TestApp> {
@@ -165,6 +169,8 @@ export async function createTestApp(
       extraGitlabHosts: opts.extraGitlabHosts,
       telemetry: opts.telemetry ?? NO_TELEMETRY,
       ...(opts.tracesPlugin ? { tracesPlugin: opts.tracesPlugin } : {}),
+      governance: opts.governance ?? governanceConfig(),
+      legacyTtlMs: opts.legacyTtlMs ?? 72 * 3600_000,
     }),
     db,
     adminToken,

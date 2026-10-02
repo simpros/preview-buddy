@@ -4,7 +4,8 @@ import type {
 } from "./app-deployment/labels.ts";
 import type { TelemetryState } from "./telemetry/destination.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
-import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
+import type { ConnectionBudget, GovernanceConfig } from "@sprout/preview-env";
+import { DEFAULT_MAIL_FROM_DOMAIN, parseDurationMs } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
   buildRegistryPullAuth,
@@ -73,6 +74,15 @@ export const DASHBOARD_ENV_KEYS = [
   "SPROUT_DASHBOARD_PASSWORD",
 ] as const;
 
+export const GOVERNANCE_ENV_KEYS = [
+  "SPROUT_PREVIEW_TTL",
+  "SPROUT_PREVIEW_IDLE_TEARDOWN",
+  "SPROUT_MAX_PREVIEWS_PER_REPO",
+  "SPROUT_MAX_PREVIEWS",
+  "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+  "SPROUT_POSTGRES_MAX_CONNECTIONS",
+] as const;
+
 export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...REQUIRED_ENV,
   ...POSTGRES_REQUIRED_ENV,
@@ -81,6 +91,7 @@ export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...Object.keys(OPTIONAL_ENV_DEFAULTS),
   ...OPTIONAL_STRING_ENV,
   ...DASHBOARD_ENV_KEYS,
+  ...GOVERNANCE_ENV_KEYS,
   "SPROUT_ADMIN_TOKEN",
   "SPROUT_STATE_DB_PATH",
   "SPROUT_ADMIN_TOKEN_PATH",
@@ -141,6 +152,9 @@ export type Config = {
   extraGitlabHosts: ReadonlySet<string>;
   adminToken?: string;
   ttlHours: number;
+  /** SPROUT_TTL_HOURS as ms, derived once here so read and sweep surfaces
+   * share one bound without converting units themselves. */
+  legacyTtlMs: number;
   sweepCron: string;
   previewPortDefault: number;
   seedTimeout: number;
@@ -151,6 +165,9 @@ export type Config = {
   telemetry: TelemetryState;
   /** Operator-owned trace export; active exactly when endpoint is set. */
   otlp: OtlpConfig;
+  /** Preview TTL/idle/cap/budget policy: null means off. Nested so passing
+   * the whole Config never silently satisfies a GovernanceConfig. */
+  governance: GovernanceConfig;
 };
 
 function parsePositiveInt(
@@ -164,6 +181,64 @@ function parsePositiveInt(
     throw new Error(`Invalid ${name}: must be a positive integer`);
   }
   return value;
+}
+
+/** SPROUT_TTL_HOURS as ms, derived once at load so read and sweep surfaces
+ * share one bound without converting units themselves. */
+function hoursToMs(hours: number): number {
+  return hours * 60 * 60 * 1000;
+}
+
+/** Gateway-level duration: empty/off means unbounded, otherwise a duration. */
+export function parseGatewayDurationMs(
+  envName: string,
+  raw: string | undefined,
+): number | null {
+  const trimmed = raw?.trim() ?? "";
+  if (trimmed === "" || trimmed.toLowerCase() === "off") return null;
+  const ms = parseDurationMs(trimmed);
+  if (ms === null) {
+    throw new Error(
+      `Invalid ${envName}: expected a duration (e.g. 7d, 2h, 30m) or off, got ${JSON.stringify(raw ?? "")}`,
+    );
+  }
+  return ms;
+}
+
+/** Gateway-level cap: empty/off means unbounded, otherwise a positive int. */
+export function parseGatewayCap(
+  envName: string,
+  raw: string | undefined,
+): number | null {
+  const trimmed = raw?.trim() ?? "";
+  if (trimmed === "" || trimmed.toLowerCase() === "off") return null;
+  // Empty/off returned above, so trimmed is always a value here and the
+  // default never fires; the positive-int check stays in one place.
+  return parsePositiveInt(envName, trimmed, 0);
+}
+
+/** Connection budget is a pair or absent: one half without the other
+ * fails boot instead of silently enforcing nothing. */
+function parseConnectionBudget(): ConnectionBudget | null {
+  const perPreview = parseGatewayCap(
+    "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+    process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS,
+  );
+  const ceiling = parseGatewayCap(
+    "SPROUT_POSTGRES_MAX_CONNECTIONS",
+    process.env.SPROUT_POSTGRES_MAX_CONNECTIONS,
+  );
+  if (perPreview === null && ceiling === null) return null;
+  if (perPreview === null || ceiling === null) {
+    const missing =
+      perPreview === null
+        ? "SPROUT_PREVIEW_MAX_DB_CONNECTIONS"
+        : "SPROUT_POSTGRES_MAX_CONNECTIONS";
+    throw new Error(
+      `Incomplete preview connection budget: missing ${missing} (set both or neither)`,
+    );
+  }
+  return { perPreview, ceiling };
 }
 
 function parseSweepCron(
@@ -551,6 +626,12 @@ export function loadConfig(): Config {
     auth: telemetryDestination.auth,
   });
 
+  const ttlHours = parsePositiveInt(
+    "SPROUT_TTL_HOURS",
+    process.env.SPROUT_TTL_HOURS,
+    OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS,
+  );
+
   return {
     postgres: parsePostgresConfig(),
     mail: parseMailConfig(),
@@ -564,11 +645,8 @@ export function loadConfig(): Config {
       optionalEnv("SPROUT_FORGE_HOSTS"),
     ),
     adminToken: adminTokenRaw === "" ? undefined : adminTokenRaw,
-    ttlHours: parsePositiveInt(
-      "SPROUT_TTL_HOURS",
-      process.env.SPROUT_TTL_HOURS,
-      OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS,
-    ),
+    ttlHours,
+    legacyTtlMs: hoursToMs(ttlHours),
     sweepCron: parseSweepCron(
       process.env.SPROUT_SWEEP_CRON,
       OPTIONAL_ENV_DEFAULTS.SPROUT_SWEEP_CRON,
@@ -592,7 +670,43 @@ export function loadConfig(): Config {
     traefikForwardAuth: parseTraefikForwardAuth(),
     telemetry,
     otlp: parseOtlpConfig(),
+    governance: {
+      previewTtlMs: parseGatewayDurationMs(
+        "SPROUT_PREVIEW_TTL",
+        process.env.SPROUT_PREVIEW_TTL,
+      ),
+      previewIdleMs: parseGatewayDurationMs(
+        "SPROUT_PREVIEW_IDLE_TEARDOWN",
+        process.env.SPROUT_PREVIEW_IDLE_TEARDOWN,
+      ),
+      maxPreviewsPerRepo: parseGatewayCap(
+        "SPROUT_MAX_PREVIEWS_PER_REPO",
+        process.env.SPROUT_MAX_PREVIEWS_PER_REPO,
+      ),
+      maxPreviews: parseGatewayCap(
+        "SPROUT_MAX_PREVIEWS",
+        process.env.SPROUT_MAX_PREVIEWS,
+      ),
+      connectionBudget: parseConnectionBudget(),
+    },
   };
+}
+
+/** Loud boot warning when the gateway runs unbounded. */
+export function governanceUnboundedWarning(config: Config): string | null {
+  if (
+    config.governance.previewTtlMs === null &&
+    config.governance.previewIdleMs === null &&
+    config.governance.maxPreviewsPerRepo === null &&
+    config.governance.maxPreviews === null
+  ) {
+    return (
+      "preview governance is unbounded (SPROUT_PREVIEW_TTL, " +
+      "SPROUT_PREVIEW_IDLE_TEARDOWN, SPROUT_MAX_PREVIEWS_PER_REPO and " +
+      "SPROUT_MAX_PREVIEWS are all off): previews live until PR close"
+    );
+  }
+  return null;
 }
 
 export function missingPostgresEnv(
@@ -664,6 +778,11 @@ export function configSummary(config: Config): Record<string, string | number> {
     gitlabToken: config.gitlabToken === "" ? "[unset]" : "[set]",
     extraGitlabHosts: config.extraGitlabHosts.size,
     ttlHours: config.ttlHours,
+    previewTtlMs: config.governance.previewTtlMs ?? "[off]",
+    previewIdleMs: config.governance.previewIdleMs ?? "[off]",
+    maxPreviewsPerRepo: config.governance.maxPreviewsPerRepo ?? "[off]",
+    maxPreviews: config.governance.maxPreviews ?? "[off]",
+    connectionBudget: connectionBudgetSummary(config.governance.connectionBudget),
     sweepCron: config.sweepCron,
     previewPortDefault: config.previewPortDefault,
     seedTimeout: config.seedTimeout,
@@ -680,6 +799,11 @@ export function configSummary(config: Config): Record<string, string | number> {
 
 function otlpHeadersSummary(otlp: OtlpConfig): string {
   return Object.keys(otlp.headers).length > 0 ? "[set]" : "[empty]";
+}
+
+function connectionBudgetSummary(budget: ConnectionBudget | null): string {
+  if (budget === null) return "[off]";
+  return `${budget.perPreview}x/ceiling-${budget.ceiling}`;
 }
 
 function telemetryAuthSummary(telemetry: TelemetryState): string {

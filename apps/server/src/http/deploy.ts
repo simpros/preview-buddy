@@ -2,6 +2,7 @@ import {
   authSpecIssueMessage,
   dbRolesIssueMessage,
   dbSpecIssueMessage,
+  governanceIssueMessage,
   isServicePort,
   labelIssueMessage,
   mailIntent,
@@ -13,6 +14,7 @@ import {
   parseMailSpec,
   parsePreviewAuthSpec,
   parsePreviewEnvForProvider,
+  parsePreviewGovernanceField,
   parsePreviewVolumes,
   parseServiceEnvMap,
   previewAuthMode,
@@ -24,6 +26,7 @@ import {
   validateHostname,
   type DbRolesMode,
   type DbSpec,
+  type GovernanceManifest,
   type HealthRequest,
   type MailSpec,
   type PreviewAuthSpec,
@@ -41,11 +44,13 @@ import {
   postgresNotConfiguredDetail,
   previewAuthNotConfiguredDetail,
 } from "../config.ts";
+import { checkDeployAdmission } from "../preview/admission.ts";
 import {
   teardownPreview,
   type LifecycleDeps,
   type PreviewSnapshot,
 } from "../preview/lifecycle.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
 import { presentPreviewSnapshot } from "../preview/snapshot.ts";
 import {
   resolvePreviewPlan,
@@ -125,6 +130,8 @@ export const deployBody = t.Object({
   labels: t.Optional(t.Record(t.String(), t.String())),
   volumes: t.Optional(t.Array(t.String())),
   reseed: t.Optional(t.Boolean()),
+  ttl: t.Optional(t.String({ minLength: 1 })),
+  idle_teardown: t.Optional(t.String({ minLength: 1 })),
 });
 
 export const teardownBody = t.Object({
@@ -156,6 +163,8 @@ export type DeployBody = {
   labels?: PreviewLabels;
   volumes?: string[];
   reseed?: boolean;
+  ttl?: string;
+  idle_teardown?: string;
 };
 
 export type DeploySpecs = {
@@ -477,6 +486,36 @@ export function resolvePreviewVolumesRequest(
   };
 }
 
+export function resolveGovernanceRequest(
+  body: Pick<DeployBody, "ttl" | "idle_teardown">,
+):
+  | { ok: true; value: GovernanceManifest }
+  | { ok: false; error: string; detail?: string } {
+  const ttl = parsePreviewGovernanceField(body.ttl);
+  if (!ttl.ok) {
+    return {
+      ok: false,
+      error: "invalid_ttl",
+      detail: governanceIssueMessage("preview.ttl", ttl.raw),
+    };
+  }
+  const idle = parsePreviewGovernanceField(body.idle_teardown);
+  if (!idle.ok) {
+    return {
+      ok: false,
+      error: "invalid_idle_teardown",
+      detail: governanceIssueMessage("preview.idle_teardown", idle.raw),
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      ...(ttl.value !== undefined ? { ttlMs: ttl.value.ms } : {}),
+      ...(idle.value !== undefined ? { idleMs: idle.value.ms } : {}),
+    },
+  };
+}
+
 export type TeardownBody = {
   canonical_repo_id: string;
   pr_id: number;
@@ -502,6 +541,7 @@ export function deploy(
   deps: LifecycleDeps & {
     materialization: PreviewMaterializationCtx;
     telemetry: TelemetryDeployHook;
+    governance: GovernanceConfig;
   },
 ) {
   return async ({
@@ -572,6 +612,18 @@ export function deploy(
     if (!volumes.ok) {
       return unprocessable(set, volumes);
     }
+    const governance = resolveGovernanceRequest(body);
+    if (!governance.ok) {
+      return unprocessable(set, governance);
+    }
+    const admission = await checkDeployAdmission(
+      deps.db,
+      { repo: target.value.repo, prId: target.value.prId },
+      deps.governance,
+      governance.value,
+    );
+    if (!admission.ok) return mapResult(admission, set);
+    const governanceMs = admission.value;
     const plan = resolvePreviewPlan(deps.materialization, {
       spec: deploySpecs.value.spec,
       slug: body.slug,
@@ -624,6 +676,7 @@ export function deploy(
         : {}),
       plan,
       reseed: body.reseed === true,
+      governanceMs,
       ...(deps.materialization.traefikTls !== undefined
         ? { traefikTls: deps.materialization.traefikTls }
         : {}),
@@ -648,13 +701,14 @@ export function deploy(
     return presentPreviewSnapshot(
       accepted.value.row,
       deps.materialization.mail?.uiUrl,
+      deps.legacyTtlMs,
     );
   };
 }
 
 export function getPreview(
   deps: LifecycleDeps,
-  mailboxUrl?: string,
+  mailboxUrl: string | undefined,
 ) {
   return async ({
     query,
@@ -672,7 +726,11 @@ export function getPreview(
       query.pr_id,
     );
     if (!result.ok) return mapResult(result, set);
-    return presentPreviewSnapshot(result.value, mailboxUrl);
+    return presentPreviewSnapshot(
+      result.value,
+      mailboxUrl,
+      deps.legacyTtlMs,
+    );
   };
 }
 

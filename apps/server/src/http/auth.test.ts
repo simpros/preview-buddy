@@ -6,6 +6,7 @@ import { createFakeDockerClient } from "../docker/fake.ts";
 import { repos } from "../infrastructure/db/schema.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
+import { governanceConfig } from "../preview/governance-fixtures.ts";
 import { NO_TELEMETRY } from "../telemetry/contract.ts";
 import { createRoutes } from "./routes.ts";
 import {
@@ -349,6 +350,8 @@ describe("ensureAdminToken", () => {
       dataVolumes: bindPreviewDataVolumes(docker),
       materialization: { traefikNetwork: "sprout-traefik" },
       telemetry: NO_TELEMETRY,
+      governance: governanceConfig(),
+      legacyTtlMs: 72 * 3600_000,
     });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {
