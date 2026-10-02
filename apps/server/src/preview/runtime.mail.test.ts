@@ -247,6 +247,7 @@ describe("buildMaterializationCtx", () => {
         secret: "sekrit",
         address: "http://gateway:7331/v1/internal/preview-auth",
       },
+      dashboard: { enabled: false, user: "", password: "" },
     });
     expect(ctx.previewAuth).toEqual({
       secret: "sekrit",
@@ -263,6 +264,7 @@ describe("buildMaterializationCtx", () => {
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,
+      dashboard: { enabled: false, user: "", password: "" },
     });
     expect(bare.previewAuth).toBeUndefined();
   });

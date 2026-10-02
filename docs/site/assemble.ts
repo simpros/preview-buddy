@@ -169,6 +169,7 @@ const copyOnlyFiles = [
   "LICENSE",
   "compose.env.example",
   ".env.example",
+  "docs/dashboard.svg",
   "e2e/README.md",
   "deploy/traefik/README.md",
   "deploy/coolify/README.md",

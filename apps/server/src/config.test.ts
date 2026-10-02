@@ -60,6 +60,11 @@ function clearGatewayEnv(): void {
     delete process.env[key];
   }
   delete process.env.SPROUT_ADMIN_TOKEN;
+  delete process.env.SPROUT_DASHBOARD_ENABLED;
+  delete process.env.SPROUT_DASHBOARD_HOST;
+  delete process.env.SPROUT_DASHBOARD_AUTH;
+  delete process.env.SPROUT_DASHBOARD_USER;
+  delete process.env.SPROUT_DASHBOARD_PASSWORD;
   delete process.env.SPROUT_TRAEFIK_ENTRYPOINTS;
   delete process.env.SPROUT_TRAEFIK_CERTRESOLVER;
   delete process.env.SPROUT_TRAEFIK_MIDDLEWARES;
@@ -377,6 +382,7 @@ describe("loadConfig", () => {
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,
+      dashboard: { enabled: false, user: "", password: "" },
     });
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
@@ -412,6 +418,12 @@ describe("loadConfig", () => {
         middleware: "voidauth",
         address: "https://auth.example.com/forward",
       },
+      dashboard: {
+        enabled: true,
+        host: "dashboard.internal",
+        user: "op",
+        password: "pw",
+      },
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
@@ -425,6 +437,9 @@ describe("loadConfig", () => {
     expect(summary.traefikForwardAuth).toBe(
       "voidauth → https://auth.example.com/forward",
     );
+    expect(summary.dashboardEnabled).toBe("true");
+    expect(summary.dashboardHost).toBe("dashboard.internal");
+    expect(summary.dashboardUser).toBe("[set]");
   });
 
   test("configSummary marks anonymous registry auth", () => {
@@ -447,6 +462,7 @@ describe("loadConfig", () => {
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,
+      dashboard: { enabled: false, user: "", password: "" },
     });
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");

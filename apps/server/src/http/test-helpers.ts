@@ -24,7 +24,12 @@ import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
-import type { MailConfig, PostgresConfig, PreviewAuthConfig } from "../config.ts";
+import type {
+  DashboardConfig,
+  MailConfig,
+  PostgresConfig,
+  PreviewAuthConfig,
+} from "../config.ts";
 
 export type TestDb = {
   db: StateDb;
@@ -98,6 +103,8 @@ export async function createTestApp(
         postgres?: PostgresConfig;
         mail?: MailConfig;
         previewAuth?: PreviewAuthConfig;
+        dashboard?: DashboardConfig;
+        extraGitlabHosts?: ReadonlySet<string>;
       }
     | string = {},
 ): Promise<TestApp> {
@@ -150,6 +157,8 @@ export async function createTestApp(
       app: appOps,
       dataVolumes: bindPreviewDataVolumes(docker),
       materialization,
+      dashboard: opts.dashboard,
+      extraGitlabHosts: opts.extraGitlabHosts,
     }),
     db,
     adminToken,

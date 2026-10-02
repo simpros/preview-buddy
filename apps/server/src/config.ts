@@ -58,6 +58,14 @@ export const OPTIONAL_STRING_ENV = [
   "SPROUT_FORWARDAUTH_ADDRESS",
 ] as const;
 
+export const DASHBOARD_ENV_KEYS = [
+  "SPROUT_DASHBOARD_ENABLED",
+  "SPROUT_DASHBOARD_HOST",
+  "SPROUT_DASHBOARD_AUTH",
+  "SPROUT_DASHBOARD_USER",
+  "SPROUT_DASHBOARD_PASSWORD",
+] as const;
+
 export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...REQUIRED_ENV,
   ...POSTGRES_REQUIRED_ENV,
@@ -65,6 +73,7 @@ export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...PREVIEW_AUTH_ENV_KEYS,
   ...Object.keys(OPTIONAL_ENV_DEFAULTS),
   ...OPTIONAL_STRING_ENV,
+  ...DASHBOARD_ENV_KEYS,
   "SPROUT_ADMIN_TOKEN",
   "SPROUT_STATE_DB_PATH",
   "SPROUT_ADMIN_TOKEN_PATH",
@@ -96,6 +105,13 @@ export type PreviewAuthConfig = {
   address: string;
 };
 
+export type DashboardConfig = {
+  enabled: boolean;
+  host?: string;
+  user: string;
+  password: string;
+};
+
 export type Config = {
   /** Absent on sqlite-only gateways; all-or-nothing (partial fails boot). */
   postgres?: PostgresConfig;
@@ -103,6 +119,7 @@ export type Config = {
   mail?: MailConfig;
   /** Absent unless the preview-auth group is set; all-or-nothing (partial fails boot). */
   previewAuth?: PreviewAuthConfig;
+  dashboard: DashboardConfig;
   traefikNetwork: string;
   registryPullAuth: RegistryPullAuth;
   githubToken: string;
@@ -160,7 +177,8 @@ function optionalEnv(
     | (typeof OPTIONAL_STRING_ENV)[number]
     | (typeof POSTGRES_REQUIRED_ENV)[number]
     | (typeof MAIL_ENV_KEYS)[number]
-    | (typeof PREVIEW_AUTH_ENV_KEYS)[number],
+    | (typeof PREVIEW_AUTH_ENV_KEYS)[number]
+    | (typeof DASHBOARD_ENV_KEYS)[number],
 ): string {
   return process.env[key]?.trim() ?? "";
 }
@@ -251,6 +269,47 @@ function parseTraefikForwardAuth(): TraefikForwardAuth | undefined {
     );
   }
   return { middleware, address };
+}
+
+function parseDashboardEnabled(raw: string | undefined): boolean {
+  const normalized = raw?.trim().toLowerCase() ?? "";
+  if (normalized === "") return false;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error(
+    "Invalid SPROUT_DASHBOARD_ENABLED: must be a boolean (true/false, 1/0, yes/no)",
+  );
+}
+
+/** Opt-in read-only preview list. Enabled demands basic-auth credentials. */
+function parseDashboardConfig(): DashboardConfig {
+  const enabled = parseDashboardEnabled(process.env.SPROUT_DASHBOARD_ENABLED);
+  const auth = optionalEnv("SPROUT_DASHBOARD_AUTH");
+  if (auth !== "" && auth !== "basic") {
+    throw new Error(
+      'Invalid SPROUT_DASHBOARD_AUTH: must be "basic" (the only protection model)',
+    );
+  }
+  if (!enabled) {
+    return { enabled: false, user: "", password: "" };
+  }
+  const user = optionalEnv("SPROUT_DASHBOARD_USER");
+  const password = optionalEnv("SPROUT_DASHBOARD_PASSWORD");
+  const missing: string[] = [];
+  if (user === "") missing.push("SPROUT_DASHBOARD_USER");
+  if (password === "") missing.push("SPROUT_DASHBOARD_PASSWORD");
+  if (missing.length > 0) {
+    throw new Error(
+      `Incomplete dashboard configuration: missing ${missing.join(", ")}`,
+    );
+  }
+  const host = optionalEnv("SPROUT_DASHBOARD_HOST");
+  return {
+    enabled: true,
+    ...(host === "" ? {} : { host }),
+    user,
+    password,
+  };
 }
 
 export function parseExtraGitlabHosts(raw: string): ReadonlySet<string> {
@@ -345,6 +404,7 @@ export function loadConfig(): Config {
     postgres: parsePostgresConfig(),
     mail: parseMailConfig(),
     previewAuth: parsePreviewAuthConfig(),
+    dashboard: parseDashboardConfig(),
     traefikNetwork: requiredEnv("SPROUT_TRAEFIK_NETWORK"),
     registryPullAuth,
     githubToken: optionalEnv("SPROUT_GITHUB_TOKEN"),
@@ -440,6 +500,9 @@ export function configSummary(config: Config): Record<string, string | number> {
     mailFromDomain: mail ? mail.fromDomain : "[unset]",
     previewAuthSecret: previewAuth ? "[set]" : "[unset]",
     previewAuthAddress: previewAuth ? previewAuth.address : "[unset]",
+    dashboardEnabled: config.dashboard.enabled ? "true" : "false",
+    dashboardHost: config.dashboard.host ?? "[unset]",
+    dashboardUser: config.dashboard.user === "" ? "[unset]" : "[set]",
     registryPullAuthHosts: config.registryPullAuth.byHost.size,
     registryPullAuthFallback: config.registryPullAuth.fallback
       ? "[set]"

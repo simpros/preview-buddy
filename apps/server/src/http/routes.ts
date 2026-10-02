@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { authPlugin, requireAdmin, requireAuth } from "../auth/middleware.ts";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import type { DashboardConfig } from "../config.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { LifecycleDeps } from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
@@ -12,6 +13,7 @@ import {
   listTokens,
   revokeToken,
 } from "./admin-tokens.ts";
+import { getDashboard } from "./dashboard.ts";
 import { deploy, deployBody, getPreview, previewQuery, teardown, teardownBody } from "./deploy.ts";
 import { doctor, drop, dropBody, listPreviews } from "./introspection.ts";
 import {
@@ -33,6 +35,8 @@ export type RouteDeps = {
   app: PreviewAppOps;
   dataVolumes: PreviewDataVolumes;
   materialization: PreviewMaterializationCtx;
+  dashboard?: DashboardConfig;
+  extraGitlabHosts?: ReadonlySet<string>;
 };
 
 function stubNotImplemented({
@@ -62,47 +66,60 @@ export function createRoutes(deps: RouteDeps) {
       ? { previewAuth: deps.materialization.previewAuth }
       : {}),
   };
-  return new Elysia()
+  const app = new Elysia()
     .get("/healthz", () => ({ ok: true }))
-    .get("/v1/internal/preview-auth", verifyPreviewAccess(accessDeps))
-    .group("/v1", (v1) =>
-      v1
-        .use(authPlugin(deps.db))
-        .onBeforeHandle(requireAuth)
-        .group("/admin", (admin) =>
-          admin
-            .onBeforeHandle(requireAdmin)
-            .get("/tokens", listTokens(deps.db))
-            .post("/tokens", createDeployToken(deps.db), {
-              body: createDeployTokenBody,
-            })
-            .delete("/tokens/:id", revokeToken(deps.db)),
-        )
-        .get("/previews", listPreviews(deps.db, mailboxUrl), {
-          beforeHandle: requireAdmin,
-        })
-        .get("/previews/access", getPreviewAccess(accessDeps), {
-          query: accessQuery,
-        })
-        .post("/previews/access/revoke", revokePreviewAccess(accessDeps), {
-          body: revokeBody,
-        })
-        .get("/previews/:id/logs", getPreviewLogs(lifecycle), {
-          params: previewLogsParams,
-          query: previewLogsQuery,
-        })
-        .get("/doctor", doctor(lifecycle), {
-          beforeHandle: requireAdmin,
-        })
-        .post("/drop", drop(lifecycle), {
-          beforeHandle: requireAdmin,
-          body: dropBody,
-        })
-        .post("/deploy", deploy(deployDeps), { body: deployBody })
-        .get("/preview", getPreview(lifecycle, mailboxUrl), { query: previewQuery })
-        .post("/teardown", teardown(lifecycle), { body: teardownBody })
-        .all("/*", stubNotImplemented),
+    .get("/v1/internal/preview-auth", verifyPreviewAccess(accessDeps));
+  if (deps.dashboard?.enabled) {
+    // .get registers on this instance; the narrowed return is dropped so the
+    // Eden surface stays token-API-only (the page is HTML behind basic auth).
+    app.get(
+      "/dashboard",
+      getDashboard({
+        db: deps.db,
+        dashboard: deps.dashboard,
+        mailboxUrl,
+        extraGitlabHosts: deps.extraGitlabHosts,
+      }),
     );
+  }
+  return app.group("/v1", (v1) =>
+    v1
+      .use(authPlugin(deps.db))
+      .onBeforeHandle(requireAuth)
+      .group("/admin", (admin) =>
+        admin
+          .onBeforeHandle(requireAdmin)
+          .get("/tokens", listTokens(deps.db))
+          .post("/tokens", createDeployToken(deps.db), {
+            body: createDeployTokenBody,
+          })
+          .delete("/tokens/:id", revokeToken(deps.db)),
+      )
+      .get("/previews", listPreviews(deps.db, mailboxUrl), {
+        beforeHandle: requireAdmin,
+      })
+      .get("/previews/access", getPreviewAccess(accessDeps), {
+        query: accessQuery,
+      })
+      .post("/previews/access/revoke", revokePreviewAccess(accessDeps), {
+        body: revokeBody,
+      })
+      .get("/previews/:id/logs", getPreviewLogs(lifecycle), {
+        params: previewLogsParams,
+        query: previewLogsQuery,
+      })
+      .get("/doctor", doctor(lifecycle), {
+        beforeHandle: requireAdmin,
+      })
+      .post("/drop", drop(lifecycle), {
+        beforeHandle: requireAdmin,
+        body: dropBody,
+      })
+      .post("/deploy", deploy(deployDeps), { body: deployBody })
+      .get("/preview", getPreview(lifecycle, mailboxUrl), { query: previewQuery })
+      .post("/teardown", teardown(lifecycle), { body: teardownBody })
+      .all("/*", stubNotImplemented),
+  );
 }
 
 export type SproutApi = ReturnType<typeof createRoutes>;
