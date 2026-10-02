@@ -157,6 +157,7 @@ Repo-relative paths for the contract above:
   `apps/server/src/http/deploy-mail.test.ts`
 - Mailbox / From presentation (MR note lines, settled deploy output):
   `apps/cli/src/commands/forge-note.test.ts`
+- Send-and-read-back through Mailpit's API: `e2e/mail.test.ts`
 - Substituted hostname on a live deploy: `e2e/lifecycle.test.ts`
 - Component inputs / dotenv / `on_stop` wiring: `templates/preview.test.ts`
 

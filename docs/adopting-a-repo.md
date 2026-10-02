@@ -155,8 +155,22 @@ preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"
 ```
 
-Write a seeded manifest (as in the quickstart): add `health:` + `seed:`.
-`seed: {}` alone enables seeding with the conventional `Dockerfile.seed`.
+Write a seeded manifest: add `health:` + `seed:` beside the app-only
+manifest above. `health:` is required when seeding; `seed: {}` alone
+enables seeding with the conventional `Dockerfile.seed`.
+
+```yaml
+slug: myapp
+preview:
+  hostname: "pr-{pr_id}.myapp.preview.example.com"
+health:
+  path: /health
+  interval: 2s
+  timeout: 120s
+  expect: 200
+seed:
+  dockerfile: Dockerfile.seed
+```
 
 ## App image: migrate at startup
 

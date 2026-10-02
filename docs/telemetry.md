@@ -91,7 +91,8 @@ Transport costs one `POST` per event with a 3s timeout, fire-and-forget. A
 failed export never changes a deploy outcome — at most one warning is
 logged. There are no retries, no queue, and no batching: losing an
 anonymous event is acceptable, changing a deploy's outcome is not. That is
-the whole cost: two small JSON posts per deploy plus one per day, with no
+the whole cost: one small JSON post per deploy, plus an install
+heartbeat at boot and every 24h, with no
 effect on the request path when the backend is slow or dead.
 
 ## What is never sent

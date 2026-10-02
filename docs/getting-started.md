@@ -37,9 +37,8 @@ preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"
 ```
 
-Check the file loads with the CLI's own loader (`apps/cli/src/yaml.ts`,
-`parseSproutYaml`). Unknown keys are rejected (`unknown key: <path>`), so
-typos fail here, not at deploy.
+Unknown keys are rejected (`unknown key: <path>`), so typos fail on the
+first `sprout ci preview`.
 
 When this deploys, add seeding next:
 [Adopting a repo](adopting-a-repo.md#manifest-keys-sproutyaml).
