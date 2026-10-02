@@ -15,6 +15,7 @@ import {
 } from "./row.ts";
 import { canSeedWithoutAppReplace, seedWorkOutstanding } from "./seed-phase.ts";
 import type { Result } from "./result.ts";
+import type { TelemetryPhaseMs } from "../telemetry/payload.ts";
 import {
   parsePreviewStatus,
 } from "./snapshot.ts";
@@ -398,6 +399,7 @@ export async function claimDeployIntent(
 async function completeProvisionUnlocked(
   deps: LifecycleDeps,
   input: ProvisionInput,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
   const row = await getPreviewRow(deps.db, input.repo, input.prId);
   if (!row) {
@@ -417,7 +419,7 @@ async function completeProvisionUnlocked(
   if (status.value === "removed") {
     return { ok: false, status: 404, error: "preview_not_found" };
   }
-  return completeBringUp(deps, row, input);
+  return completeBringUp(deps, row, input, timings);
 }
 
 type DestroyDisposition = "tombstone" | "purge";
@@ -529,6 +531,7 @@ async function teardownUnlocked(
 export async function provisionPreview(
   deps: LifecycleDeps,
   input: ProvisionInput,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
   const pull = await pullImagesOutsideLock(deps, input);
   return withPreviewLock(input.repo, input.prId, async () => {
@@ -542,7 +545,7 @@ export async function provisionPreview(
       );
       return pull;
     }
-    return completeProvisionUnlocked(deps, input);
+    return completeProvisionUnlocked(deps, input, timings);
   });
 }
 

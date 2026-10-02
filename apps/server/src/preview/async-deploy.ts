@@ -12,6 +12,12 @@ import {
 import {
   parsePreviewStatus,
 } from "./snapshot.ts";
+import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
+import {
+  parseTelemetryPlan,
+  type TelemetryOutcome,
+  type TelemetryPhaseMs,
+} from "../telemetry/payload.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -62,13 +68,26 @@ export async function acceptAsyncDeploy(
   });
 }
 
+export type AsyncDeployDeps = LifecycleDeps & {
+  telemetry?: TelemetryDeployHook;
+};
+
 export async function runAsyncDeploy(
-  deps: LifecycleDeps,
+  deps: AsyncDeployDeps,
   input: ProvisionInput,
 ): Promise<void> {
   const key = previewKey(input.repo, input.prId);
+  const startedAt = Date.now();
+  const timings: TelemetryPhaseMs = {};
+  let plan = parseTelemetryPlan(null);
   try {
-    await provisionPreview(deps, input);
+    const intent = await getPreviewRow(deps.db, input.repo, input.prId);
+    plan = parseTelemetryPlan(intent?.bringUpPlan ?? null);
+  } catch {
+    plan = parseTelemetryPlan(null);
+  }
+  try {
+    await provisionPreview(deps, input, timings);
   } catch (err) {
     console.warn("provision:background_failed", err);
     try {
@@ -88,6 +107,30 @@ export async function runAsyncDeploy(
     }
   } finally {
     inFlightDeploys.delete(key);
+    // The export itself is fire-and-forget; only the local row read waits.
+    const telemetry = deps.telemetry;
+    if (telemetry) {
+      try {
+        const row = await getPreviewRow(deps.db, input.repo, input.prId);
+        const outcome: TelemetryOutcome =
+          row?.status === "running" ? "running" : "failed";
+        telemetry.reportDeployOutcome({
+          outcome,
+          plan,
+          seeded: row?.seededAt != null,
+          durationMs: Date.now() - startedAt,
+          phaseMs: timings,
+          ...(outcome === "failed"
+            ? {
+                failureClass: row?.lastError ?? null,
+                failureFamily: row?.failureFamily ?? null,
+              }
+            : {}),
+        });
+      } catch {
+        // Telemetry must never change a deploy outcome.
+      }
+    }
   }
 }
 

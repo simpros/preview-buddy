@@ -14,6 +14,8 @@ import { buildMaterializationCtx } from "./preview/runtime.ts";
 import { bindPreviewDataVolumes } from "./preview/data-volumes.ts";
 import { runMigrations } from "./scripts/migrate.ts";
 import { startGatewaySweep } from "./sweep/start.ts";
+import { createTelemetryReporter } from "./telemetry/reporter.ts";
+import { telemetryStateLine } from "./telemetry/heartbeat.ts";
 
 const config = loadConfig();
 console.log("sprout starting", configSummary(config));
@@ -55,7 +57,17 @@ const app = bindPreviewOps({
 });
 const dataVolumes = bindPreviewDataVolumes(docker);
 
-startServer({ config, db, previewDb, app, dataVolumes, materialization });
+const telemetry = createTelemetryReporter({ config, db });
+console.log(
+  telemetryStateLine({
+    enabled: config.telemetryEnabled,
+    offReason: config.telemetryOffReason,
+    endpoint: config.telemetryEndpoint,
+  }),
+);
+telemetry.startHeartbeat();
+
+startServer({ config, db, previewDb, app, dataVolumes, materialization, telemetry });
 startGatewaySweep({ config, db, previewDb, app, dataVolumes });
 console.log(
   `sweep scheduled (${config.sweepCron}): first pass on the next boundary`,

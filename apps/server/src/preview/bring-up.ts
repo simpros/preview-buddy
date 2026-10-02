@@ -2,6 +2,7 @@ import type { DbProvider } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import { resolvePreviewAccessLabels } from "../app-deployment/preview-auth.ts";
 import { extractPullDetail } from "../docker/pull-failure.ts";
+import type { TelemetryPhaseMs } from "../telemetry/payload.ts";
 import { withDbNameLock } from "./locks.ts";
 import { markPreviewFailed, markStickyPreviewFailed } from "./mark-failed.ts";
 import {
@@ -239,9 +240,12 @@ async function attachAppContainer(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewRow>> {
-  let containerId: string;
-  let port: number;
+  const appStart = Date.now();
+  try {
+    let containerId: string;
+    let port: number;
   try {
     const previewAccess = await resolvePreviewAccessLabels({
       slug: row.slug,
@@ -300,20 +304,25 @@ async function attachAppContainer(
   }
 
   return { ok: true, value: starting };
+  } finally {
+    if (timings) timings.app = Date.now() - appStart;
+  }
 }
 
 async function attachThenPromote(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
-  const attached = await attachAppContainer(deps, row, input);
+  const attached = await attachAppContainer(deps, row, input, timings);
   if (!attached.ok) return attached;
   const starting = attached.value;
   const promoted = await promoteAfterHealthy(
     deps,
     starting,
     deployEphemerals(input),
+    timings,
   );
   if (!promoted.ok) return promoted;
   return finishAfterPromote(deps, starting, input);
@@ -323,8 +332,13 @@ async function ensureThenAttach(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
+  const dbStart = Date.now();
   const ensured = await ensureDatabase(deps, row, input);
+  if (timings && input.plan.dbName != null) {
+    timings.db = Date.now() - dbStart;
+  }
   if (!ensured.ok) {
     await markPreviewFailed(
       deps.db,
@@ -334,7 +348,7 @@ async function ensureThenAttach(
     );
     return ensured;
   }
-  return attachThenPromote(deps, row, input);
+  return attachThenPromote(deps, row, input, timings);
 }
 
 async function pullImageOrFail(
@@ -387,6 +401,7 @@ export async function completeBringUp(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<PreviewSnapshot>> {
   switch (parseBringUpPlan(row.bringUpPlan)) {
     case "seed_resume": {
@@ -403,6 +418,7 @@ export async function completeBringUp(
         deps,
         row,
         deployEphemerals(input),
+        timings,
       );
       if (!seeded.ok) return seeded;
       return finishAfterPromote(deps, row, input);
@@ -412,6 +428,6 @@ export async function completeBringUp(
     case "close":
       return closeRunning(deps, row);
     case "full_replace":
-      return ensureThenAttach(deps, row, input);
+      return ensureThenAttach(deps, row, input, timings);
   }
 }

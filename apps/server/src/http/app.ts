@@ -4,6 +4,7 @@ import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
+import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
 import { createRoutes } from "./routes.ts";
 
 export type ServerDeps = {
@@ -13,6 +14,7 @@ export type ServerDeps = {
   app: PreviewAppOps;
   dataVolumes: PreviewDataVolumes;
   materialization: PreviewMaterializationCtx;
+  telemetry?: TelemetryDeployHook;
 };
 
 export function startServer(deps: ServerDeps) {
@@ -24,5 +26,6 @@ export function startServer(deps: ServerDeps) {
     materialization: deps.materialization,
     dashboard: deps.config.dashboard,
     extraGitlabHosts: deps.config.extraGitlabHosts,
+    ...(deps.telemetry ? { telemetry: deps.telemetry } : {}),
   }).listen(deps.config.port);
 }

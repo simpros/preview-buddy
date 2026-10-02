@@ -2,6 +2,7 @@ import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import { previewAuthMode, type PreviewAuthSpec } from "@sprout/preview-env";
 import type { SeedImageResult, SeedImageSpec } from "../app-deployment/seed.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import type { TelemetryPhaseMs } from "../telemetry/payload.ts";
 import { markStickyPreviewFailed } from "./mark-failed.ts";
 import type { Result } from "./result.ts";
 import {
@@ -125,12 +126,18 @@ export async function promoteAfterHealthy(
   deps: SeedPhaseDeps,
   starting: PreviewRow,
   ephemerals: DeployEphemerals,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<true>> {
   const { seed } = ephemerals;
   const shouldSeed = seedWorkOutstanding(starting, seed, ephemerals.reseed);
 
   if (shouldSeed && seed) {
-    return runSeedPhase(deps, starting, { ...ephemerals, seed });
+    const seedStart = Date.now();
+    try {
+      return await runSeedPhase(deps, starting, { ...ephemerals, seed });
+    } finally {
+      if (timings) timings.seed = Date.now() - seedStart;
+    }
   }
 
   await updatePreviewRow(
@@ -165,6 +172,7 @@ export async function resumeIncompleteSeed(
   deps: SeedPhaseDeps,
   row: PreviewRow,
   ephemerals: DeployEphemerals,
+  timings?: TelemetryPhaseMs,
 ): Promise<Result<true>> {
   if (!ephemerals.seed) {
     await markStickyPreviewFailed(deps.db, row.canonicalRepoId, row.prId, {
@@ -178,8 +186,13 @@ export async function resumeIncompleteSeed(
       error: "seed_image_required_to_resume_seeding",
     };
   }
-  return runSeedPhase(deps, row, {
-    ...ephemerals,
-    seed: ephemerals.seed,
-  });
+  const seedStart = Date.now();
+  try {
+    return await runSeedPhase(deps, row, {
+      ...ephemerals,
+      seed: ephemerals.seed,
+    });
+  } finally {
+    if (timings) timings.seed = Date.now() - seedStart;
+  }
 }
