@@ -4,11 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assembleSite,
+  docsGroups,
   docsPages,
+  docsSidebar,
   listFilesRecursive,
   marketingPage,
   marketingSourcePath,
   pageHtmlFile,
+  pageIndexHref,
   publishDirs,
   publishFiles,
   renderDocsIndexHtml,
@@ -152,7 +155,7 @@ describe("assembleSite", () => {
       title: "Hi",
       description: "Hi",
       outputPath: "docs/adopting-a-repo.html",
-      nav: [],
+      sidebar: [],
       toc: headings,
       bodyHtml: rewritePageLinks(body, sourceFile, pages),
     });
@@ -349,7 +352,7 @@ describe("shared shell, code blocks, and prompt embedding", () => {
     expect(script).not.toContain("http");
   });
 
-  test("every page carries the shared header, nav, and footer", async () => {
+  test("every page carries the shared header, sidebar, and footer", async () => {
     const pages = [
       join(out, siteEntryPath),
       join(out, "docs/index.html"),
@@ -358,11 +361,14 @@ describe("shared shell, code blocks, and prompt embedding", () => {
     for (const page of pages) {
       const html = await readFile(page, "utf8");
       expect(html).toContain('<header class="site">');
-      expect(html).toContain('<nav class="docs-nav" aria-label="Docs">');
+      expect(html).toContain('<nav class="docs-sidebar" aria-label="Docs">');
       expect(html).toContain('<footer id="docs">');
       expect(html).toContain('<div class="codeblock-status" aria-live="polite">');
-      // The shell owns `.wrap`: exactly one per page, never nested.
+      // The shell owns `.wrap` and `.layout`: exactly one per page, never nested.
       expect(html.match(/<div class="wrap">/g) ?? []).toHaveLength(1);
+      expect(html.match(/<div class="layout">/g) ?? []).toHaveLength(1);
+      // No top navigation bar: page movement lives in the sidebar alone.
+      expect(html).not.toContain('<nav class="docs-nav"');
       // One brand: the mark rides inside the header wordmark link, never
       // as a second affordance above the page body.
       expect(html.match(/class="brand"/g) ?? []).toHaveLength(1);
@@ -372,8 +378,17 @@ describe("shared shell, code blocks, and prompt embedding", () => {
       expect(html.match(/assets\/sprout-mark\.png/g) ?? []).toHaveLength(1);
       // The shell owns the favicon set: one mark, one favicon set.
       expect(html).toContain('<link rel="icon" type="image/png" sizes="32x32"');
+      // The sidebar carries every docs page; the header carries no nav.
+      const header = /<header class="site">[\s\S]*?<\/header>/.exec(html)?.[0];
+      expect(header).toBeDefined();
+      expect(header).not.toContain("<nav");
       for (const { title } of docsPages) {
-        expect(html).toContain(`>${title}</a>`);
+        expect(header).not.toContain(`>${title}</a>`);
+      }
+      const sidebar = /<nav class="docs-sidebar"[\s\S]*?<\/nav>/.exec(html)?.[0];
+      expect(sidebar).toBeDefined();
+      for (const { title } of docsPages) {
+        expect(sidebar).toContain(`>${title}</a>`);
       }
     }
     const marketing = await readFile(join(out, siteEntryPath), "utf8");

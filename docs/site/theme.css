@@ -30,7 +30,7 @@
     a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
     a:hover { color: #9ad8ff; }
 
-    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 1.25rem 4rem; }
+    .wrap { max-width: 70rem; margin: 0 auto; padding: 0 1.25rem 4rem; }
 
     header.hero {
       padding: 3.5rem 0 2.5rem;
@@ -193,15 +193,82 @@
       vertical-align: -0.2em;
       margin-right: 0.45em;
     }
-    nav.docs-nav {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 0.5rem 1.1rem;
+    /* Docs layout: grouped sidebar beside the page body. The column cap
+       keeps the measure readable while the sidebar takes the spare width. */
+    .layout {
+      display: grid;
+      grid-template-columns: 15.5rem minmax(0, 1fr);
+      gap: 0 2.5rem;
+      align-items: start;
+    }
+    .layout > main { min-width: 0; max-width: 46rem; }
+    img { max-width: 100%; height: auto; }
+
+    /* Grouped sidebar: one disclosure per manifest group. The current page
+       carries `aria-current`; its group renders open from assembly. */
+    .sidebar-state {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    .sidebar-toggle { display: none; }
+    nav.docs-sidebar {
+      position: sticky;
+      top: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--bg-elev);
+      padding: 0.85rem 1rem;
       font-size: 0.92rem;
     }
-    nav.docs-nav a { color: var(--muted); text-decoration: none; }
-    nav.docs-nav a:hover { color: var(--text); }
-    nav.docs-nav a[aria-current="page"] { color: var(--text); }
+    nav.docs-sidebar details { margin: 0.35rem 0; }
+    nav.docs-sidebar details:first-of-type { margin-top: 0; }
+    nav.docs-sidebar summary {
+      cursor: pointer;
+      color: var(--text);
+      font-weight: 600;
+      padding: 0.2rem 0;
+    }
+    nav.docs-sidebar ul {
+      list-style: none;
+      margin: 0.25rem 0 0.5rem;
+      padding: 0 0 0 0.25rem;
+    }
+    nav.docs-sidebar li { margin: 0.3rem 0; }
+    nav.docs-sidebar li a { color: var(--muted); text-decoration: none; }
+    nav.docs-sidebar li a:hover { color: var(--text); }
+    nav.docs-sidebar li a[aria-current="page"] { color: var(--text); font-weight: 600; }
+
+    /* Grouped docs index: one section per manifest group. */
+    section.index-group ul, section.index-start ul { list-style: none; padding-left: 0; }
+    section.index-group li, section.index-start li { margin: 0.5rem 0; }
+
+    /* Narrow screens: the sidebar collapses behind its toggle (CSS-only, so
+       the menu works with scripting disabled) and the content stacks below. */
+    @media (max-width: 760px) {
+      .layout { display: block; }
+      .layout > main { max-width: 100%; }
+      .sidebar-toggle {
+        display: block;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg-elev);
+        color: var(--text);
+        font-weight: 600;
+        font-size: 0.95rem;
+        padding: 0.6rem 1rem;
+        margin: 0 0 1rem;
+        cursor: pointer;
+      }
+      .sidebar-state:not(:checked) ~ nav.docs-sidebar { display: none; }
+      .sidebar-state:checked ~ nav.docs-sidebar {
+        position: static;
+        margin: 0 0 1.5rem;
+      }
+    }
 
     /* "On this page" index, fed by the parsed document headings. */
     nav.toc-page {
