@@ -12,6 +12,7 @@ import {
   type TeardownDeps,
 } from "../preview/lifecycle.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
+import type { PreviewExpiryReason } from "../preview/types.ts";
 import type {
   SweepDeletion,
   SweepPorts,
@@ -25,7 +26,7 @@ export type LiveSweepDeps = {
   dataVolumes: PreviewDataVolumes;
   forge: ForgeClient;
   ttlHours: number;
-  governance?: SweepPorts["governance"];
+  governance: SweepPorts["governance"];
   log?: SweepPorts["log"];
 };
 
@@ -40,10 +41,7 @@ function teardownDeps(deps: LiveSweepDeps): TeardownDeps {
 
 async function removeControlPlane(
   deps: LiveSweepDeps,
-  deletion: Extract<
-    SweepDeletion,
-    { reason: "sweep:ttl-expired" | "sweep:idle-expired" | "sweep:pr-not-open" }
-  >,
+  deletion: Extract<SweepDeletion, { reason: PreviewExpiryReason }>,
   useTryLock = false,
 ): Promise<boolean> {
   const input = {
@@ -63,7 +61,7 @@ async function removeControlPlane(
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
   return {
     ttlHours: deps.ttlHours,
-    ...(deps.governance !== undefined ? { governance: deps.governance } : {}),
+    governance: deps.governance,
     log: deps.log,
     listPreviews: async () => {
       const rows = await deps.db.select().from(previews);
@@ -84,7 +82,6 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           createdAtMs,
           status: row.status,
           lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
-          expiresAtMs: parseUnambiguousUtcMs(row.expiresAt ?? ""),
           ttlMs: row.ttlMs ?? null,
           idleMs: row.idleMs ?? null,
         });

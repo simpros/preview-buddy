@@ -349,6 +349,14 @@ describe("ensureAdminToken", () => {
       dataVolumes: bindPreviewDataVolumes(docker),
       materialization: { traefikNetwork: "sprout-traefik" },
       telemetry: NO_TELEMETRY,
+      governance: {
+        previewTtlMs: null,
+        previewIdleMs: null,
+        maxPreviews: null,
+        maxPreviewsPerRepo: null,
+        previewMaxDbConnections: null,
+        postgresMaxConnections: null,
+      },
     });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {

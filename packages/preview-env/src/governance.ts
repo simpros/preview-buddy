@@ -22,12 +22,25 @@ function parseDurationMs(raw: string): number | null {
 
 /** Gateway-level governance: every field resolved, null means off. */
 export type GovernanceConfig = {
+  /** Null means unbounded; manifest preview.ttl overrides. */
   previewTtlMs: number | null;
+  /** Null means off; measured from the last successful deploy. */
   previewIdleMs: number | null;
+  /** Null means unbounded. */
   maxPreviewsPerRepo: number | null;
+  /** Null means unbounded. */
   maxPreviews: number | null;
+  /** Expected per-preview DB connections; null means no budget. */
   previewMaxDbConnections: number | null;
+  /** Instance ceiling for the budget arithmetic; null means no budget. */
   postgresMaxConnections: number | null;
+};
+
+/** Per-preview deadlines in ms; null means off. Single home for the shape
+ * threaded from admission through bring-up. */
+export type EffectiveGovernanceMs = {
+  ttlMs: number | null;
+  idleMs: number | null;
 };
 
 /** Manifest-level governance overrides; undefined means inherit the gateway. */
@@ -138,15 +151,13 @@ export function resolveGovernanceMs(
 /** Effective per-preview deadlines from manifest overrides over the gateway. */
 export function resolveEffectiveGovernanceMs(
   manifest: GovernanceManifest | undefined,
-  gateway:
-    | Pick<GovernanceConfig, "previewTtlMs" | "previewIdleMs">
-    | undefined,
-): { ttlMs: number | null; idleMs: number | null } {
+  gateway: Pick<GovernanceConfig, "previewTtlMs" | "previewIdleMs">,
+): EffectiveGovernanceMs {
   return {
-    ttlMs: resolveGovernanceMs(manifest?.ttl, gateway?.previewTtlMs ?? null),
+    ttlMs: resolveGovernanceMs(manifest?.ttl, gateway.previewTtlMs),
     idleMs: resolveGovernanceMs(
       manifest?.idle_teardown,
-      gateway?.previewIdleMs ?? null,
+      gateway.previewIdleMs,
     ),
   };
 }
@@ -178,21 +189,15 @@ export function connectionProjection(input: {
 export type GovernanceStatus = {
   total: number;
   byRepo: Map<string, number>;
-  connections: { projected: number | null; over: boolean };
 };
 
-/** One pass over live previews for cap and budget checks; deploy and sweep share it. */
+/**
+ * One pass over live previews for the cap checks. Connection budget is not
+ * part of the status: both callers project it from the same
+ * `connectionProjection` input so the +1 convention lives in one place.
+ */
 export function governanceStatus(
   previews: readonly { canonicalRepoId: string }[],
-  gov:
-    | Pick<
-        GovernanceConfig,
-        | "maxPreviews"
-        | "maxPreviewsPerRepo"
-        | "previewMaxDbConnections"
-        | "postgresMaxConnections"
-      >
-    | undefined,
 ): GovernanceStatus {
   const byRepo = new Map<string, number>();
   for (const preview of previews) {
@@ -201,16 +206,7 @@ export function governanceStatus(
       (byRepo.get(preview.canonicalRepoId) ?? 0) + 1,
     );
   }
-  const total = previews.length;
-  const perPreview = gov?.previewMaxDbConnections ?? null;
-  const ceiling = gov?.postgresMaxConnections ?? null;
-  let projected: number | null = null;
-  let over = false;
-  if (perPreview !== null && ceiling !== null) {
-    projected = total * perPreview;
-    over = projected > ceiling;
-  }
-  return { total, byRepo, connections: { projected, over } };
+  return { total: previews.length, byRepo };
 }
 
 export function previewLimitDetail(input: {

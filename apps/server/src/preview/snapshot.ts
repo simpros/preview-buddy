@@ -1,4 +1,4 @@
-import { deriveMailFromName } from "@sprout/preview-env";
+import { computeExpiresAtMs, deriveMailFromName } from "@sprout/preview-env";
 import type { Result } from "./result.ts";
 import type { PreviewRow } from "./row.ts";
 import type {
@@ -27,6 +27,26 @@ export function parsePreviewStatus(status: string): Result<PreviewStatus> {
   }
 }
 
+/**
+ * Read-surface expiry: derived from the last activity plus the stored
+ * per-preview durations, the same source the sweep plans from. Tombstones
+ * report null, matching the pre-derivation display.
+ */
+export function expiresAtForRow(
+  row: Pick<PreviewRow, "status" | "lastActivityAt" | "ttlMs" | "idleMs">,
+): string | null {
+  if (row.status === "removed") return null;
+  const baseMs =
+    row.lastActivityAt == null ? NaN : Date.parse(row.lastActivityAt);
+  if (!Number.isFinite(baseMs)) return null;
+  const expiresMs = computeExpiresAtMs(
+    baseMs,
+    row.ttlMs ?? null,
+    row.idleMs ?? null,
+  );
+  return expiresMs === null ? null : new Date(expiresMs).toISOString();
+}
+
 export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
   const status = parsePreviewStatus(row.status);
   const parsed = status.ok ? status.value : "failed";
@@ -53,7 +73,7 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
       ? { last_error_detail: row.lastErrorDetail }
       : {}),
     last_activity_at: row.lastActivityAt ?? null,
-    expires_at: row.expiresAt ?? null,
+    expires_at: expiresAtForRow(row),
     expiry_reason: row.expiryReason ?? null,
   };
 }
@@ -110,7 +130,7 @@ export function presentListedPreview(
     status,
     created_at: row.createdAt,
     last_activity_at: row.lastActivityAt ?? null,
-    expires_at: row.expiresAt ?? null,
+    expires_at: expiresAtForRow(row),
     expiry_reason: row.expiryReason ?? null,
     ...(snap.mail_from !== undefined ? { mail_from: snap.mail_from } : {}),
     ...(snap.mail_from_name !== undefined

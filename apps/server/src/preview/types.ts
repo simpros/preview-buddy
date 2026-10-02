@@ -1,4 +1,9 @@
-import type { HealthSpec, PreviewAuthSpec, PreviewLabels } from "@sprout/preview-env";
+import type {
+  EffectiveGovernanceMs,
+  HealthSpec,
+  PreviewAuthSpec,
+  PreviewLabels,
+} from "@sprout/preview-env";
 import type {
   PreviewAppOps,
   PreviewServiceSpec,
@@ -97,8 +102,6 @@ export type PhaseTimer = {
   record(phase: PreviewPhase, ms: number): void;
 };
 
-export type { GovernanceConfig } from "@sprout/preview-env";
-
 export type ProvisionInput = {
   repo: string;
   prId: number;
@@ -116,7 +119,7 @@ export type ProvisionInput = {
   traefikForwardAuth?: TraefikForwardAuth;
   auth?: PreviewAuthSpec;
   previewAuth?: PreviewAuthConfig;
-  governanceMs?: { ttlMs: number | null; idleMs: number | null };
+  governanceMs: EffectiveGovernanceMs;
 };
 
 export type TeardownInput = {
@@ -124,12 +127,20 @@ export type TeardownInput = {
   prId: number;
 };
 
+/** Removal cause recorded on the tombstone. Eviction ("sweep:pr-not-open")
+ * and expiry share the tombstone shape with manual teardown; only the
+ * recorded reason differs. See destroyPreviewRow. */
+export type PreviewExpiryReason =
+  | "sweep:ttl-expired"
+  | "sweep:idle-expired"
+  | "sweep:pr-not-open";
+
 export type RemovePreviewInput = {
   repo: string;
   prId: number;
   expectedDbName: string | null;
   expectedCreatedAt: string;
-  expiryReason?: string;
+  expiryReason?: PreviewExpiryReason;
 };
 
 export type PreviewSnapshot = {

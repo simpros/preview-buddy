@@ -4,7 +4,6 @@ import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { completeBringUp, pullImagesOutsideLock } from "./bring-up.ts";
 import {
-  isPreviewLocked,
   tryWithPreviewLock,
   withDbNameLock,
   withPreviewLock,
@@ -27,6 +26,7 @@ import type {
   BringUpPlan,
   DisplayPreviewStatus,
   LifecycleDeps,
+  PreviewExpiryReason,
   PreviewSnapshot,
   PreviewStatus,
   ProvisionInput,
@@ -37,11 +37,11 @@ import type {
 } from "./types.ts";
 
 export type { PreviewRow };
-export type { GovernanceConfig } from "@sprout/preview-env";
 export type {
   BringUpPlan,
   DisplayPreviewStatus,
   LifecycleDeps,
+  PreviewExpiryReason,
   PreviewSnapshot,
   PreviewStatus,
   ProvisionInput,
@@ -51,7 +51,6 @@ export type {
   TeardownSnapshot,
 } from "./types.ts";
 export {
-  isPreviewLocked,
   tryWithPreviewLock,
   withDbNameLock,
   withPreviewLock,
@@ -438,7 +437,7 @@ async function destroyPreviewRow(
   deps: TeardownDeps,
   existing: PreviewRow,
   disposition: DestroyDisposition,
-  expiryReason?: string,
+  expiryReason?: PreviewExpiryReason,
 ): Promise<Result<TeardownSnapshot>> {
   const repo = existing.canonicalRepoId;
   const prId = existing.prId;
@@ -481,17 +480,13 @@ async function destroyPreviewRow(
         .set({
           status: "removed",
           containerId: null,
-          // Expiry clears the seed watermark so the next deploy provisions
-          // fresh and the seed re-runs; PR-close teardown keeps the same
-          // tombstone shape with the reason recorded for the read surface.
-          ...(expiryReason !== undefined
-            ? {
-                seededAt: null,
-                seededSeedImage: null,
-                expiryReason,
-                expiresAt: null,
-              }
-            : {}),
+          // The tombstone records why the preview went away; manual
+          // teardown leaves the reason null while sweep passes its
+          // deletion reason. The seed watermark is deliberately kept:
+          // every redeploy of a removed row goes through
+          // writeProvisioningIntent, which already resets it, so clearing
+          // here would only make the two removal paths diverge.
+          expiryReason: expiryReason ?? null,
           updatedAt: utcIsoNow(),
         })
         .where(

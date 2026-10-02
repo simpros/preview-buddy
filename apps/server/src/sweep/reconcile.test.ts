@@ -61,6 +61,14 @@ function memoryPorts(seed: {
       return true;
     },
     ttlHours: 72,
+    governance: {
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviews: null,
+      maxPreviewsPerRepo: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
+    },
     log: (message, deletion) => {
       logs.push(message);
       seed.log?.(message, deletion);

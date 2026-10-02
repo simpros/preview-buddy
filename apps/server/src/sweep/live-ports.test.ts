@@ -8,7 +8,17 @@ import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
 import { runSweepPass } from "./reconcile.ts";
+
+const offGovernance: GovernanceConfig = {
+  previewTtlMs: null,
+  previewIdleMs: null,
+  maxPreviews: null,
+  maxPreviewsPerRepo: null,
+  previewMaxDbConnections: null,
+  postgresMaxConnections: null,
+};
 
 function stubPreviewDb(
   partial: Partial<PreviewDbRouter> &
@@ -80,6 +90,7 @@ describe("createLiveSweepPorts", () => {
       forge: {
         listOpenPrIds: async () => [],
       },
+      governance: offGovernance,
       ttlHours: 72,
       log: () => {},
     });
@@ -124,6 +135,7 @@ describe("createLiveSweepPorts", () => {
         listPreviewDatabases: async () => [],
       }),
       forge: { listOpenPrIds: async () => [1] },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -169,6 +181,7 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [1] },
+      governance: offGovernance,
       ttlHours: 72,
       log: (message) => {
         logs.push(message);
@@ -223,6 +236,7 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [1] },
+      governance: offGovernance,
       ttlHours: 1,
       log: (message) => {
         logs.push(message);
@@ -278,6 +292,7 @@ describe("createLiveSweepPorts", () => {
         }),
       }),
       forge: { listOpenPrIds: async () => [] },
+      governance: offGovernance,
       ttlHours: 72,
       log: (message) => {
         logs.push(message);
@@ -332,6 +347,7 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [] },
+      governance: offGovernance,
       ttlHours: 72,
       log: () => {},
     });
@@ -387,6 +403,7 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [42] },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -437,6 +454,7 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [42] },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -492,6 +510,7 @@ describe("createLiveSweepPorts", () => {
           return [42];
         },
       },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -539,6 +558,7 @@ describe("createLiveSweepPorts", () => {
         forDrop: dropRecorder(droppedDbs),
       }),
       forge: { listOpenPrIds: async () => [42] },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -581,6 +601,7 @@ describe("createLiveSweepPorts", () => {
         listPreviewDatabases: async () => [],
       }),
       forge: { listOpenPrIds: async () => [42] },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -608,6 +629,7 @@ describe("createLiveSweepPorts", () => {
         listPreviewDatabases: async () => [],
       }),
       forge: { listOpenPrIds: async () => [] },
+      governance: offGovernance,
       ttlHours: 72,
     });
 
@@ -642,6 +664,7 @@ describe("createLiveSweepPorts", () => {
         }),
       }),
       forge: { listOpenPrIds: async () => [] },
+      governance: offGovernance,
       ttlHours: 72,
       log: () => {},
     });

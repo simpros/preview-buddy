@@ -34,7 +34,6 @@ export const previews = sqliteTable(
     authBasicUser: text("auth_basic_user"),
     authBasicPassword: text("auth_basic_password"),
     lastActivityAt: text("last_activity_at"),
-    expiresAt: text("expires_at"),
     expiryReason: text("expiry_reason"),
     ttlMs: integer("ttl_ms"),
     idleMs: integer("idle_ms"),

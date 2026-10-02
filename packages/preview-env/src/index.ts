@@ -122,6 +122,7 @@ export {
   parsePreviewGovernanceField,
   previewLimitDetail,
   resolveEffectiveGovernanceMs,
+  type EffectiveGovernanceMs,
   type GovernanceConfig,
   type GovernanceManifest,
   type GovernanceStatus,

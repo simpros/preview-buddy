@@ -47,10 +47,10 @@ import {
 import { checkDeployAdmission } from "../preview/admission.ts";
 import {
   teardownPreview,
-  type GovernanceConfig,
   type LifecycleDeps,
   type PreviewSnapshot,
 } from "../preview/lifecycle.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
 import { presentPreviewSnapshot } from "../preview/snapshot.ts";
 import {
   resolvePreviewPlan,
@@ -541,7 +541,7 @@ export function deploy(
   deps: LifecycleDeps & {
     materialization: PreviewMaterializationCtx;
     telemetry: TelemetryDeployHook;
-    governance?: GovernanceConfig;
+    governance: GovernanceConfig;
   },
 ) {
   return async ({

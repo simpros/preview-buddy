@@ -204,6 +204,39 @@ describe("POST /v1/deploy", () => {
     });
   });
 
+  test("derives expires_at from the gateway ttl on the read surface", async () => {
+    fakePreviewDb = createFakePreviewDb();
+    fakeDocker = createFakeDockerClient({
+      exposedPorts: { [APP_IMAGE]: 3000 },
+    });
+    testApp = await createTestApp({
+      previewDb: fakePreviewDb,
+      docker: fakeDocker,
+      governance: {
+        previewTtlMs: 7 * 86400_000,
+        previewIdleMs: null,
+        maxPreviews: null,
+        maxPreviewsPerRepo: null,
+        previewMaxDbConnections: null,
+        postgresMaxConnections: null,
+      },
+    });
+    const { body } = await postDeployToken(testApp, {
+      canonical_repo_id: REPO,
+      slug: "myapp",
+    });
+    const res = await postDeploy(body.token as string, deployBody());
+    expect(res.settleStatus).toBe(200);
+    const snap = res.body as {
+      last_activity_at: string;
+      expires_at: string | null;
+    };
+    expect(typeof snap.last_activity_at).toBe("string");
+    expect(snap.expires_at).toBe(
+      new Date(Date.parse(snap.last_activity_at) + 7 * 86400_000).toISOString(),
+    );
+  });
+
   test("applies preview labels alongside the gateway Traefik labels", async () => {
     const { deployToken } = await setup();
     const res = await postDeploy(

@@ -57,7 +57,7 @@ export function tryWithPreviewLock<T>(
   }));
 }
 
-export function isPreviewLocked(repo: string, prId: number): boolean {
+function isPreviewLocked(repo: string, prId: number): boolean {
   return (previewLockCounts.get(previewKey(repo, prId)) ?? 0) > 0;
 }
 

@@ -1,5 +1,4 @@
 import type { DbProvider } from "@sprout/preview-env";
-import { computeExpiresAtMs } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import { resolvePreviewAccessLabels } from "../app-deployment/preview-auth.ts";
 import { extractPullDetail } from "../docker/pull-failure.ts";
@@ -175,21 +174,6 @@ async function syncPreviewServices(
   }
 }
 
-function expiryForActivity(
-  activityIso: string,
-  governanceMs?: { ttlMs: number | null; idleMs: number | null },
-): string | null {
-  if (!governanceMs) return null;
-  const baseMs = Date.parse(activityIso);
-  if (!Number.isFinite(baseMs)) return null;
-  const expiresMs = computeExpiresAtMs(
-    baseMs,
-    governanceMs.ttlMs,
-    governanceMs.idleMs,
-  );
-  return expiresMs === null ? null : new Date(expiresMs).toISOString();
-}
-
 async function closeRunning(
   deps: LifecycleDeps,
   row: PreviewRow,
@@ -204,9 +188,8 @@ async function closeRunning(
       bringUpPlan: null,
       ...clearLastError,
       lastActivityAt: now,
-      expiresAt: expiryForActivity(now, input.governanceMs),
-      ttlMs: input.governanceMs?.ttlMs ?? null,
-      idleMs: input.governanceMs?.idleMs ?? null,
+      ttlMs: input.governanceMs.ttlMs,
+      idleMs: input.governanceMs.idleMs,
       expiryReason: null,
       updatedAt: now,
     },

@@ -21,14 +21,13 @@ function preview(over: Partial<SweepPreview> = {}): SweepPreview {
 describe("governance expiry", () => {
   afterEach(() => setSystemTime());
 
-  test("expires by stored expires_at with ttl reason", () => {
+  test("expires by ttl with ttl reason", () => {
     setSystemTime(new Date("2026-09-10T12:00:00.000Z"));
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const p = preview({
       lastActivityMs: base,
       ttlMs: 7 * 86400_000,
       idleMs: null,
-      expiresAtMs: base + 7 * 86400_000,
     });
     // now is past 7d
     setSystemTime(new Date(base + 8 * 86400_000));
@@ -41,7 +40,6 @@ describe("governance expiry", () => {
       lastActivityMs: base,
       ttlMs: null,
       idleMs: 2 * 3600_000,
-      expiresAtMs: base + 2 * 3600_000,
     });
     expect(
       planGovernanceExpiry(p, base + 3 * 3600_000),
@@ -55,19 +53,17 @@ describe("governance expiry", () => {
       lastActivityMs: base,
       ttlMs: null,
       idleMs: null,
-      expiresAtMs: null,
     });
     expect(planGovernanceExpiry(p, base + 30 * 86400_000)).toBeNull();
   });
 
-  test("stale stored deadline does not outlive a refresh", () => {
+  test("refreshed activity postpones expiry", () => {
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const refreshed = base + 8 * 86400_000;
     const stale = preview({
       lastActivityMs: refreshed,
       ttlMs: 7 * 86400_000,
       idleMs: null,
-      expiresAtMs: base + 7 * 86400_000,
     });
     expect(planGovernanceExpiry(stale, base + 8 * 86400_000)).toBeNull();
     expect(
@@ -86,7 +82,6 @@ describe("governance expiry", () => {
           lastActivityMs: base,
           ttlMs: 7 * 86400_000,
           idleMs: null,
-          expiresAtMs: base + 7 * 86400_000,
         }),
       ],
       listCatalogDatabases: async () => [],
@@ -101,6 +96,14 @@ describe("governance expiry", () => {
         return true;
       },
       ttlHours: 72 * 365,
+      governance: {
+        previewTtlMs: null,
+        previewIdleMs: null,
+        maxPreviews: null,
+        maxPreviewsPerRepo: null,
+        previewMaxDbConnections: null,
+        postgresMaxConnections: null,
+      },
     });
     expect(deletions).toEqual([
       expect.objectContaining({ reason: "sweep:ttl-expired", prId: 5 }),

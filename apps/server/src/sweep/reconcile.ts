@@ -1,6 +1,11 @@
 import type { DataVolumeRef, GovernanceConfig } from "@sprout/preview-env";
-import { governanceStatus } from "@sprout/preview-env";
+import {
+  computeExpiresAtMs,
+  connectionProjection,
+  governanceStatus,
+} from "@sprout/preview-env";
 import { isForgeApiError } from "../forge/types.ts";
+import type { PreviewExpiryReason } from "../preview/types.ts";
 
 export type SweepReason =
   | "sweep:pr-not-open"
@@ -23,14 +28,13 @@ export type SweepPreview = {
   createdAtMs: number | null;
   status: string;
   lastActivityMs?: number | null;
-  expiresAtMs?: number | null;
   ttlMs?: number | null;
   idleMs?: number | null;
 };
 
 export type SweepDeletion =
   | {
-      reason: "sweep:pr-not-open" | "sweep:ttl-expired" | "sweep:idle-expired";
+      reason: PreviewExpiryReason;
       canonicalRepoId: string;
       prId: number;
       slug: string;
@@ -53,7 +57,7 @@ export type SweepPorts = {
   /** True if resources were removed; false if the plan was stale. */
   drop: (deletion: SweepDeletion) => Promise<boolean>;
   ttlHours: number;
-  governance?: GovernanceConfig;
+  governance: GovernanceConfig;
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
 
@@ -281,8 +285,8 @@ function activityBaseMs(preview: SweepPreview): number | null {
 
 /**
  * Governance expiry derived from the last activity plus the stored
- * per-preview durations. The stored expires_at is write-only for the read
- * surface: deriving here keeps a stale deadline from outliving a refresh.
+ * per-preview durations — the same source the read surface derives
+ * `expires_at` from, so a stale deadline can never outlive a refresh.
  * The cheap activity signal is the last successful deploy (including
  * reseed/reset); see docs/previews.md. Returns the reason, or null to keep.
  */
@@ -292,27 +296,18 @@ export function planGovernanceExpiry(
 ): "sweep:ttl-expired" | "sweep:idle-expired" | null {
   const base = activityBaseMs(preview);
   if (base === null) return null;
-  const ttlDeadline =
-    preview.ttlMs != null ? base + preview.ttlMs : null;
-  const idleDeadline =
-    preview.idleMs != null ? base + preview.idleMs : null;
-  if (
-    ttlDeadline !== null &&
-    idleDeadline !== null &&
-    nowMs >= ttlDeadline &&
-    nowMs >= idleDeadline
-  ) {
-    return ttlDeadline <= idleDeadline
-      ? "sweep:ttl-expired"
-      : "sweep:idle-expired";
-  }
-  if (ttlDeadline !== null && nowMs >= ttlDeadline) {
-    return "sweep:ttl-expired";
-  }
-  if (idleDeadline !== null && nowMs >= idleDeadline) {
-    return "sweep:idle-expired";
-  }
-  return null;
+  const expiry = computeExpiresAtMs(
+    base,
+    preview.ttlMs ?? null,
+    preview.idleMs ?? null,
+  );
+  if (expiry === null || nowMs < expiry) return null;
+  const ttlDeadline = preview.ttlMs != null ? base + preview.ttlMs : null;
+  const idleDeadline = preview.idleMs != null ? base + preview.idleMs : null;
+  return ttlDeadline !== null &&
+    (idleDeadline === null || ttlDeadline <= idleDeadline)
+    ? "sweep:ttl-expired"
+    : "sweep:idle-expired";
 }
 
 function logOverCap(
@@ -320,9 +315,8 @@ function logOverCap(
   previews: SweepPreview[],
 ): void {
   const gov = ports.governance;
-  if (!gov) return;
   const live = previews.filter((p) => p.status !== "removed");
-  const status = governanceStatus(live, gov);
+  const status = governanceStatus(live);
   const maxTotal = gov.maxPreviews;
   if (maxTotal !== null && status.total > maxTotal) {
     ports.log?.(
@@ -341,13 +335,15 @@ function logOverCap(
   }
   const perPreview = gov.previewMaxDbConnections;
   const ceiling = gov.postgresMaxConnections;
-  const { projected, over } = status.connections;
-  if (
-    over &&
-    projected !== null &&
-    perPreview !== null &&
-    ceiling !== null
-  ) {
+  if (perPreview === null || ceiling === null) return;
+  // Current load through the same projection admission uses: active is
+  // total - 1 so the +1 inside counts the existing previews, not a new one.
+  const { projected, over } = connectionProjection({
+    activePreviews: status.total - 1,
+    perPreview,
+    ceiling,
+  });
+  if (over && projected !== null) {
     ports.log?.(
       `sweep over connection budget (projected ${projected} > ceiling ${ceiling}; ` +
         `${status.total} previews x ${perPreview} per preview)`,

@@ -90,24 +90,14 @@ describe("preview governance durations", () => {
     ).toEqual({ projected: null, over: false });
   });
 
-  test("governance status counts once for caps and current usage", () => {
+  test("governance status counts once for caps", () => {
     const previews = [
       { canonicalRepoId: "a" },
       { canonicalRepoId: "a" },
       { canonicalRepoId: "b" },
     ];
-    const status = governanceStatus(previews, {
-      maxPreviews: 10,
-      maxPreviewsPerRepo: 10,
-      previewMaxDbConnections: 12,
-      postgresMaxConnections: 100,
-    });
+    const status = governanceStatus(previews);
     expect(status.total).toBe(3);
     expect(status.byRepo.get("a")).toBe(2);
-    expect(status.connections).toEqual({ projected: 36, over: false });
-    expect(governanceStatus(previews, undefined).connections).toEqual({
-      projected: null,
-      over: false,
-    });
   });
 });

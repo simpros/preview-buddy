@@ -274,17 +274,27 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "expires_at",
+      "name": "expiry_reason",
       "entityType": "columns",
       "table": "previews"
     },
     {
-      "type": "text",
+      "type": "integer",
       "notNull": false,
       "autoincrement": false,
       "default": null,
       "generated": null,
-      "name": "expiry_reason",
+      "name": "ttl_ms",
+      "entityType": "columns",
+      "table": "previews"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "idle_ms",
       "entityType": "columns",
       "table": "previews"
     },
