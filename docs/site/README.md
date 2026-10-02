@@ -41,7 +41,7 @@ assembly into the published `docs/site/index.html` artifact, while its title
 and description live in the `marketingPage`
 manifest next to `docsPages`. Every published page gets the same grouped
 sidebar built from `docsGroups` (a new page appears automatically, in its
-group; the reader's group renders open, the rest closed), and docs pages get
+group; every group renders expanded as labelled sections), and docs pages get
 an "On this
 page" TOC from the parsed headings. The sidebar collapses behind a CSS-only
 toggle on narrow screens, so the menu works with scripting disabled. The theme and the client script stay

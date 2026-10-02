@@ -31,7 +31,7 @@ Write this file. Replace `myapp` and the domain with values confirmed with
 a human — never invent a domain. The template must contain `{pr_id}` as a
 bare host: no scheme, port, or path.
 
-```yaml
+```yaml file=.sprout.yaml
 slug: myapp
 preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"

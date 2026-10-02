@@ -1,99 +1,104 @@
 <header class="hero">
-  <h1>Every pull request gets its own preview</h1>
-  <p class="lede">
-    Sprout gives every pull request an isolated database and a live preview
-    app — for teams that want to review running code, not just diffs.
-    You host one shared instance; sprout handles the per-PR isolation and
-    cleans up when the PR closes.
-  </p>
-  <div class="cta">
-    <a class="primary" href="../index.html">Read the docs</a>
-    <a href="../onboarding-prompt.html">Let your agent do it</a>
-    <a href="https://github.com/simpros/sprout">GitHub</a>
+  <div>
+    <p class="eyebrow">sprout · AGPL-3.0 · one shared instance</p>
+    <h1>Every pull request gets its own preview</h1>
+    <p class="lede">
+      Sprout gives every pull request an isolated database and a live preview
+      app — for teams that want to review running code, not just diffs.
+      You host one shared instance; sprout handles the per-PR isolation and
+      cleans up when the PR closes.
+    </p>
+    <div class="cta">
+      <a class="btn primary" href="../index.html">Read the docs</a>
+      <a class="btn ghost" href="../onboarding-prompt.html">Let your agent do it</a>
+      <a class="btn ghost" href="https://github.com/simpros/sprout">GitHub</a>
+    </div>
   </div>
-  <nav class="toc" aria-label="On this page">
+  <aside class="glance" aria-label="At a glance">
+    <h2>At a glance</h2>
+    <dl>
+      <div><dt>Isolation</dt><dd>logical database per PR</dd></div>
+      <div><dt>Database</dt><dd>one shared Postgres instance</dd></div>
+      <div><dt>Lifecycle</dt><dd>CI on PR open, push, close</dd></div>
+      <div><dt>Runs on</dt><dd>your infrastructure</dd></div>
+      <div><dt>License</dt><dd>AGPL-3.0</dd></div>
+    </dl>
+  </aside>
+  <nav class="hero-toc" aria-label="On this page">
     <a href="#how">How it works</a>
-    <a href="#cheap">Why it is cheap</a>
-    <a href="#gives">What you get</a>
+    <a href="#spec">What you get</a>
     <a href="#adopt">Adopt</a>
     <a href="#faq">FAQ</a>
   </nav>
 </header>
 
 <section id="how">
-  <h2>How it works</h2>
-  <p>
+  <div class="sechead"><span class="kicker">01</span><h2>How it works</h2></div>
+  <p class="sub">
     An <strong>operator</strong> deploys the shared instance plus the sprout
     gateway once. An <strong>adopting repo</strong> adds one config file and
     calls sprout from CI. Each pull request then lives through the same
     five steps:
   </p>
-  <div class="diagram" role="img" aria-label="Preview lifecycle diagram">create → migrate (app) → seed (optional) → hand over → drop
-
-   PR opened / synchronize              PR closed
-          │                                  │
-          ▼                                  ▼
-     sprout deploy ──────────────────► sprout teardown
-          │                                  │
-          ├─ CREATE DATABASE                 ├─ stop app / seed / services
-          │   sprout_&lt;slug&gt;_pr&lt;id&gt;           └─ DROP DATABASE
-          ├─ start app container
-          │   + Traefik Host labels
-          └─ optional seed image
-                 (after health check)
-                        │
-                        ▼
-               preview URL for this PR</div>
-  <div class="grid">
-    <div class="card">
-      <h3>1. Create</h3>
+  <div class="events">
+    <span class="ev"><b>PR opened / synchronize</b> · sprout deploy</span>
+    <span class="ev"><b>PR closed</b> → sprout teardown</span>
+  </div>
+  <div class="flow" role="img" aria-label="Preview lifecycle: create, migrate, seed, hand over, drop">
+    <div class="step">
+      <span class="n">01</span>
+      <h3>Create</h3>
       <p>Opening a PR creates its own logical database on the shared instance.</p>
     </div>
-    <div class="card">
-      <h3>2. Migrate</h3>
+    <span class="conn" aria-hidden="true"></span>
+    <div class="step">
+      <span class="n">02</span>
+      <h3>Migrate</h3>
       <p>The preview app starts against that database and runs its own migrations.</p>
     </div>
-    <div class="card">
-      <h3>3. Seed</h3>
+    <span class="conn" aria-hidden="true"></span>
+    <div class="step">
+      <span class="n">03</span>
+      <h3>Seed</h3>
       <p>Optional demo data loads once the app reports healthy.</p>
     </div>
-    <div class="card">
-      <h3>4. Hand over</h3>
+    <span class="conn" aria-hidden="true"></span>
+    <div class="step">
+      <span class="n">04</span>
+      <h3>Hand over</h3>
       <p>Reviewers open the preview URL. Pushes redeploy into the same database.</p>
     </div>
-    <div class="card">
-      <h3>5. Drop</h3>
+    <span class="conn" aria-hidden="true"></span>
+    <div class="step">
+      <span class="n">05</span>
+      <h3>Drop</h3>
       <p>Closing the PR stops everything and drops the database. Nothing lingers.</p>
     </div>
   </div>
 </section>
 
-<section id="cheap">
-  <h2>Why it is cheap to run</h2>
-  <p>
+<section id="spec">
+  <div class="sechead"><span class="kicker">02</span><h2>Requirements → what you get</h2></div>
+  <p class="sub">
     The resource argument is the whole pitch: <strong>one shared Postgres
     instance serves every pull request</strong>. Each PR gets one logical
     database on that instance — real isolation without provisioning a
     database server per PR, and without paying per-environment platform
     fees. When the PR closes, its database and containers go away.
   </p>
-  <ul>
-    <li><strong>One server, many previews.</strong> Isolation is a logical database per PR, not a cluster per PR.</li>
-    <li><strong>Light repos stay light.</strong> SQLite-file previews and no-database previews cover frontends, workers, and services that need no Postgres at all.</li>
-    <li><strong>No lock-in.</strong> The gateway and the database run on infrastructure you already operate, next to your existing reverse proxy.</li>
-    <li><strong>Nothing lingers.</strong> Teardown on PR close is the normal path; a periodic sweep recovers anything CI missed.</li>
-  </ul>
-</section>
-
-<section id="gives">
-  <h2>What a preview gives you</h2>
-  <ul>
-    <li><strong>A live app URL</strong> for the PR, served through your own Traefik routing.</li>
-    <li><strong>Seeded data</strong> so reviewers click through a working product, not an empty shell.</li>
-    <li><strong>Companion services</strong> — workers and secondary APIs that share the same preview database.</li>
-    <li><strong>Optional mail</strong> — previews send test mail into a shared inbox, addressed per PR so testers can tell them apart.</li>
-  </ul>
-  <p>
+  <div class="tablewrap">
+    <table class="spectable">
+      <thead><tr><th scope="col">Requirement</th><th scope="col">What you get</th></tr></thead>
+      <tbody>
+        <tr><td>A repo with a <code>Dockerfile</code> that serves HTTP.</td><td><b>A live app URL</b> for the PR, served through your own Traefik routing.</td></tr>
+        <tr><td>An operator-deployed gateway URL plus a deploy token for your repo.</td><td><b>Seeded data</b> so reviewers click through a working product, not an empty shell.</td></tr>
+        <tr><td>GitLab merge-request pipelines, or GitHub <code>pull_request</code> workflows.</td><td><b>Companion services</b> — workers and secondary APIs that share the same preview database.</td></tr>
+        <tr><td>One <code>.sprout.yaml</code> and one CI include.</td><td><b>Optional mail</b> — previews send test mail into a shared inbox, addressed per PR so testers can tell them apart.</td></tr>
+        <tr><td>—</td><td><b>Nothing lingers.</b> Teardown on PR close is the normal path; a periodic sweep recovers anything CI missed.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="sub">
     How each of these is configured lives in the docs:
     <a href="../previews.html">previews</a> for the lifecycle,
     <a href="../operator-deploy.html">operator deploy</a> for the shared side.
@@ -101,30 +106,38 @@
 </section>
 
 <section id="adopt">
-  <h2>Adopt in three files</h2>
-  <p>
+  <div class="sechead"><span class="kicker">03</span><h2>Adopt in three files</h2></div>
+  <p class="sub">
     Adoption is one config file (<code>.sprout.yaml</code>), one CI
     include, and the <code>Dockerfile</code> your app already ships —
-    plus two CI variables your operator hands you. The smallest config
-    is two keys:
+    plus two CI variables your operator hands you.
   </p>
+  <ol class="steps">
+    <li><span class="n">STEP 1</span><h3>.sprout.yaml</h3><p>The smallest config is two keys: <code>slug</code> and <code>preview.hostname</code>.</p></li>
+    <li><span class="n">STEP 2</span><h3>CI include</h3><p>One include, no scripts — the GitLab component or the GitHub caller workflow.</p></li>
+    <li><span class="n">STEP 3</span><h3>Two CI variables</h3><p><code>SPROUT_URL</code> and <code>SPROUT_TOKEN</code>, both masked in your CI settings.</p></li>
+  </ol>
 <figure class="codeblock" data-lang="yaml">
   <div class="codeblock-bar">
     <span class="codeblock-lang">yaml</span>
+    <span class="codeblock-file">.sprout.yaml</span>
     <button class="codeblock-copy" type="button" aria-label="Copy code block">Copy</button>
   </div>
   <pre><code>slug: myapp
 preview:
   hostname: &quot;pr-{pr_id}.myapp.preview.example.com&quot;</code></pre>
 </figure>
-  <p>
-    Agents skip the reading list: paste the onboarding prompt below into
-    your coding harness and it wires the three files for you — the same
-    single copy-paste block as the
-    <a href="../onboarding-prompt.html">onboarding prompt</a> page.
-  </p>
+  <div class="prompt-card">
+    <h3>Onboarding prompt</h3>
+    <p>
+      Agents skip the reading list: paste the block below into
+      your coding harness and it wires the three files for you — the same
+      single copy-paste block as the
+      <a href="../onboarding-prompt.html">onboarding prompt</a> page.
+    </p>
 <!-- docs-onboarding-prompt -->
-  <p>
+  </div>
+  <p class="sub">
     Humans start at <a href="../getting-started.html">getting started</a>,
     then <a href="../adopting-a-repo.html">adopting a repo</a> and
     <a href="../ci-integration.html">CI integration</a>.
@@ -132,36 +145,31 @@ preview:
 </section>
 
 <section id="faq">
-  <h2>FAQ</h2>
-  <h3>Does sprout replace our hosting?</h3>
-  <p>
-    No. It adds per-PR previews next to whatever you already run. Your
-    production setup stays untouched.
-  </p>
-  <h3>Do we need webhooks from our forge?</h3>
-  <p>
-    No. CI on PR open, push, and close drives the lifecycle; a sweep
-    recovers anything CI missed.
-  </p>
-  <h3>What happens to data when the PR closes?</h3>
-  <p>
-    The preview database and its containers are removed. Pushes to an open
-    PR keep the same database; only closing drops it.
-  </p>
-  <h3>Our repo has no database — is sprout overkill?</h3>
-  <p>
-    No. Light repos run SQLite-file or no-database previews: same preview
-    URL and lifecycle, without a Postgres database.
-  </p>
-  <h3>Can two PRs see each other's data?</h3>
-  <p>
-    No. Each PR gets its own database (or its own file volume), so
-    reviewing one PR never disturbs another.
-  </p>
-  <h3>Where do we start?</h3>
-  <p>
-    Read the <a href="../index.html">docs index</a>, or hand the whole job
-    to an agent with the
-    <a href="../onboarding-prompt.html">onboarding prompt</a>.
-  </p>
+  <div class="sechead"><span class="kicker">04</span><h2>FAQ</h2></div>
+  <div class="faq">
+    <details class="qa">
+      <summary>Does sprout replace our hosting?</summary>
+      <div><p>No. It adds per-PR previews next to whatever you already run. Your production setup stays untouched.</p></div>
+    </details>
+    <details class="qa">
+      <summary>Do we need webhooks from our forge?</summary>
+      <div><p>No. CI on PR open, push, and close drives the lifecycle; a sweep recovers anything CI missed.</p></div>
+    </details>
+    <details class="qa">
+      <summary>What happens to data when the PR closes?</summary>
+      <div><p>The preview database and its containers are removed. Pushes to an open PR keep the same database; only closing drops it.</p></div>
+    </details>
+    <details class="qa">
+      <summary>Our repo has no database — is sprout overkill?</summary>
+      <div><p>No. Light repos run SQLite-file or no-database previews: same preview URL and lifecycle, without a Postgres database.</p></div>
+    </details>
+    <details class="qa">
+      <summary>Can two PRs see each other's data?</summary>
+      <div><p>No. Each PR gets its own database (or its own file volume), so reviewing one PR never disturbs another.</p></div>
+    </details>
+    <details class="qa">
+      <summary>Where do we start?</summary>
+      <div><p>Read the <a href="../index.html">docs index</a>, or hand the whole job to an agent with the <a href="../onboarding-prompt.html">onboarding prompt</a>.</p></div>
+    </details>
+  </div>
 </section>

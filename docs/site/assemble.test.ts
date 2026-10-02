@@ -345,7 +345,8 @@ describe("shared shell, code blocks, and prompt embedding", () => {
     expect([...styles][0]!.trim()).toBe(theme.trim());
     const script = [...scripts][0]!;
     expect(script).toContain("navigator.clipboard");
-    expect(script).toContain("Copied");
+    expect(script).toContain("copied");
+    expect(script).toContain("requestAnimationFrame");
     expect(script).not.toContain("http");
   });
 
@@ -357,28 +358,27 @@ describe("shared shell, code blocks, and prompt embedding", () => {
     ];
     for (const page of pages) {
       const html = await readFile(page, "utf8");
-      expect(html).toContain('<header class="site">');
+      expect(html).toContain('<header class="topbar">');
+      expect(html).toContain('<label class="drawer-toggle" for="docs-sidebar-toggle">');
       expect(html).toContain('<nav class="docs-sidebar" aria-label="Docs">');
       expect(html).toContain('<footer id="docs">');
       expect(html).toContain('<div class="codeblock-status" aria-live="polite">');
-      // The shell owns `.wrap` and `.layout`: exactly one per page, never nested.
-      expect(html.match(/<div class="wrap">/g) ?? []).toHaveLength(1);
-      expect(html.match(/<div class="layout">/g) ?? []).toHaveLength(1);
-      // No top navigation bar: page movement lives in the sidebar alone.
-      expect(html).not.toContain('<nav class="docs-nav"');
+      // The shell owns `.shell`: exactly one per page, never nested.
+      expect(html.match(/<div class="shell">/g) ?? []).toHaveLength(1);
       // One brand: the mark rides inside the header wordmark link, never
       // as a second affordance above the page body.
       expect(html.match(/class="brand"/g) ?? []).toHaveLength(1);
       expect(html).not.toContain("brand-mark");
-      expect(html).toContain('<p class="brand"><a href="');
+      expect(html).toContain('<a class="brand" href="');
       expect(html).toContain('assets/sprout-mark.png" alt=""');
       expect(html.match(/assets\/sprout-mark\.png/g) ?? []).toHaveLength(1);
       // The shell owns the favicon set: one mark, one favicon set.
       expect(html).toContain('<link rel="icon" type="image/png" sizes="32x32"');
-      // The sidebar carries every docs page; the header carries no nav.
-      const header = /<header class="site">[\s\S]*?<\/header>/.exec(html)?.[0];
+      // The sidebar carries every docs page; the top bar carries GitHub
+      // only, never page movement.
+      const header = /<header class="topbar">[\s\S]*?<\/header>/.exec(html)?.[0];
       expect(header).toBeDefined();
-      expect(header).not.toContain("<nav");
+      expect(header).toContain("https://github.com/simpros/sprout");
       for (const { title } of docsPages) {
         expect(header).not.toContain(`>${title}</a>`);
       }
@@ -387,6 +387,10 @@ describe("shared shell, code blocks, and prompt embedding", () => {
       for (const { title } of docsPages) {
         expect(sidebar).toContain(`>${title}</a>`);
       }
+      // No literal `#` printed next to any heading on any page: the
+      // `heading-anchor` links the renderer appends are empty, and their
+      // `#` is drawn by CSS.
+      expect(html).not.toContain(">#</a>");
     }
     const marketing = await readFile(join(out, siteEntryPath), "utf8");
     expect(marketing).toContain('<header class="hero">');
@@ -399,6 +403,13 @@ describe("shared shell, code blocks, and prompt embedding", () => {
     );
     expect(gettingStarted).toContain('src="../assets/sprout-mark.png"');
     expect(gettingStarted).toContain('href="../assets/favicon-32.png"');
+    // Markdown-rendered headings carry the empty anchor link (CSS draws
+    // the `#`); the hand-built marketing/index bodies carry none.
+    expect(gettingStarted).toContain('class="heading-anchor"');
+    expect(marketing).not.toContain('class="heading-anchor"');
+    // The manifest fence names its file via `file=` meta, read from the
+    // parser's own field — the header shows `yaml · .sprout.yaml`.
+    expect(gettingStarted).toContain('<span class="codeblock-file">.sprout.yaml</span>');
   });
 
   test("every fenced block renders as the component; no bare pre remains", async () => {
@@ -415,7 +426,14 @@ describe("shared shell, code blocks, and prompt embedding", () => {
         figures += 1;
         const lang = figure[1]!;
         const inner = figure[2]!;
-        expect(inner).toContain(`<span class="codeblock-lang">${lang}</span>`);
+        // The prompt block labels its header `text · prompt` instead of
+        // bare `text`; every other block labels exactly its language.
+        const langLabel =
+          lang === "text" && inner.includes("text · prompt") ? "text · prompt" : lang;
+        expect(inner).toContain(`<span class="codeblock-lang">${langLabel}</span>`);
+        if (inner.includes('aria-label="Copy onboarding prompt"')) {
+          expect(inner).toContain('<span class="codeblock-file">onboarding-prompt.md</span>');
+        }
         expect(inner).toContain(
           '<button class="codeblock-copy" type="button"',
         );
@@ -492,8 +510,8 @@ describe("shared shell, code blocks, and prompt embedding", () => {
   test("marketing page is rendered, not copied verbatim", async () => {
     const source = await readFile(join(repoRootDir, marketingSourcePath), "utf8");
     const html = await readFile(join(out, siteEntryPath), "utf8");
-    // The source is a body fragment: no envelope, no wrap —
-    // the shell inlines the theme and owns `.wrap` for every page.
+    // The source is a body fragment: no envelope —
+    // the shell inlines the theme for every page.
     expect(source).not.toContain("<!DOCTYPE html>");
     expect(source).not.toContain("<html");
     expect(source).not.toContain("<head>");
@@ -512,12 +530,39 @@ describe("shared shell, code blocks, and prompt embedding", () => {
 
   test("every TOC href resolves to an id on its own page", async () => {
     const html = await readFile(join(out, "docs/getting-started.html"), "utf8");
-    const toc = /<nav class="toc-page"[\s\S]*?<\/nav>/.exec(html)?.[0];
-    expect(toc).toBeDefined();
-    const hrefs = [...toc!.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!);
-    expect(hrefs.length).toBeGreaterThan(3);
-    for (const href of hrefs) {
+    const rail = /<nav class="toc"[\s\S]*?<\/nav>/.exec(html)?.[0];
+    expect(rail).toBeDefined();
+    const railHrefs = [...rail!.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!);
+    expect(railHrefs.length).toBeGreaterThan(3);
+    for (const href of railHrefs) {
       expect(html).toContain(`id="${href}"`);
     }
+    // The compact card under the `h1` lists the same headings as the rail:
+    // one heading model, two placements, never disagreeing.
+    const inline = /<details class="toc-inline">[\s\S]*?<\/details>/.exec(html)?.[0];
+    expect(inline).toBeDefined();
+    const inlineHrefs = [...inline!.matchAll(/href="#([^"]+)"/g)].map((m) => m[1]!);
+    expect(inlineHrefs).toEqual(railHrefs);
+    // The card reads directly under the `h1`, not above it.
+    expect(html.indexOf("</h1>")).toBeLessThan(html.indexOf('<details class="toc-inline">'));
+  });
+
+  test("leaf docs pages carry a mono breadcrumb and the front door carries none", async () => {
+    const gettingStarted = await readFile(join(out, "docs/getting-started.html"), "utf8");
+    expect(gettingStarted).toContain('<p class="page-kicker">docs <span class="curs">/</span> getting-started</p>');
+    expect(gettingStarted.indexOf("page-kicker")).toBeLessThan(gettingStarted.indexOf("</h1>"));
+    const index = await readFile(join(out, "docs/index.html"), "utf8");
+    expect(index).toContain('<p class="page-kicker">docs</p>');
+    const marketing = await readFile(join(out, siteEntryPath), "utf8");
+    expect(marketing).not.toContain('<p class="page-kicker">');
+  });
+
+  test("rendered tables own their scroll container", async () => {
+    const cli = await readFile(join(out, "docs/cli-reference.html"), "utf8");
+    expect(cli).toContain('<div class="tablewrap"><table>');
+    // Every table on the page sits inside exactly one scroll container.
+    expect(cli.match(/<div class="tablewrap">/g)?.length).toBe(
+      cli.match(/<table/g)?.length,
+    );
   });
 });

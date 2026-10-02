@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { MarkdownHeading } from "@tanstack/markdown";
 import { codeBlockScript } from "./codeblock.ts";
 import { escapeHtml } from "./html.ts";
+import { INLINE_TOC_SLOT } from "./markdown.ts";
 
 export const PROMPT_MARKER = "<!-- docs-onboarding-prompt -->";
 
@@ -44,7 +45,6 @@ type SidebarItem = {
 
 export type SidebarGroup = {
   name: string;
-  open: boolean;
   items: SidebarItem[];
 };
 
@@ -74,12 +74,17 @@ export function docsPrefixFor(outputPath: string): string {
 
 // The mark rides inside the header wordmark link: one brand affordance per
 // page, decorative (`alt=""`) so it never double-announces the link text.
-// The header carries no navigation: the sidebar owns page movement, the
-// footer owns the way back to the docs index.
+// The top bar stays slim on purpose: the brand left, GitHub right, and on
+// narrow screens the drawer trigger. Page movement lives in the sidebar,
+// never here.
 function siteHeader(homeHref: string, markSrc: string): string {
   return [
-    `<header class="site">`,
-    `  <p class="brand"><a href="${escapeHtml(homeHref)}"><img src="${escapeHtml(markSrc)}" alt="" width="20" height="20" />sprout</a></p>`,
+    `<header class="topbar">`,
+    `  <a class="brand" href="${escapeHtml(homeHref)}"><img src="${escapeHtml(markSrc)}" alt="" width="20" height="20" />sprout</a>`,
+    `  <label class="drawer-toggle" for="docs-sidebar-toggle"><span aria-hidden="true">☰</span> Docs menu</label>`,
+    `  <nav class="topnav" aria-label="Site">`,
+    `    <a href="https://github.com/simpros/sprout">GitHub</a>`,
+    `  </nav>`,
     `</header>`,
   ].join("\n");
 }
@@ -100,58 +105,105 @@ function siteFooter(toRoot: string, toDocs: string): string {
   ].join("\n");
 }
 
-// Grouped sidebar, generated from the manifest for every page. The current
-// group renders open so the reader's place is visible without JavaScript;
-// every other group is a plain disclosure. On narrow screens the whole
-// sidebar sits behind a CSS-only toggle (a checkbox the label flips), so the
-// menu works with scripting disabled.
+// Grouped sidebar, generated from the manifest for every page. Groups render
+// expanded as labelled sections (kicker + list), never nested disclosures,
+// so the full page set is one scan. The current page carries
+// `aria-current` plus a rail-and-background treatment in CSS (not colour
+// alone). On narrow screens this same nav becomes the drawer behind the
+// top-bar trigger: a checkbox the label flips, so the menu works with
+// scripting disabled. The checkbox precedes the header and the shell as
+// siblings, which the drawer selectors rely on.
 function renderSidebar(groups: SidebarGroup[]): string {
   const sections = groups
     .map((group) => {
       const items = group.items
         .map(
           (item) =>
-            `          <li><a href="${escapeHtml(item.href)}"${item.current ? ' aria-current="page"' : ""}>${escapeHtml(item.title)}</a></li>`,
+            `      <li><a href="${escapeHtml(item.href)}"${item.current ? ' aria-current="page"' : ""}>${escapeHtml(item.title)}</a></li>`,
         )
         .join("\n");
       return [
-        `      <details${group.open ? " open" : ""}>`,
-        `        <summary>${escapeHtml(group.name)}</summary>`,
-        `        <ul>`,
+        `    <p class="gname">${escapeHtml(group.name)}</p>`,
+        `    <ul>`,
         items,
-        `        </ul>`,
-        `      </details>`,
+        `    </ul>`,
       ].join("\n");
     })
     .join("\n");
   return [
-    `<input class="sidebar-state" type="checkbox" id="docs-sidebar-toggle" />`,
-    `<label class="sidebar-toggle" for="docs-sidebar-toggle"><span aria-hidden="true">☰</span> Docs menu</label>`,
     `<nav class="docs-sidebar" aria-label="Docs">`,
+    `  <p class="sb-title">Docs</p>`,
     sections,
     `</nav>`,
   ].join("\n");
 }
 
+// Mono breadcrumb above the `h1` (`docs / getting-started`), derived from
+// the artifact path: leaf docs pages name their slug, the docs index reads
+// `docs`, and the marketing front door carries none (it is not a docs page).
+function renderCrumb(outputPath: string): string {
+  if (outputPath === siteEntryPath) return "";
+  const slug = outputPath.replace(/^docs\//, "").replace(/\.html$/, "");
+  if (slug === "index") return `<p class="page-kicker">docs</p>`;
+  return `<p class="page-kicker">docs <span class="curs">/</span> ${escapeHtml(slug)}</p>`;
+}
+
 // The "On this page" index, straight from the parser's own heading model —
-// hrefs live in the same `headingIds` namespace as the rendered headings.
-function renderToc(headings: MarkdownHeading[]): string {
-  const entries = headings.filter((h) => h.level > 1);
-  if (entries.length === 0) return "";
-  const items = entries
+// hrefs live in the same `headingIds` namespace as the rendered headings,
+// so the list can never name a heading that does not exist or omit one.
+// Items carry their level (`lvl-2`, `lvl-3`, …) for level-aware indentation.
+// Two placements share the list: a sticky rail on wide screens (with
+// scroll-spy tracking the reading position) and a compact `<details>` card
+// that the shell drops under the `h1` below that width.
+function tocItems(headings: MarkdownHeading[]): string {
+  return headings
+    .filter((h) => h.level > 1)
     .map(
       (h) =>
-        `      <li><a href="#${escapeHtml(h.id)}">${escapeHtml(h.text)}</a></li>`,
+        `      <li class="lvl-${h.level}"><a href="#${escapeHtml(h.id)}">${escapeHtml(h.text)}</a></li>`,
     )
     .join("\n");
+}
+
+function renderTocRail(headings: MarkdownHeading[]): string {
+  const items = tocItems(headings);
+  if (items.length === 0) return "";
   return [
-    `<nav class="toc-page" aria-label="On this page">`,
-    `  <p>On this page</p>`,
+    `<aside class="rail">`,
+    `  <nav class="toc" aria-label="On this page">`,
+    `    <p class="toc-title">On this page</p>`,
+    `    <ul>`,
+    items,
+    `    </ul>`,
+    `  </nav>`,
+    `</aside>`,
+  ].join("\n");
+}
+
+function renderTocInline(headings: MarkdownHeading[]): string {
+  const items = tocItems(headings);
+  if (items.length === 0) return "";
+  return [
+    `<details class="toc-inline">`,
+    `  <summary>On this page</summary>`,
     `  <ul>`,
     items,
     `  </ul>`,
-    `</nav>`,
+    `</details>`,
   ].join("\n");
+}
+
+// The inline card fills the slot the markdown renderer leaves in the body
+// (after the first `h1`, or at the top when a page opens without one):
+// plain substitution, so the shell never parses body HTML to decide where
+// its chrome goes. Non-markdown bodies carry no slot and pass an empty card,
+// so substitution is a no-op for them; the prepend fallback only triggers
+// for a hand-built body paired with a non-empty card, which no call site
+// does today.
+function fillInlineTocSlot(bodyHtml: string, inline: string): string {
+  if (inline === "") return bodyHtml.split(INLINE_TOC_SLOT).join("");
+  if (!bodyHtml.includes(INLINE_TOC_SLOT)) return `${inline}\n${bodyHtml}`;
+  return bodyHtml.split(INLINE_TOC_SLOT).join(inline);
 }
 
 export type ShellOptions = {
@@ -163,8 +215,49 @@ export type ShellOptions = {
   bodyHtml: string;
 };
 
+// Scroll-spy for the "On this page" lists: the link matching the highest
+// TOC-named heading above the reading position carries `.active`, in the
+// rail and in the inline card alike. Tracked headings derive from the
+// rendered TOC links, so the spy can never name a heading the list omits
+// or miss one it shows; the flip line matches the `scroll-margin-top` the
+// stylesheet gives headings. Throttled through `requestAnimationFrame`,
+// passive, and a no-op on pages without headings. The movement itself is a
+// CSS class flip (gated by `prefers-reduced-motion` there); this script
+// never animates.
+const scrollSpyScript = `(() => {
+  const links = Array.from(document.querySelectorAll(".toc a, .toc-inline a"));
+  const ids = [...new Set(links.map((link) => link.getAttribute("href")).filter((href) => href && href.startsWith("#")).map((href) => href.slice(1)))];
+  const heads = ids.map((id) => document.getElementById(id)).filter((head) => head);
+  if (heads.length === 0 || links.length === 0) return;
+  let ticking = false;
+  function spy() {
+    ticking = false;
+    let current = heads[0]?.id ?? "";
+    for (const head of heads) {
+      if (head.getBoundingClientRect().top <= 74) current = head.id;
+    }
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+      current = heads[heads.length - 1]?.id ?? current;
+    }
+    for (const link of links) {
+      link.classList.toggle("active", link.getAttribute("href") === "#" + current);
+    }
+  }
+  function onScroll() {
+    if (!ticking) {
+      ticking = true;
+      window.requestAnimationFrame(spy);
+    }
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll);
+  spy();
+})();`;
+
 export function renderShell(opts: ShellOptions): string {
-  const toc = renderToc(opts.toc);
+  const rail = renderTocRail(opts.toc);
+  const inline = renderTocInline(opts.toc);
+  const crumb = renderCrumb(opts.outputPath);
   const location = locationFor(opts.outputPath);
   return [
     "<!DOCTYPE html>",
@@ -184,23 +277,25 @@ export function renderShell(opts: ShellOptions): string {
     "</style>",
     "</head>",
     "<body>",
-    '<div class="wrap">',
+    // The drawer checkbox precedes the header and the shell as a sibling of
+    // both, so the `:checked` selectors can reach the nav it toggles.
+    `<input class="sidebar-state" type="checkbox" id="docs-sidebar-toggle" />`,
     siteHeader(
       location.homeHref,
       `${location.toRoot}/assets/sprout-mark.png`,
     ),
-    '<div class="layout">',
+    '<div class="shell">',
     renderSidebar(opts.sidebar),
     "<main>",
-    ...(toc === "" ? [] : [toc]),
-    opts.bodyHtml,
+    ...(crumb === "" ? [] : [crumb]),
+    fillInlineTocSlot(opts.bodyHtml, inline),
     "</main>",
+    ...(rail === "" ? [] : [rail]),
     "</div>",
     siteFooter(location.toRoot, location.toDocs),
     '<div class="codeblock-status" aria-live="polite"></div>',
-    "</div>",
     "<script>",
-    codeBlockScript,
+    `${codeBlockScript}\n${scrollSpyScript}`,
     "</script>",
     "</body>",
     "</html>",

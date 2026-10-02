@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import {
   extractPromptText,
+  INLINE_TOC_SLOT,
   isExternalHref,
   markdownToHtmlBody,
   slugHeading,
@@ -63,6 +64,32 @@ describe("markdownToHtmlBody heading ids", () => {
     const html = markdownToHtmlBody("## See also\n\n## See also\n");
     expect(html).toContain('id="see-also"');
     expect(html).toContain('id="see-also-1"');
+  });
+
+  test("exposes headings as CSS-revealed anchor links, no literal #", () => {
+    const html = markdownToHtmlBody("# Hi\n\n## Sub head\n");
+    expect(html).toContain('id="hi"');
+    expect(html).toContain('id="sub-head"');
+    expect(html).toContain('<a href="#sub-head" aria-hidden="false" class="heading-anchor" tabindex="0"></a>');
+    expect(html).not.toContain(">#</a>");
+  });
+});
+
+describe("rendered tables", () => {
+  test("wraps bare tables in their scroll container exactly once", () => {
+    const body = markdownToHtmlBody("| A | B |\n|---|---|\n| 1 | 2 |\n");
+    expect(body).toContain('<div class="tablewrap"><table>');
+    expect(body.match(/<div class="tablewrap">/g)).toHaveLength(1);
+    expect(body).not.toContain("overflow-auto");
+    const plain = markdownToHtmlBody("<p>no table</p>");
+    expect(plain.startsWith(`${INLINE_TOC_SLOT}\n`)).toBe(true);
+    expect(plain).toContain("<p>no table</p>");
+  });
+
+  test("every rendered body carries exactly one inline-TOC slot", () => {
+    const withHead = markdownToHtmlBody("# Hi\n\ntext\n");
+    expect(withHead.indexOf(INLINE_TOC_SLOT)).toBeGreaterThan(withHead.indexOf("</h1>"));
+    expect(withHead.match(/docs-inline-toc/g)).toHaveLength(1);
   });
 });
 

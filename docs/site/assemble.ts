@@ -129,21 +129,16 @@ export function renderDocsIndexHtml(): string {
 
 // Grouped sidebar straight from the page manifest, so a new page appears
 // automatically. The `docs/ ↔ docs/site/` depth gap is derived from the
-// artifact path being written, never hand-set per call. The reader's group
-// renders open; without a current page (index, marketing) the first group
-// does, so the menu is never a wall of closed disclosures. A supplied
-// `current` must be a manifest file: failing loudly keeps a typo'd page from
-// rendering with no marker and the wrong group open.
+// artifact path being written, never hand-set per call. A supplied `current`
+// must be a manifest file: failing loudly keeps a typo'd page from rendering
+// with no marker.
 export function docsSidebar(outputPath: string, current?: string): SidebarGroup[] {
   const prefix = docsPrefixFor(outputPath);
-  let currentGroup: string | undefined;
-  if (current) {
-    currentGroup = docsGroups.find((g) => g.pages.some((p) => p.file === current))?.name;
-    if (!currentGroup) throw new Error(`docsSidebar: current page not in manifest: ${current}`);
+  if (current && !docsGroups.some((g) => g.pages.some((p) => p.file === current))) {
+    throw new Error(`docsSidebar: current page not in manifest: ${current}`);
   }
-  return docsGroups.map((group, index) => ({
+  return docsGroups.map((group) => ({
     name: group.name,
-    open: currentGroup ? currentGroup === group.name : index === 0,
     items: group.pages.map((p) => ({
       href: `${prefix}${pageIndexHref(p)}`,
       title: p.title,
