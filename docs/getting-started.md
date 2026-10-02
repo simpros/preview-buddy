@@ -1,77 +1,69 @@
 # Getting started
 
-First preview in one sitting: one `.sprout.yaml`, two CI variables, one CI
-include. Five minutes on a repo that already has a `Dockerfile`.
+Reach a first preview in one sitting: one `.sprout.yaml`, two CI variables,
+one CI include. About five minutes on a repo that already ships a
+`Dockerfile` that serves HTTP.
 
-- New adopter? Read this page only, then run the onboarding prompt in your
-  coding harness — the same block as
-  [Onboarding prompt](onboarding-prompt.md).
-- Need an exact key? See [Adopting a repo](adopting-a-repo.md).
-- Need CI details for your forge? See [CI integration](ci-integration.md).
-- Running the gateway itself? See [Operator deploy](operator-deploy.md).
+This lesson takes the GitLab path. On GitHub the steps are the same shape
+with a caller workflow instead of an include — branch at step 3 to
+[CI integration](ci-integration.md#github-actions) and rejoin at
+[What you get](#what-you-get).
+
+- Exact key contract: [Adopting a repo](adopting-a-repo.md).
+- Gateway setup (operator work): [Operator deploy](operator-deploy.md).
 
 <!-- docs-onboarding-prompt -->
 
 ## Prerequisites
 
 - A repo with a `Dockerfile` that serves HTTP.
-- An operator-deployed gateway URL plus a deploy token for your repo
-  (ask your operator; bootstrapping is in
-  [Operator deploy](operator-deploy.md#bootstrap-admin-token)).
-- GitLab merge-request pipelines (or GitHub `pull_request` workflows).
+- A gateway URL plus a deploy token for the repo from the operator.
+  Bootstrapping is operator work:
+  [Operator deploy](operator-deploy.md#bootstrap-admin-token).
+- Merge-request pipelines (GitLab) or `pull_request` workflows (GitHub).
 
 Copy-paste app files live in
 [`examples/adopting-repo/README.md`](../examples/adopting-repo/README.md).
 
 ## 1. `.sprout.yaml` at the repo root
 
-Seeded preview (the `health:` block is required whenever `seed:` is
-configured):
+Write this file. Replace `myapp` and the domain with values confirmed with
+a human — never invent a domain. The template must contain `{pr_id}` as a
+bare host: no scheme, port, or path.
 
 ```yaml
 slug: myapp
 preview:
   hostname: "pr-{pr_id}.myapp.preview.example.com"
-health:
-  path: /health
-  interval: 2s
-  timeout: 120s
-  expect: 200
-seed:
-  dockerfile: Dockerfile.seed
-  env:
-    FIXTURE_SET: demo
 ```
 
-Omit the `seed:` block for an app-only preview (the `health:` block can go
-too — the gateway defaults to `GET /health` every `2s` for up to `120s`,
-expecting `200`). Confirm the `slug` and the hostname template with a human
-before committing: never invent a domain. Full key contract in
+Unknown keys are rejected (`unknown key: <path>`), so typos fail on the
+first `sprout ci preview`.
+
+When this deploys, add seeding next:
 [Adopting a repo](adopting-a-repo.md#manifest-keys-sproutyaml).
-
-Minimal app-only manifest:
-
-```yaml
-slug: myapp
-preview:
-  hostname: "pr-{pr_id}.myapp.preview.example.com"
-```
 
 ## 2. CI variables (you set these)
 
-| Variable | Type | Purpose |
-|---|---|---|
-| `SPROUT_URL` | Variable, masked, required | Gateway URL (or pass the `sprout_url` / `sprout_url` input instead) |
-| `SPROUT_TOKEN` | Variable, masked, required | Deploy token scoped to the repo's canonical id |
-| `GITLAB_TOKEN` | Variable, masked, optional (GitLab) | Note-write token for the MR note; without it the CLI falls back to `CI_JOB_TOKEN` (best-effort note either way) |
+Set two masked variables in the repo's CI settings:
 
-Optional: `SPROUT_APP_ENV` / `SPROUT_SEED_ENV` as masked **File** variables
-holding dotenv blobs for app / seed secrets. Never commit a secret to the
-manifest — declare `{ required: true }` and supply it here.
+- `SPROUT_URL` — the gateway URL. (Alternatively pass the `sprout_url`
+  input; one of the two is required.)
+- `SPROUT_TOKEN` — the deploy token scoped to this repo's canonical id.
+
+For GitLab MR notes, an optional `GITLAB_TOKEN` (masked) lets the CLI
+create notes; without it the CLI falls back to `CI_JOB_TOKEN` on a
+best-effort basis either way.
+
+App or seed secrets never go in the manifest. Declare
+`{ required: true }` there and supply values here as masked **File**
+variables (`SPROUT_APP_ENV` / `SPROUT_SEED_ENV` dotenv blobs).
 
 ## 3. CI wiring (one include)
 
-GitLab (`.gitlab-ci.yml` — one include, no scripts):
+Add the include to `.gitlab-ci.yml`. Replace `<group>/sprout-ci` with the
+component project path on the instance and `v0.8.3` with the adopted
+release:
 
 ```yaml
 include:
@@ -79,38 +71,26 @@ include:
     inputs: { stage: deploy }
 ```
 
-GitHub (caller workflow — the canonical caller is
-[`examples/adopting-repo/.github/workflows/sprout.yml`](../examples/adopting-repo/.github/workflows/sprout.yml)):
-
-```yaml
-jobs:
-  preview:
-    uses: simpros/sprout/.github/workflows/preview.yml@v0.8.3
-    with:
-      sprout_version: v0.8.3
-    secrets:
-      SPROUT_URL: ${{ secrets.SPROUT_URL }}
-      SPROUT_TOKEN: ${{ secrets.SPROUT_TOKEN }}
-```
-
-Full wiring, variables, reset, and notes in [CI integration](ci-integration.md).
+Open a merge request. The `sprout-preview` job installs the pinned CLI,
+builds and pushes the app image, deploys, and posts the MR note with the
+preview URL.
 
 ## What you get
 
-- Open / synchronize: `sprout ci preview` builds + pushes images, deploys,
-  writes `PREVIEW_URL=`, posts the MR/PR note. Read the URL from the CLI
-  output — never reconstruct the hostname in CI.
-- Close / merge: `sprout ci teardown` (idempotent).
+- Open / synchronize: the job deploys and writes `PREVIEW_URL=`. Read the
+  URL from the CLI output — never reconstruct the hostname in CI.
+- Close / merge: `sprout ci teardown` runs via `on_stop` (idempotent —
+  exit 0 when already gone).
 - Manual wipe + redeploy: `sprout ci reset` (data wiped).
-- Sweep recovers if teardown is missed.
-- The gateway reports anonymous [install telemetry](telemetry.md) by default
-  (`SPROUT_TELEMETRY=off` stops it) — operator concern, nothing to do here.
+- A missed teardown is recovered by the gateway sweep.
+- The gateway reports anonymous [install telemetry](telemetry.md) by
+  default (`SPROUT_TELEMETRY=off` stops it) — operator concern, nothing to
+  do in this lesson.
 
 ## Next step
 
 Run the agent block in [Onboarding prompt](onboarding-prompt.md), or verify
-by hand: the manifest must pass the CLI loader (`apps/cli/src/yaml.ts`),
-then `sprout doctor` and a first `sprout ci preview` run from CI.
+by hand: `sprout doctor`, then a first `sprout ci preview` run from CI.
 
 ## See also
 

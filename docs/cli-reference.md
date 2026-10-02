@@ -1,14 +1,11 @@
 # CLI reference
 
-The `sprout` CLI talks to the gateway API. Auth: set `SPROUT_URL` and
-`SPROUT_TOKEN` (except `health`). Install a release binary (glibc:
-`sprout-linux-x64`; Alpine: `sprout-linux-x64-musl`) or run from this
-monorepo via `bun run --cwd apps/cli`. Full flags per command:
-`sprout <command> --help`.
-
-- First preview? See [Getting started](getting-started.md).
-- CI wiring? See [CI integration](ci-integration.md).
-- Manifest keys? See [Adopting a repo](adopting-a-repo.md).
+`sprout` talks to the gateway API. Auth: `SPROUT_URL` and `SPROUT_TOKEN`
+(except `health`). Install a release binary (glibc: `sprout-linux-x64`;
+Alpine: `sprout-linux-x64-musl`) or run from this monorepo via
+`bun run --cwd apps/cli`. Full flags per command: `sprout <command>
+--help`. Identity (repo + PR id) is inferred from CI env or git remote;
+override with `--repo` where supported.
 
 ## Commands
 
@@ -25,9 +22,6 @@ monorepo via `bun run --cwd apps/cli`. Full flags per command:
 | `sprout admin token …` | Create / list / revoke deploy tokens (admin token required). |
 | `sprout ci <preview\|teardown\|reseed\|reset\|logs>` | CI helper: build/push/deploy, teardown, reseed (data kept) or reset (data wiped), or logs from CI env. |
 | `sprout worktree-db <provision\|drop>` | Local per-worktree Postgres DB (no gateway). |
-
-Identity (repo + PR id) is inferred from CI env or git remote; override with
-`--repo` where supported.
 
 ## `ci` commands
 
@@ -62,13 +56,13 @@ deploy error exits non-zero. The MR note is best-effort in both directions
 
 Low-level equivalents (`sprout deploy -i … -s …`, `sprout teardown`,
 `sprout logs`) still work for GitHub Actions and laptops — see
-[CI integration](ci-integration.md#github-actions). Their env/seed/service flags mirror the `ci`
-surface (`-i`, `-s`, `--reseed`, `--service`, `--clear-services`,
-`--app-env[-file]`, `--seed-env[-file]`, `--seed-arg`).
+[CI integration](ci-integration.md#github-actions). Their env/seed/service
+flags mirror the `ci` surface (`-i`, `-s`, `--reseed`, `--service`,
+`--clear-services`, `--app-env[-file]`, `--seed-env[-file]`, `--seed-arg`).
 
 ## Debugging
 
-Low-level flow: when a preview is red, pull container logs through the gateway (no Docker
+When a preview is red, pull container logs through the gateway (no Docker
 socket on the CI runner or laptop):
 
 ```bash
@@ -79,20 +73,22 @@ sprout logs <pr_id> --tail 200
 # sprout logs <pr_id> --tail 200 --repo "https://github.com/org/repo"
 ```
 
-Repo resolution matches `deploy` / `drop`: `--repo`, else `GITHUB_REPOSITORY` /
-`CI_PROJECT_URL`, else `git remote get-url origin`. The deploy token is scoped
-to one canonical repo — it cannot read another repo's previews.
+Repo resolution: `--repo`, else `GITHUB_REPOSITORY` / `CI_PROJECT_URL`,
+else `git remote get-url origin`. The deploy token is scoped to one
+canonical repo — it cannot read another repo's previews.
 
-Output is live app container logs, then seed logs when available. While the
-seed container is still running, `sprout logs` reads it live; after a failed
-seed the gateway has already captured stdout/stderr into `seed_log` (before
-remove) so the seed section still shows why seeding died. Status polling keeps
-a short `last_error_detail` (`exit=7`, `timeout`) — not the log blob.
-Successful seeds do not keep seed output.
+Output: live app container logs, then seed logs when available. While the
+seed container is still running, `sprout logs` reads it live; after a
+failed seed the gateway has already captured stdout/stderr into `seed_log`
+(before remove) so the seed section still shows why seeding died. Status
+polling keeps a short `last_error_detail` (`exit=7`, `timeout`) — not the
+log blob. Successful seeds do not keep seed output. Fixes for what the
+logs show live in [Troubleshooting](troubleshooting.md).
 
 ## Deploy token setup
 
-One-time per adopting repo (operator or lead dev with admin token):
+One-time per adopting repo (operator or lead dev with admin token).
+Canonical recipe: [Adopting a repo](adopting-a-repo.md#deploy-token-setup).
 
 ```bash
 export SPROUT_URL=https://sprout.example.com
@@ -107,23 +103,28 @@ echo, or commit a token value.
 
 ## Worktree DB (local provisioner)
 
-Parallel agents on one machine can clash on shared Postgres credentials. The
-CLI provisions an isolated DB + LOGIN role per worktree **without** talking
-to the gateway (operator detail; full notes in
-[Operator deploy](operator-deploy.md#worktree-db-local-provisioner)):
+Provision an isolated DB + LOGIN role per worktree **without** talking to
+the gateway. Operator detail: [Operator deploy](operator-deploy.md#worktree-db-local-provisioner).
 
 ```bash
 sprout worktree-db provision --slug <name> --env-file <path> --admin-url "$ADMIN_DSN"
 sprout worktree-db drop --slug <name> --admin-url "$ADMIN_DSN"
 ```
 
+| Flag | Purpose |
+|---|---|
+| `--slug <name>` | Worktree key: lowercase, `[^a-z0-9-]` → `-`, collapse runs, max 40 chars. Distinct from adopting-repo **slug**. Objects are named `sprout_wt_<key>` (hyphens → underscores). `drop` refuses any name outside the `sprout_wt_` prefix. |
+| `--env-file <path>` | Connection vars file (created if missing; atomic temp+rename). When `PGPASSWORD` is already present, that password is reused so live connections are not rotated. Writes `DATABASE_URL` plus canonical `PGHOST` / `PGPORT` / `PGUSER` / `PGPASSWORD` / `PGDATABASE` unless renamed. |
+| `--admin-url <dsn>` | Admin DSN with `CREATEROLE` (or superuser). |
+| `--rename LOGICAL=NAME` | Rename a logical key (`DATABASE_URL`, `PGHOST`, …). Repeatable. |
+
 ## Test coverage (maintainers)
 
-Repo-relative paths for the reference contract above:
+Repo-relative paths for the contract above:
 
-- Manifest parsing (all `.sprout.yaml` keys, including `preview.env` remap,
-  `app_env` / `seed.env` grammar, services, health, `build`/`seed` blocks):
-  `apps/cli/src/yaml.test.ts`
+- Manifest parsing (all `.sprout.yaml` keys, including `preview.env`
+  remap, `app_env` / `seed.env` grammar, services, health, `build`/`seed`
+  blocks): `apps/cli/src/yaml.test.ts`
 - Env value grammar (placeholders, `generate`, `required`):
   `apps/cli/src/app-env.test.ts`, `apps/cli/src/app-env-values.test.ts`
 - CLI env layering (yaml + blob + files + flags):

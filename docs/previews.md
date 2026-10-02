@@ -1,15 +1,17 @@
 # Previews
 
-One pull request gets at most one preview per adopting repo: its preview
-database and, when configured, its preview app container plus optional
-companion **service** containers that share the same preview database.
-This page owns the lifecycle: database providers, seeding, services, mail.
+Run one preview per pull request per adopting repo: its preview database
+and, when configured, its preview app container plus optional companion
+**service** containers sharing the same preview database. Each section
+below is one task.
 
-- Manifest keys? See [Adopting a repo](adopting-a-repo.md).
-- CI wiring? See [CI integration](ci-integration.md).
-- Operator side (networks, sweep config)? See [Operator deploy](operator-deploy.md).
+- Manifest keys: [Adopting a repo](adopting-a-repo.md).
+- CI wiring: [CI integration](ci-integration.md).
+- Operator side (networks, sweep config): [Operator deploy](operator-deploy.md).
 
 ## Preview lifecycle
+
+Follow one preview from open to close:
 
 `create → migrate (app) → seed (optional) → hand over → drop`:
 
@@ -25,8 +27,8 @@ Synchronize re-deploys keep the same database; only a reset wipes it.
 
 ## Preview TTL and idle teardown
 
-A preview that nobody closes still disappears on a bound. Two manifest keys,
-both optional durations (`30m`, `2h`, `7d`) or `off`:
+Bound a preview that nobody closes. Set two optional manifest keys,
+durations (`30m`, `2h`, `7d`) or `off`:
 
 ```yaml
 preview:
@@ -61,8 +63,8 @@ a deploy; a running preview with both bounds off has no deadline.
 
 ## Preview database roles (`db.roles`)
 
-Postgres previews run with one (`single`) or two (`dual`) database
-LOGINS. `single` is the owner only; `dual` adds the per-database
+Pick one (`single`) or two (`dual`) database LOGINS for a Postgres
+preview. `single` is the owner only; `dual` adds the per-database
 restricted companion (`<dbName>_app`, injected as `PGAPPUSER` /
 `PGAPPPASSWORD`, remappable via `preview.env`). The default is
 derived — `dual` when `preview.env` remaps a companion key, else
@@ -72,8 +74,9 @@ contradiction guard, and the RLS recipe live in
 
 ## Service images: merge, leave, clear, lifecycle
 
-Static `image` in yaml pins the image; `--service name=image` overlays it
-— every service needs an image after merge. Omitting `--service` leaves
+Combine static manifest images with deploy-time `--service` flags. Static
+`image` in yaml pins the image; `--service name=image` overlays it —
+every service needs an image after merge. Omitting `--service` leaves
 companions in place; `--clear-services` removes all (cannot combine with
 `--service`). An empty list is rejected (omit the key, or
 `--clear-services`). Reseed bodies carry no service list, so companions
@@ -93,12 +96,12 @@ services start. There is no per-service health poll in this release.
 
 ## Multi-image previews (app + services)
 
-Routing examples only — merge, lifecycle, and health-gate rules live above.
+Share one preview database across long-lived containers (API + worker, web
++ secondary service). Routing examples only — merge, lifecycle, and
+health-gate rules live above.
 
-Full-stack previews often need more than one long-lived container sharing the
-same preview database (API + worker, web + secondary service, etc.). With
-`sprout ci preview` pass repeatable `--service name=image`. Low-level deploys
-use the same flag:
+With `sprout ci preview` pass repeatable `--service name=image`. Low-level
+deploys use the same flag:
 
 ```bash
 sprout deploy -i "$APP_IMAGE" \
@@ -108,11 +111,10 @@ sprout deploy -i "$APP_IMAGE" \
 
 ### Per-MR service tags (consumer builds, manifest references)
 
-A literal ref can't follow the merge request, so a pipeline that builds a
-per-MR image for a second surface (a separate SPA besides the app) pins the
-tag in the manifest and lets the CLI resolve it at deploy time. The
-consumer's pipeline builds and pushes the image; nothing in the component
-builds service images.
+Pin a per-MR image for a second surface (a separate SPA besides the app)
+in the manifest and let the CLI resolve it at deploy time. The consumer's
+pipeline builds and pushes the image; nothing in the component builds
+service images.
 
 ```yaml
 preview:
@@ -137,9 +139,9 @@ literal refs only.
 
 ### Routing (optional)
 
-Without routing metadata, a service is internal-only (reachable on the Docker
-networks, no Traefik router). To expose a service, declare it under
-`preview.services` in `.sprout.yaml`:
+Expose a service by declaring it under `preview.services` in
+`.sprout.yaml`. Without routing metadata, a service is internal-only
+(reachable on the Docker networks, no Traefik router):
 
 ```yaml
 slug: myapp
@@ -194,14 +196,13 @@ sprout deploy -i "$APP_IMAGE" \
 
 #### Preview labels: adopter-supplied container labels
 
-
-`preview.labels` adds literal `key: value` string labels to the app
-container **and** every service container; `preview.services[].labels`
-adds to that service container only (same key at both levels resolves to
-the per-service value). Labels are orthogonal to routing, so internal
-(unrouted) services receive them too. The one-shot seed container never
-carries adopter labels. Values are literal only — no `{pr_id}`
-interpolation.
+Label preview containers for tooling outside the gateway. `preview.labels`
+adds literal `key: value` string labels to the app container **and** every
+service container; `preview.services[].labels` adds to that service
+container only (same key at both levels resolves to the per-service
+value). Labels are orthogonal to routing, so internal (unrouted) services
+receive them too. The one-shot seed container never carries adopter
+labels. Values are literal only — no `{pr_id}` interpolation.
 
 Worked example — attach the `api` service to a Traefik middleware defined
 outside the gateway (file provider) and tag every preview container for
@@ -233,7 +234,10 @@ errors in the existing style.
 
 ## Seed run order and resume
 
-1. App container starts (entrypoint waits for Postgres, runs migrations, serves).
+Run "migrate in the app, then seed" with no API-code changes:
+
+1. App container starts (entrypoint waits for Postgres, runs migrations,
+   serves).
 2. Gateway polls `health.path` on the Postgres-network container IP until
    `health.expect` or `health.timeout`.
 3. **After healthy:** if a seed image was provided and this PR has never
@@ -250,41 +254,33 @@ On later synchronize deploys, seeding is skipped only when the incoming
 seed image matches the last successful one. Same image + hostname:
 seed-only (no app container replace). A changed seed image alone re-runs
 the seed without replacing the app container. Image or hostname change
-still replaces the app, then runs seed after
-healthy when `seeded_at` is unset, the seed image changed, or `--reseed`
-was passed. Seed
-wall-clock is the gateway env `SPROUT_SEED_TIMEOUT` (seconds, default
-`180`, applied internally as `seedTimeoutMs`); health timeout is separate
-and never starts the seed. Seed failure outcomes (exit non-zero, timeout,
-Docker/ops error → `500 seed_failed`, app stays up and routable,
-`seeded_at` unset; health timeout → `health_timeout`, app removed, seed
-never started) and the resume rule (failed/crash-mid-seed with same image
-+ hostname: redeploy with `-s` resumes the seed only; without
-`seed_image`, resume returns `422
+still replaces the app, then runs seed after healthy when `seeded_at` is
+unset, the seed image changed, or `--reseed` was passed. Seed wall-clock
+is the gateway env `SPROUT_SEED_TIMEOUT` (seconds, default `180`, applied
+internally as `seedTimeoutMs`); health timeout is separate and never
+starts the seed. Seed failure outcomes (exit non-zero, timeout, Docker/ops
+error → `500 seed_failed`, app stays up and routable, `seeded_at` unset;
+health timeout → `health_timeout`, app removed, seed never started) and
+the resume rule (failed/crash-mid-seed with same image + hostname: redeploy
+with `-s` resumes the seed only; without `seed_image`, resume returns `422
 seed_image_required_to_resume_seeding`) are covered under
 [Troubleshooting](troubleshooting.md).
 
 ## After-healthy hook (seed image)
 
-Run-order flow and low-level examples only — ordering, resume, timeout, and
-failure outcomes are contract above and in
-[Troubleshooting](troubleshooting.md).
+Declare the seed once in `.sprout.yaml` and never pass `-s` in CI —
+`sprout ci preview` builds + pushes the seed image and deploys with it.
+Ordering, resume, timeout, and failure outcomes are contract in the section
+above and in [Troubleshooting](troubleshooting.md).
 
-The gateway's only post-startup timing hook is **after-healthy**: once the
-preview app passes `health.expect`, an optional **seed image** runs. That is
-how you sequence "migrate in the app, then seed" with zero API-code changes.
-
-With the component you declare it once in `.sprout.yaml` and
-never pass `-s` in CI — `sprout ci preview` builds + pushes the seed image
-and deploys with it. Without `seed.inputs` the tag is commit-scoped
-(`<SHA>-seed`) and the image is rebuilt on every run; with explicit
-`seed.inputs` the tag is `seed-<shorthash>` content-addressed over those
-inputs (list every COPY source the seed image depends on). When the
-content-addressed tag already exists in the
-registry the build + push is skipped (`seed image reused: <ref>` in the job
-log) and the existing image deploys; a failed or unsupported registry check
-rebuilds instead of skipping. The low-level equivalent is
-`sprout deploy -i … -s …` with
+Without `seed.inputs` the tag is commit-scoped (`<SHA>-seed`) and the
+image is rebuilt on every run; with explicit `seed.inputs` the tag is
+`seed-<shorthash>` content-addressed over those inputs (list every COPY
+source the seed image depends on). When the content-addressed tag already
+exists in the registry the build + push is skipped
+(`seed image reused: <ref>` in the job log) and the existing image
+deploys; a failed or unsupported registry check rebuilds instead of
+skipping. The low-level equivalent is `sprout deploy -i … -s …` with
 `--seed-env` / `--seed-arg`:
 
 ```bash
@@ -307,8 +303,8 @@ sprout deploy -i "$APP_IMAGE" -s "$SEED_IMAGE" --reseed
 
 ## SQLite previews
 
-For stacks that run on SQLite instead of Postgres, set `db.provider` —
-`sprout ci preview` picks it up from `.sprout.yaml` (no new flag):
+Serve a SQLite stack from a preview. Set `db.provider` — `sprout ci
+preview` picks it up from `.sprout.yaml` (no new flag):
 
 ```yaml
 slug: myapp
@@ -323,39 +319,39 @@ db:
 ```
 
 Env keys: the gateway injects exactly one connection variable,
-`DATABASE_URL=file:<db.path>/<db.file>` (remap replaces the name, no
-dual alias). `PG*` remaps are rejected for SQLite previews, and
-`DATABASE_URL` is rejected for Postgres ones — both at manifest parse
-and at the gateway deploy route.
+`DATABASE_URL=file:<db.path>/<db.file>` (remap replaces the name, no dual
+alias). `PG*` remaps are rejected for SQLite previews, and `DATABASE_URL`
+is rejected for Postgres ones — both at manifest parse and at the gateway
+deploy route.
 
 Volume and seed behaviour: bring-up creates one named Docker volume per
 preview (`sprout-<slug>-pr-<id>-sqlite`) mounted at `db.path` in the
 app, companion-service, and seed containers (seed inputs still own the
-fixtures; `--reseed` semantics are unchanged). An app-image replace
-keeps the volume, so preview data survives; teardown removes the
-containers and the volume on the same paths that drop a Postgres
-database today. Health, TTL, sweep, and teardown are otherwise unchanged.
+fixtures; `--reseed` semantics are unchanged). An app-image replace keeps
+the volume, so preview data survives; teardown removes the containers and
+the volume on the same paths that drop a Postgres database today. Health,
+TTL, sweep, and teardown are otherwise unchanged.
 
 Hand-rolled migration notes (moving an app from a Postgres preview to a
 SQLite one): point the app at the injected `DATABASE_URL` instead of the
 `PG*` set (SQLite opens the file directly — no host, port, user, or
 password); run file-level migrations at container startup as before (the
 file persists on the volume across replaces); keep companion `PGAPP*`
-assumptions out of the SQLite path (there is no restricted role — the
-file is the database; likewise a `single` Postgres preview injects no
-`PGAPP*`). There is no gateway tooling that copies a
-Postgres preview into a SQLite volume in this release.
+assumptions out of the SQLite path (there is no restricted role — the file
+is the database; likewise a `single` Postgres preview injects no
+`PGAPP*`). There is no gateway tooling that copies a Postgres preview into
+a SQLite volume in this release.
 
-Operators: a gateway that only serves SQLite previews needs no Postgres
-env at all (`SPROUT_PREVIEW_POSTGRES_URL`, `SPROUT_PG_HOST/USER/PASSWORD`,
+Operators: a gateway that only serves SQLite previews needs no Postgres env
+at all (`SPROUT_PREVIEW_POSTGRES_URL`, `SPROUT_PG_HOST/USER/PASSWORD`,
 `SPROUT_POSTGRES_NETWORK` are required only for `postgres` deploys). A
-`postgres` deploy on such a gateway fails fast with
-`postgres_not_configured`, naming the repo and the missing variables.
+`postgres` deploy on such a gateway fails fast with `postgres_not_configured`,
+naming the repo and the missing variables.
 
 ## No-database previews
 
-For apps with no database — static or SSR frontends, apps whose data
-lives behind an external API, worker-only services — set `db.provider` to
+Serve an app with no database — static or SSR frontends, apps whose data
+lives behind an external API, worker-only services. Set `db.provider` to
 `none`. `sprout ci preview` picks it up from `.sprout.yaml` (no new flag):
 
 ```yaml
@@ -378,8 +374,7 @@ manifest parse and at the gateway deploy route: a `seed:` block (`seed
 requires db.provider postgres or sqlite (db.provider is none)`) and any
 `preview.env` database-key remap (`preview.env.PGHOST requires
 db.provider postgres`). `sprout ci reseed`, `sprout deploy -s …`, and
-`--reseed` fail fast with the seed error on a `none` repo instead of a
-5xx.
+`--reseed` fail fast with the seed error on a `none` repo instead of a 5xx.
 
 Operators: a gateway whose repos are all `none` boots with no
 `SPROUT_*PG*` / `SPROUT_POSTGRES_NETWORK` set; with any `postgres` repo
@@ -390,12 +385,13 @@ before the row is rewritten, so no resource strands.
 
 ## Preview app-data volumes
 
-A preview's writable container filesystem is thrown away on every
-replace (any push) — but a per-PR Postgres database survives, because it
-lives on the shared instance. Anything the app writes at runtime into
-its container is lost while its database rows survive, so the app can
-boot into an inconsistent state no CI signal shows. `preview.volumes`
-opts container paths into the same lifetime the database already has:
+Keep files the app writes at runtime across synchronize re-deploys. A
+preview's writable container filesystem is thrown away on every replace
+(any push) — but a per-PR Postgres database survives, because it lives on
+the shared instance. Anything the app writes at runtime into its container
+is lost while its database rows survive, so the app can boot into an
+inconsistent state no CI signal shows. `preview.volumes` opts container
+paths into the same lifetime the database already has:
 
 ```yaml
 slug: myapp
@@ -406,9 +402,8 @@ preview:
 ```
 
 Each entry gets one named per-preview Docker volume
-(`sprout-<slug>-pr-<id>-data-<n>`, indexed in manifest order), mounted
-at that path in the app, companion-service, and seed containers. The
-contract:
+(`sprout-<slug>-pr-<id>-data-<n>`, indexed in manifest order), mounted at
+that path in the app, companion-service, and seed containers. The contract:
 
 - **Replace keeps.** Synchronize re-deploys mount the same volume, so
   files written by the app are still readable after a push.
@@ -425,26 +420,26 @@ paths, `/` itself, `..` segments, duplicates, nested entries (one path
 equal to or inside another), and any entry equal to or nested inside the
 SQLite `db.path` (or vice versa) are each rejected.
 
-Volume names are index-keyed, so treat the list as append-only:
-appending an entry is safe, but reordering or removing one silently
-re-points an existing volume's contents at a different mount path (and
-strands the tail volume). Shrinking the list does not delete the
-surplus volumes either — they linger until teardown or the sweep's
-orphan pass removes them.
+Volume names are index-keyed, so treat the list as append-only: appending
+an entry is safe, but reordering or removing one silently re-points an
+existing volume's contents at a different mount path (and strands the tail
+volume). Shrinking the list does not delete the surplus volumes either —
+they linger until teardown or the sweep's orphan pass removes them.
 
 Writability rule: a fresh named volume starts empty. Docker copies the
-image's content and ownership at that path into the volume only when
-the path exists in the image. An app running as a non-root user must
-therefore create the path in the image with the right ownership (or
-chown it in the entrypoint) — otherwise the runtime user cannot write
-the root-owned directory it gets.
+image's content and ownership at that path into the volume only when the
+path exists in the image. An app running as a non-root user must therefore
+create the path in the image with the right ownership (or chown it in the
+entrypoint) — otherwise the runtime user cannot write the root-owned
+directory it gets.
 
 ## Email from a preview
 
-Previews can send mail through a gateway-configured Mailpit. The operator
-owns the Mailpit instance and the `SPROUT_MAIL_*` gateway variables (see
-[Operator deploy](operator-deploy.md#preview-mail-mailpit)); the adopter owns
-only the `mail:` block and the `preview.env` remap. Mail works on any
+Send mail from a preview through a gateway-configured Mailpit. The
+operator owns the Mailpit instance and the `SPROUT_MAIL_*` gateway
+variables (see
+[Operator deploy](operator-deploy.md#preview-mail-mailpit)); the adopter
+owns only the `mail:` block and the `preview.env` remap. Mail works on any
 `db.provider` — `postgres`, `sqlite`, and `none` — and needs no
 provisioning, health gate, or lifecycle: the gateway only injects env and
 joins a network.
@@ -459,9 +454,9 @@ MAILSECURE              (only when true, as the string "true")
 MAILUIURL               (only when the operator configures an inbox URL)
 ```
 
-`preview.env` renames these exactly like the `PG*` set: unmapped keys
-keep their canonical name; a remap replaces the name (no dual alias).
-Gateway mail keys win over colliding `preview.app_env` keys — do not put
+`preview.env` renames these exactly like the `PG*` set: unmapped keys keep
+their canonical name; a remap replaces the name (no dual alias). Gateway
+mail keys win over colliding `preview.app_env` keys — do not put
 `MAILHOST` or a remapped name into `SPROUT_APP_ENV`. Worked remap for an
 app that speaks `SMTP_*`:
 
@@ -478,14 +473,14 @@ preview:
 
 The entrypoint must read the adopter names (`SMTP_HOST`, …).
 
-The `mail:` block has three postures. Omitted is opportunistic: mail env
-is injected when the gateway configures it and silently skipped when it
-does not. Explicit `mail: enabled` requires mail: on a gateway without
-`SPROUT_MAIL_*` the deploy fails fast with `mail_not_configured`
-(`repo <repo> declares mail enabled but the gateway has no mail
-configured: missing SPROUT_MAIL_HOST` — same wording from the CLI and
-the gateway). `mail: none` opts out: no mail env is injected for that
-repo, and the preview never shows the `Mailbox:` note line.
+The `mail:` block has three postures. Omitted is opportunistic: mail env is
+injected when the gateway configures it and silently skipped when it does
+not. Explicit `mail: enabled` requires mail: on a gateway without
+`SPROUT_MAIL_*` the deploy fails fast with `mail_not_configured` (`repo
+<repo> declares mail enabled but the gateway has no mail configured: missing
+SPROUT_MAIL_HOST` — same wording from the CLI and the gateway). `mail: none`
+opts out: no mail env is injected for that repo, and the preview never shows
+the `Mailbox:` note line.
 
 ```yaml
 mail: enabled   # require mail; fail fast without a configured gateway
@@ -495,15 +490,14 @@ mail:
   from: "noreply+{pr_id}@preview.invalid"   # send-from override (below)
 ```
 
-An adopter can enable mail with this guide alone: keep the `mail:` block
-omitted (or `enabled`), remap `preview.env` onto the app's SMTP names,
-deploy, and look for the preview's From address in the inbox linked from
-the MR note (`Mailbox:` line).
+To enable mail: keep the `mail:` block omitted (or `enabled`), remap
+`preview.env` onto the app's SMTP names, deploy, and look for the preview's
+From address in the inbox linked from the MR note (`Mailbox:` line).
 
 ### Which preview did this mail come from?
 
-Every preview sends from its own address so testers can tell deployments
-apart in the shared inbox:
+Tell deployments apart in the shared inbox by the per-preview From
+address:
 
 - `MAILFROM` defaults to `<slug>-pr<pr_id>@<from-domain>`, e.g.
   `myapp-pr42@preview.invalid`. `MAILREPLYTO` carries the same address.
@@ -512,9 +506,9 @@ apart in the shared inbox:
 - The from-domain is the operator's `SPROUT_MAIL_FROM_DOMAIN` (default
   `preview.invalid`, a reserved suffix that can never deliver real mail).
 
-`mail.from` overrides the address with a `{pr_id}` template using the
-same grammar as `preview.hostname` — it must contain `{pr_id}`, support
-no other placeholder, contain no whitespace, and read as an address once
+`mail.from` overrides the address with a `{pr_id}` template using the same
+grammar as `preview.hostname` — it must contain `{pr_id}`, support no
+other placeholder, contain no whitespace, and read as an address once
 `{pr_id}` is substituted. An app that must send from its own convention
 points that convention at the preview-identifying address:
 
@@ -534,39 +528,38 @@ naming the problem, e.g. `must contain {pr_id}`).
 
 The MR note and `sprout list` show what to filter for: the note gains
 `- Mail from: <address>` alongside `- Mailbox: <inbox-url>`, `sprout
-deploy` / `sprout ci preview` print `mail_from=` (and `mailbox_url=`),
-and `sprout list` includes `mail_from`, `mail_from_name`, and
-`mailbox_url` for previews that received mail env. Inbox recipe: search
-the Mailpit UI for the preview's From address, or query the Mailpit API
+deploy` / `sprout ci preview` print `mail_from=` (and `mailbox_url=`), and
+`sprout list` includes `mail_from`, `mail_from_name`, and `mailbox_url` for
+previews that received mail env. Inbox recipe: search the Mailpit UI for
+the preview's From address, or query the Mailpit API
 (`GET /api/v1/messages`) and keep messages whose `From.Address` equals
 that address.
 
 ### Shared inbox
 
 All previews on one gateway write into one mailbox — there is no
-per-preview isolation. Testers tell mail apart by the recipient / From /
-subject convention above, not by separate inboxes. If previews must not
-see each other's mail at all, run a second Mailpit plus a second gateway
-pointed at it; one gateway holds exactly one mail configuration.
+per-preview isolation. Tell mail apart by the recipient / From / subject
+convention above, not by separate inboxes. If previews must not see each
+other's mail at all, run a second Mailpit plus a second gateway pointed at
+it; one gateway holds exactly one mail configuration.
 
 ## Preview access
 
-Previews are open by design: anyone who knows the hostname reaches them.
-Two opt-in postures gate one preview without touching the app, declared
+Gate one preview without touching the app. Previews are open by design:
+anyone who knows the hostname reaches them. Two opt-in postures, declared
 with `preview.auth` (`none` default; `basic` or `link`; see
 [Adopting a repo](adopting-a-repo.md#manifest-keys-sproutyaml)):
 
-- `basic` — one username/password per preview, generated by the gateway
-  at deploy. Anonymous requests get `401`; the documented credential
-  gets `200`. The credential is printed by `sprout access <pr>` and in
-  the CI note, never in gateway logs.
+- `basic` — one username/password per preview, generated by the gateway at
+  deploy. Anonymous requests get `401`; the documented credential gets
+  `200`. The credential is printed by `sprout access <pr>` and in the CI
+  note, never in gateway logs.
 - `link` — shareable, revocable, host-scoped links. `sprout access <pr>`
-  mints a link (default expiry `7d`, `--expires 12h` to override);
-  opening it on the preview's own host sets a cookie for that host only.
-  The same cookie on another preview's host is rejected. `sprout access
-  <pr> --revoke` rotates the preview's secret and invalidates
-  outstanding links with no redeploy, no container recreation, no
-  gateway restart.
+  mints a link (default expiry `7d`, `--expires 12h` to override); opening
+  it on the preview's own host sets a cookie for that host only. The same
+  cookie on another preview's host is rejected. `sprout access <pr>
+  --revoke` rotates the preview's secret and invalidates outstanding links
+  with no redeploy, no container recreation, no gateway restart.
 
 Share-this-preview-with-a-reviewer recipe:
 
@@ -585,25 +578,25 @@ sprout access 42 --revoke --repo https://github.com/org/repo
 
 Wire contract: by default the app receives **no identity header at all**.
 The gate is Traefik middleware plus the gateway — anonymous traffic never
-reaches the app container, and authorised traffic arrives unmodified.
-(If a future posture propagates identity, it will be recorded alongside
-the env grammar decision in the maintainer records.)
+reaches the app container, and authorised traffic arrives unmodified. (If a
+future posture propagates identity, it will be recorded alongside the env
+grammar decision in the maintainer records.)
 
 Companion services keep their own protection and are never double-gated:
-the gate attaches to the app router only. Reset, reseed, and teardown
-keep working with a gate on — they act through the gateway and the forge,
-not through the gated preview host. Expiry is checked on every request,
-not only when the cookie is set.
+the gate attaches to the app router only. Reset, reseed, and teardown keep
+working with a gate on — they act through the gateway and the forge, not
+through the gated preview host. Expiry is checked on every request, not
+only when the cookie is set.
 
 Two structural traps, so nobody rebuilds the abandoned shape:
 
 1. There is no Cloudflare-free path from the preview edge to an external
    auth service — every Cloudflare-mediated path rewrites
    `X-Forwarded-Host`, so an external gate rebuilt its own URL from the
-   header, took its self-request shortcut, and authorised everything.
-   The gate therefore lives in the gateway, which is already on the
-   preview network; the Traefik `forwardAuth` address is the gateway's
-   in-network name (`SPROUT_PREVIEW_AUTH_ADDRESS`), never a public URL.
+   header, took its self-request shortcut, and authorised everything. The
+   gate therefore lives in the gateway, which is already on the preview
+   network; the Traefik `forwardAuth` address is the gateway's in-network
+   name (`SPROUT_PREVIEW_AUTH_ADDRESS`), never a public URL.
 2. The basic-auth password is baked into a Traefik label at deploy, so a
    rotated password applies on the next deploy — only link secrets rotate
    live. `sprout access --revoke` on a `basic` preview says so.

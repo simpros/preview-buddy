@@ -1,17 +1,18 @@
 # CI integration
 
-One preview per merge / pull request, driven by CI — no forge webhooks.
+Drive one preview per merge / pull request from CI — no forge webhooks.
 GitLab uses the published `preview` component; GitHub uses the reusable
 `preview` workflow. Both are thin bootstrappers over `sprout ci preview` /
-`sprout ci teardown`: all preview logic lives in the CLI.
+`sprout ci teardown`: all preview logic lives in the CLI. Each section
+below is one task.
 
-- First preview? See [Getting started](getting-started.md).
-- Manifest keys? See [Adopting a repo](adopting-a-repo.md).
-- Commands reference? See [CLI reference](cli-reference.md).
+- First preview: [Getting started](getting-started.md).
+- Manifest keys: [Adopting a repo](adopting-a-repo.md).
+- Command flags: [CLI reference](cli-reference.md).
 
 ## GitLab component
 
-`.sprout.yaml` at the repo root (see
+Wire `.sprout.yaml` at the repo root (see
 [Adopting a repo](adopting-a-repo.md)), two required masked CI variables
 (plus optional `GITLAB_TOKEN` for MR notes), and one include. No adopter
 shell scripts:
@@ -23,68 +24,70 @@ include:
     inputs: { stage: deploy }
 ```
 
-Replace `<group>/sprout-ci` with the component project path on your GitLab
-instance and `v0.8.3` with the sprout release you adopt. Where the component
-project is unavailable on your instance, use the `include: remote` fallback
-documented in [`templates/README.md`](../templates/README.md)
-(remote includes must set `sprout_version` explicitly to the tag in the URL).
+Replace `<group>/sprout-ci` with the component project path on the
+instance and `v0.8.3` with the adopted sprout release. Where the component
+project is unavailable, use the `include: remote` fallback documented in
+[`templates/README.md`](../templates/README.md) (remote includes must set
+`sprout_version` explicitly to the tag in the URL).
 
-What you get:
+What the three jobs do:
 
-- `sprout-preview` job (merge-request pipelines only): installs the pinned,
+- `sprout-preview` (merge-request pipelines only): installs the pinned,
   checksum-verified `sprout` binary (version = component version), builds +
   pushes the app image (`CI_REGISTRY_IMAGE:<SHA>`) and — when `.sprout.yaml`
-  sets `seed` — the seed image (same repository; commit-scoped
-  `<SHA>-seed` tag rebuilt on every run, or — with explicit `seed.inputs` —
-  a `seed-<shorthash>` tag content-addressed over those inputs, where an
-  authenticated `docker manifest inspect` skips the build + push when that
-  tag already exists and logs `seed image reused: <ref>`), deploys, writes `PREVIEW_URL=` to the
-  `sprout-preview.env` dotenv artifact that feeds `environment:url`, and
-  best-effort posts/updates the MR note with the preview URL (forge failures
-  only warn with the forge's error body, never the token). The URL comes from the
-  CLI's output only — never reconstruct the hostname in CI.
-- `sprout-stop-preview` job (`on_stop`, Stop button / MR close / merge /
+  sets `seed` — the seed image (commit-scoped `<SHA>-seed` tag rebuilt on
+  every run, or — with explicit `seed.inputs` — a `seed-<shorthash>` tag
+  content-addressed over those inputs, where an authenticated
+  `docker manifest inspect` skips the build + push when that tag already
+  exists and logs `seed image reused: <ref>`), deploys, writes `PREVIEW_URL=`
+  to the `sprout-preview.env` dotenv artifact that feeds `environment:url`,
+  and best-effort posts/updates the MR note with the preview URL (forge
+  failures only warn with the forge's error body, never the token). The URL
+  comes from the CLI's output only — never reconstruct the hostname in CI.
+- `sprout-stop-preview` (`on_stop`, Stop button / MR close / merge /
   `auto_stop_in` expiry): `sprout ci teardown` (idempotent — exit 0 when
   already gone).
-- `sprout-reset` job (manual, instant): `sprout ci reset` — wipe the preview
+- `sprout-reset` (manual, instant): `sprout ci reset` — wipe the preview
   database and redeploy + seed from scratch (data wiped). Press **Run** on it
-  inside the MR pipeline when you want the reset *now* (GitLab has no
-  description-edit → pipeline trigger, and a fresh
-  "Run pipeline" arrives as `CI_PIPELINE_SOURCE=web`, which `sprout ci`
-  refuses — so the instant path lives inside the existing MR pipeline).
+  inside the MR pipeline for the reset *now* (GitLab has no
+  description-edit → pipeline trigger, and a fresh "Run pipeline" arrives as
+  `CI_PIPELINE_SOURCE=web`, which `sprout ci` refuses — so the instant path
+  lives inside the existing MR pipeline).
 - Prerequisites owned by the component: dind service, registry login,
   `apk` packages. Adopters declare no packages and no Docker setup.
 
 Prerequisites on the GitLab side: merge-request pipelines
-(`CI_PIPELINE_SOURCE=merge_request_event`; branch pipelines are refused with
-a named error) and a runner that can run privileged `docker:dind`. The
-operator must have deployed the [operator compose stack](operator-deploy.md) and
-minted the deploy token. Pull credentials on the gateway follow the deploy
-`app_image` host (`SPROUT_REGISTRY_AUTHS_JSON` per host, empty = anonymous).
+(`CI_PIPELINE_SOURCE=merge_request_event`; branch pipelines are refused
+with a named error) and a runner that can run privileged `docker:dind`.
+The operator must have deployed the [operator compose stack](operator-deploy.md)
+and minted the deploy token. Pull credentials on the gateway follow the
+deploy `app_image` host (`SPROUT_REGISTRY_AUTHS_JSON` per host, empty =
+anonymous).
 
 ### Component → CLI ownership
 
 The component YAML above calls exactly three `sprout ci` subcommands —
-everything else is manual (run from a merge-request pipeline or laptop):
+everything else is manual (run from a merge-request pipeline or laptop).
+Flag details live in [CLI reference](cli-reference.md#ci-commands).
 
 | Component job | CLI call | Owns |
 |---|---|---|
-| `sprout-preview` | `sprout ci preview --tail … --dotenv-file … [--app-env-file …] [--seed-env-file …] [--reseed]` | Install check aside, the CLI builds + pushes the app image and — when `.sprout.yaml` sets `seed` — the seed image (always rebuilt, unless explicit `seed.inputs` opt into content-addressed reuse: an existing tag skips the rebuild, reuse is logged, a failed check rebuilds), deploys (with `--reseed` when the flag is passed), writes `PREVIEW_URL=` to the dotenv artifact, dumps the gateway log tail on failure, and posts/updates the MR note (best-effort). |
+| `sprout-preview` | `sprout ci preview --tail … --dotenv-file … [--app-env-file …] [--seed-env-file …] [--reseed]` | Builds + pushes the app image and — when `.sprout.yaml` sets `seed` — the seed image (always rebuilt, unless explicit `seed.inputs` opt into content-addressed reuse: an existing tag skips the rebuild, reuse is logged, a failed check rebuilds), deploys (with `--reseed` when the flag is passed), writes `PREVIEW_URL=` to the dotenv artifact, dumps the gateway log tail on failure, and posts/updates the MR note (best-effort). |
 | `sprout-stop-preview` | `sprout ci teardown` (no flags) | Idempotent teardown; rewrites the MR note in place ("preview was removed"). No Docker daemon, no registry login on this path. |
 | `sprout-reset` | `sprout ci reset --tail … --dotenv-file … [--app-env-file …] [--seed-env-file …]` | Wipe the preview database and redeploy + seed from scratch (data wiped). No rebuild: reuses the already pushed images for the commit, so no Docker daemon and no registry login on this path. |
 
 Manual helpers (never called by the component): `sprout ci reseed -s …`
 (re-run the seed against the existing database) and `sprout ci logs
-[--tail N]` (container logs through the gateway). Full flags in
-[CLI reference](cli-reference.md#ci-commands).
+[--tail N]` (container logs through the gateway).
 
 ### Component inputs (`templates/preview.yml`)
 
-Full prose reference: [`templates/README.md`](../templates/README.md).
-Contract tests: `templates/preview.test.ts` (inputs are exactly this set —
-no Dockerfile guards, no extra-args hatch; self-contained, no
-`spec:include`, no global keywords). There are no service-related
-component inputs — companions go through `sprout ci preview --service`.
+Set these inputs on the include. Full prose reference:
+[`templates/README.md`](../templates/README.md). Contract tests:
+`templates/preview.test.ts` (inputs are exactly this set — no Dockerfile
+guards, no extra-args hatch; self-contained, no `spec:include`, no global
+keywords). There are no service-related component inputs — companions go
+through `sprout ci preview --service`.
 
 | Input | Default | Purpose |
 |---|---|---|
@@ -108,11 +111,12 @@ component inputs — companions go through `sprout ci preview --service`.
 | `SPROUT_SEED_ENV` | File | yes | Optional seed secrets, same shape |
 | `GITLAB_TOKEN` | Variable | yes | Optional MR-note token with note-write. When set, the CLI posts/updates the MR note with it (`PRIVATE-TOKEN`); otherwise it falls back to `CI_JOB_TOKEN` (`JOB-TOKEN`), which can read but not create notes on some instances (401) |
 
-Secrets never appear in job logs, CLI output, or the MR note (the CLI prints only `preview_url=`).
+Secrets never appear in job logs, CLI output, or the MR note (the CLI prints
+only `preview_url=`).
 
 ## GitHub Actions
 
-One caller workflow + secrets — parity with the GitLab component. The
+Add one caller workflow + secrets — parity with the GitLab component. The
 **canonical** caller is
 [`examples/adopting-repo/.github/workflows/sprout.yml`](../examples/adopting-repo/.github/workflows/sprout.yml)
 — copy it rather than pasting fragments from this guide:
@@ -137,9 +141,8 @@ jobs:
       SPROUT_APP_ENV: ${{ secrets.SPROUT_APP_ENV }}
 ```
 
-What you get (owned by the reusable workflow
-`.github/workflows/preview.yml`, a thin
-bootstrapper over `sprout ci preview` / `sprout ci teardown`):
+What the reusable workflow (`.github/workflows/preview.yml`, a thin
+bootstrapper over `sprout ci preview` / `sprout ci teardown`) does:
 
 - Preview on `opened` / `synchronize` / `reopened`: installs the pinned,
   checksum-verified `sprout` binary, builds + pushes images
@@ -153,10 +156,9 @@ bootstrapper over `sprout ci preview` / `sprout ci teardown`):
   or laptop with the same secrets — no ticked box, no marker token.
 - Per-PR serial runs via a `sprout-preview-<PR>` concurrency group.
 
-Caller permissions: a reusable workflow cannot elevate permissions, so the
-caller must grant `contents: read` (checkout), `pull-requests: write` (PR
-comment), and `packages: write` (image push to
-`ghcr.io`).
+The caller must grant `contents: read` (checkout), `pull-requests: write`
+(PR comment), and `packages: write` (image push to `ghcr.io`) — a reusable
+workflow cannot elevate permissions.
 
 Secrets (repo settings):
 
@@ -168,11 +170,11 @@ Secrets (repo settings):
 | `SPROUT_SEED_ENV` | no | Seed secrets, same shape |
 
 No file-type variables on GitHub: the blobs above are written to
-`$RUNNER_TEMP` and read automatically by the CLI. When 48 KB is not enough,
-commit a repo-relative dotenv file and pass it via the `app_env_file` /
-`seed_env_file` inputs instead of the secret — same escape hatch as the
-GitLab `variables:` mapping, without the config-time expansion trap
-(inputs are plain paths, never variable references).
+`$RUNNER_TEMP` and read automatically by the CLI. When 48 KB is not
+enough, commit a repo-relative dotenv file and pass it via the
+`app_env_file` / `seed_env_file` inputs instead of the secret — same
+escape hatch as the GitLab `variables:` mapping, without the config-time
+expansion trap (inputs are plain paths, never variable references).
 
 Deliberate differences from the GitLab component: there is no `on_stop` /
 `auto_stop_in` equivalent — teardown on `closed` plus the gateway sweep is
@@ -192,7 +194,7 @@ Pick the asset that matches the host libc (names are honest):
 | `sprout-linux-x64-musl` | musl | Alpine runners; install `libstdc++` |
 
 ```bash
-TAG=v0.8.3   # pin ≥ the release that ships glibc `sprout-linux-x64`
+TAG=v0.8.3
 
 # glibc hosts
 curl -fsSL -o /usr/local/bin/sprout \
@@ -208,7 +210,8 @@ chmod +x /usr/local/bin/sprout
 sprout --version
 ```
 
-CLI environment for hand-rolled jobs (the reusable workflow sets this itself):
+CLI environment for hand-rolled jobs (the reusable workflow sets this
+itself):
 
 ```yaml
 env:
@@ -218,22 +221,23 @@ env:
 
 ## Reset a preview
 
-One command wipes the preview database and redeploys + seeds from scratch:
+Wipe the preview database and redeploy + seed from scratch with one
+command:
 
 ```bash
 sprout ci reset
 ```
 
 It tears down this MR's preview (containers + database + any
-`preview.volumes` data volumes), then deploys again
-with the already pushed images for the commit — no rebuild — re-running
-migrations and the seed behind the health gate, then printing `preview_url=`
-like `sprout ci preview`. The MR/PR note gains a `Reset: <actor> at <utc>`
+`preview.volumes` data volumes), then deploys again with the already
+pushed images for the commit — no rebuild — re-running migrations and the
+seed behind the health gate, then printing `preview_url=` like
+`sprout ci preview`. The MR/PR note gains a `Reset: <actor> at <utc>`
 line; the note is never duplicated.
 
-Wipe vs re-seed in one sentence each: `sprout ci reset` wipes the database
-and redeploys from scratch (data wiped), while `--reseed` / `sprout ci
-reseed -s …` re-runs the seed against the existing database (data kept).
+Wipe vs re-seed: `sprout ci reset` wipes the database and redeploys from
+scratch (data wiped), while `--reseed` / `sprout ci reseed -s …` re-runs
+the seed against the existing database (data kept).
 
 If the reset leaves the preview unhealthy, pull container logs through the
 gateway (`sprout ci logs [--tail N]`, same output as `sprout logs`) and fix
@@ -262,39 +266,36 @@ hand-rolled job or laptop with the same secrets.
 
 ## Migration from a hand-rolled script
 
-If your `.gitlab-ci.yml` currently installs the CLI, builds/pushes images,
-and calls `sprout deploy` by hand, replace the whole job with the component.
-Hand-rolled setups typically carry `scripts/ci/sprout-preview.sh`
-plus a seed-image script, `SPROUT_VERSION` / `SPROUT_SHA256` project
-variables, a custom CLI installer block, and flag-by-flag
-`--app-env` assembly. Concretely, delete:
+Replace a hand-rolled `.gitlab-ci.yml` job (manual CLI install,
+build/push, `sprout deploy` by hand) with the component. Concretely,
+delete:
 
 1. The `curl` install block (version pin, asset selection, `chmod`,
    `libstdc++` handling) — the component installs the pinned,
-   checksum-verified binary matching the component version. This retires the
-   custom installer and the `SPROUT_VERSION` / `SPROUT_SHA256` project
+   checksum-verified binary matching the component version. This retires
+   the custom installer and the `SPROUT_VERSION` / `SPROUT_SHA256` project
    variables: the version is now the component version (`sprout_version`
    input, pinned automatically on component includes).
-2. The `docker build` / `docker push` steps and registry-login script — the
-   component owns the dind service and login; `sprout ci preview` builds and
-   pushes the app image and, when `.sprout.yaml` configures `seed`, the seed
-   image. This retires `scripts/ci/sprout-preview.sh` and the seed-image
-   script (image coordinates move into `.sprout.yaml` `build` / `seed`
-   blocks).
-3. The `sprout deploy -i … -s …` invocation, `preview_url=` scraping, dotenv
-   writing, and `sprout teardown` script — the component calls
+2. The `docker build` / `docker push` steps and registry-login script —
+   the component owns the dind service and login; `sprout ci preview`
+   builds and pushes the app image and, when `.sprout.yaml` configures
+   `seed`, the seed image. This retires `scripts/ci/sprout-preview.sh` and
+   the seed-image script (image coordinates move into `.sprout.yaml`
+   `build` / `seed` blocks).
+3. The `sprout deploy -i … -s …` invocation, `preview_url=` scraping,
+   dotenv writing, and `sprout teardown` script — the component calls
    `sprout ci preview` / `sprout ci teardown`, writes the dotenv artifact,
    and posts the MR note. Flag-by-flag `--app-env` assembly in shell goes
    away with it: extra env moves into `.sprout.yaml` (`preview.app_env` /
-   `seed.env`), the `SPROUT_APP_ENV` / `SPROUT_SEED_ENV` file-type variables,
-   or the `app_env_file` / `seed_env_file` component inputs.
+   `seed.env`), the `SPROUT_APP_ENV` / `SPROUT_SEED_ENV` file-type
+   variables, or the `app_env_file` / `seed_env_file` component inputs.
 4. Any reconstruction of the preview hostname in CI (string munging
-   `pr-<id>.host`) — read `PREVIEW_URL` / `preview_url=` from the CLI output
-   instead.
+   `pr-<id>.host`) — read `PREVIEW_URL` / `preview_url=` from the CLI
+   output instead.
 
 After the migration no adopter shell script remains: the component declares
-all three jobs (`sprout-preview`, `sprout-stop-preview`, `sprout-reset`), and
-every behavior the old script hand-built (install, build/push, deploy,
+all three jobs (`sprout-preview`, `sprout-stop-preview`, `sprout-reset`),
+and every behavior the old script hand-built (install, build/push, deploy,
 dotenv, MR note, log dump on failure) is owned by `sprout ci preview` /
 `sprout ci teardown`. The `.sprout.yaml` `seed:` block replaces the `-s`
 plumbing: when present, the CLI builds + pushes the seed image and deploys
