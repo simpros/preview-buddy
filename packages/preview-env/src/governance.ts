@@ -20,6 +20,22 @@ function parseDurationMs(raw: string): number | null {
   return ms;
 }
 
+/** Gateway-level governance: every field resolved, null means off. */
+export type GovernanceConfig = {
+  previewTtlMs: number | null;
+  previewIdleMs: number | null;
+  maxPreviewsPerRepo: number | null;
+  maxPreviews: number | null;
+  previewMaxDbConnections: number | null;
+  postgresMaxConnections: number | null;
+};
+
+/** Manifest-level governance overrides; undefined means inherit the gateway. */
+export type GovernanceManifest = {
+  ttl?: string;
+  idle_teardown?: string;
+};
+
 type GovernanceFieldIssue = {
   code: "invalid_ttl" | "invalid_idle_teardown";
   raw: string;
@@ -119,6 +135,22 @@ export function resolveGovernanceMs(
   return gatewayMs;
 }
 
+/** Effective per-preview deadlines from manifest overrides over the gateway. */
+export function resolveEffectiveGovernanceMs(
+  manifest: GovernanceManifest | undefined,
+  gateway:
+    | Pick<GovernanceConfig, "previewTtlMs" | "previewIdleMs">
+    | undefined,
+): { ttlMs: number | null; idleMs: number | null } {
+  return {
+    ttlMs: resolveGovernanceMs(manifest?.ttl, gateway?.previewTtlMs ?? null),
+    idleMs: resolveGovernanceMs(
+      manifest?.idle_teardown,
+      gateway?.previewIdleMs ?? null,
+    ),
+  };
+}
+
 export function computeExpiresAtMs(
   lastActivityMs: number,
   ttlMs: number | null,
@@ -141,6 +173,44 @@ export function connectionProjection(input: {
   }
   const projected = (input.activePreviews + 1) * input.perPreview;
   return { projected, over: projected > input.ceiling };
+}
+
+export type GovernanceStatus = {
+  total: number;
+  byRepo: Map<string, number>;
+  connections: { projected: number | null; over: boolean };
+};
+
+/** One pass over live previews for cap and budget checks; deploy and sweep share it. */
+export function governanceStatus(
+  previews: readonly { canonicalRepoId: string }[],
+  gov:
+    | Pick<
+        GovernanceConfig,
+        | "maxPreviews"
+        | "maxPreviewsPerRepo"
+        | "previewMaxDbConnections"
+        | "postgresMaxConnections"
+      >
+    | undefined,
+): GovernanceStatus {
+  const byRepo = new Map<string, number>();
+  for (const preview of previews) {
+    byRepo.set(
+      preview.canonicalRepoId,
+      (byRepo.get(preview.canonicalRepoId) ?? 0) + 1,
+    );
+  }
+  const total = previews.length;
+  const perPreview = gov?.previewMaxDbConnections ?? null;
+  const ceiling = gov?.postgresMaxConnections ?? null;
+  let projected: number | null = null;
+  let over = false;
+  if (perPreview !== null && ceiling !== null) {
+    projected = total * perPreview;
+    over = projected > ceiling;
+  }
+  return { total, byRepo, connections: { projected, over } };
 }
 
 export function previewLimitDetail(input: {

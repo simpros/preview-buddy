@@ -97,19 +97,7 @@ export type PhaseTimer = {
   record(phase: PreviewPhase, ms: number): void;
 };
 
-export type GovernanceInput = {
-  ttl?: string;
-  idle_teardown?: string;
-};
-
-export type GovernanceConfig = {
-  previewTtlMs?: number | null;
-  previewIdleMs?: number | null;
-  maxPreviewsPerRepo?: number | null;
-  maxPreviews?: number | null;
-  previewMaxDbConnections?: number | null;
-  postgresMaxConnections?: number | null;
-};
+export type { GovernanceConfig } from "@sprout/preview-env";
 
 export type ProvisionInput = {
   repo: string;
@@ -128,7 +116,6 @@ export type ProvisionInput = {
   traefikForwardAuth?: TraefikForwardAuth;
   auth?: PreviewAuthSpec;
   previewAuth?: PreviewAuthConfig;
-  governance?: GovernanceInput;
   governanceMs?: { ttlMs: number | null; idleMs: number | null };
 };
 

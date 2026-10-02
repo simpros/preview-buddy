@@ -1,10 +1,5 @@
 import { and, eq, ne } from "drizzle-orm";
 import { previewAuthMode } from "@sprout/preview-env";
-import {
-  connectionBudgetDetail,
-  previewLimitDetail,
-  resolveGovernanceMs,
-} from "@sprout/preview-env";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { completeBringUp, pullImagesOutsideLock } from "./bring-up.ts";
@@ -42,11 +37,10 @@ import type {
 } from "./types.ts";
 
 export type { PreviewRow };
+export type { GovernanceConfig } from "@sprout/preview-env";
 export type {
   BringUpPlan,
   DisplayPreviewStatus,
-  GovernanceConfig,
-  GovernanceInput,
   LifecycleDeps,
   PreviewSnapshot,
   PreviewStatus,
@@ -602,34 +596,41 @@ export function purgePreview(
   });
 }
 
+async function removePreviewUnlocked(
+  deps: TeardownDeps,
+  input: RemovePreviewInput,
+): Promise<Result<boolean>> {
+  const existing = await getPreviewRow(deps.db, input.repo, input.prId);
+  if (!existing || existing.status === "removed") {
+    return { ok: true, value: false };
+  }
+  if (existing.dbName !== input.expectedDbName) {
+    return { ok: true, value: false };
+  }
+  if (existing.createdAt !== input.expectedCreatedAt) {
+    return { ok: true, value: false };
+  }
+
+  const status = parsePreviewStatus(existing.status);
+  if (!status.ok) return status;
+
+  const result = await destroyPreviewRow(
+    deps,
+    existing,
+    "tombstone",
+    input.expiryReason,
+  );
+  if (!result.ok) return result;
+  return { ok: true, value: true };
+}
+
 export function removePreview(
   deps: TeardownDeps,
   input: RemovePreviewInput,
 ): Promise<Result<boolean>> {
-  return withPreviewLock(input.repo, input.prId, async () => {
-    const existing = await getPreviewRow(deps.db, input.repo, input.prId);
-    if (!existing || existing.status === "removed") {
-      return { ok: true, value: false };
-    }
-    if (existing.dbName !== input.expectedDbName) {
-      return { ok: true, value: false };
-    }
-    if (existing.createdAt !== input.expectedCreatedAt) {
-      return { ok: true, value: false };
-    }
-
-    const status = parsePreviewStatus(existing.status);
-    if (!status.ok) return status;
-
-    const result = await destroyPreviewRow(
-      deps,
-      existing,
-      "tombstone",
-      input.expiryReason,
-    );
-    if (!result.ok) return result;
-    return { ok: true, value: true };
-  });
+  return withPreviewLock(input.repo, input.prId, () =>
+    removePreviewUnlocked(deps, input),
+  );
 }
 
 /** Sweep expiry never steals a preview mid-deploy: skip when the lock is held. */
@@ -637,154 +638,12 @@ export function tryRemovePreview(
   deps: TeardownDeps,
   input: RemovePreviewInput,
 ): Promise<Result<boolean>> {
-  return tryWithPreviewLock(input.repo, input.prId, async () => {
-    const existing = await getPreviewRow(deps.db, input.repo, input.prId);
-    if (!existing || existing.status === "removed") {
-      return { ok: true as const, value: false };
-    }
-    if (existing.dbName !== input.expectedDbName) {
-      return { ok: true as const, value: false };
-    }
-    if (existing.createdAt !== input.expectedCreatedAt) {
-      return { ok: true as const, value: false };
-    }
-    const status = parsePreviewStatus(existing.status);
-    if (!status.ok) return status;
-    const result = await destroyPreviewRow(
-      deps,
-      existing,
-      "tombstone",
-      input.expiryReason,
-    );
-    if (!result.ok) return result;
-    return { ok: true as const, value: true };
-  }).then((attempt) => {
+  return tryWithPreviewLock(input.repo, input.prId, () =>
+    removePreviewUnlocked(deps, input),
+  ).then((attempt) => {
     if (!attempt.acquired) return { ok: true as const, value: false };
-    return attempt.value!;
+    return attempt.value;
   });
-}
-
-export function resolveEffectiveGovernanceMs(
-  manifest: { ttl?: string; idle_teardown?: string } | undefined,
-  gateway: {
-    previewTtlMs?: number | null;
-    previewIdleMs?: number | null;
-  },
-): { ttlMs: number | null; idleMs: number | null } {
-  return {
-    ttlMs: resolveGovernanceMs(manifest?.ttl, gateway.previewTtlMs ?? null),
-    idleMs: resolveGovernanceMs(
-      manifest?.idle_teardown,
-      gateway.previewIdleMs ?? null,
-    ),
-  };
-}
-
-async function countActivePreviews(db: StateDb): Promise<number> {
-  const rows = await db
-    .select({ prId: previews.prId })
-    .from(previews)
-    .where(ne(previews.status, "removed"));
-  return rows.length;
-}
-
-async function countRepoPreviews(
-  db: StateDb,
-  repo: string,
-): Promise<number> {
-  const rows = await db
-    .select({ prId: previews.prId })
-    .from(previews)
-    .where(and(eq(previews.canonicalRepoId, repo), ne(previews.status, "removed")));
-  return rows.length;
-}
-
-/**
- * Caps fail fast and loudly: no container and no database is created when
- * the deploy would exceed a configured cap. Refreshing an existing preview
- * never counts against the cap.
- */
-export async function checkPreviewCaps(
-  db: StateDb,
-  input: { repo: string; prId: number },
-  caps: {
-    maxPreviewsPerRepo?: number | null;
-    maxPreviews?: number | null;
-  },
-): Promise<Result<true>> {
-  const existing = await getPreviewRow(db, input.repo, input.prId);
-  if (existing && existing.status !== "removed") return { ok: true, value: true };
-  const perRepo = caps.maxPreviewsPerRepo ?? null;
-  if (perRepo !== null) {
-    const count = await countRepoPreviews(db, input.repo);
-    if (count >= perRepo) {
-      return {
-        ok: false,
-        status: 429,
-        error: "preview_limit_reached",
-        detail: previewLimitDetail({
-          cap: "SPROUT_MAX_PREVIEWS_PER_REPO",
-          value: perRepo,
-          count,
-        }),
-      };
-    }
-  }
-  const total = caps.maxPreviews ?? null;
-  if (total !== null) {
-    const count = await countActivePreviews(db);
-    if (count >= total) {
-      return {
-        ok: false,
-        status: 429,
-        error: "preview_limit_reached",
-        detail: previewLimitDetail({
-          cap: "SPROUT_MAX_PREVIEWS",
-          value: total,
-          count,
-        }),
-      };
-    }
-  }
-  return { ok: true, value: true };
-}
-
-/**
- * Connection budget: (active + 1) x per-preview vs the instance ceiling.
- * The per-preview figure is only accurate for apps that honour the injected
- * cap; see docs/operator-deploy.md for the measured arithmetic.
- */
-export async function checkConnectionBudget(
-  db: StateDb,
-  input: { repo: string; prId: number },
-  budget: {
-    previewMaxDbConnections?: number | null;
-    postgresMaxConnections?: number | null;
-  },
-): Promise<Result<true>> {
-  const perPreview = budget.previewMaxDbConnections ?? null;
-  const ceiling = budget.postgresMaxConnections ?? null;
-  if (perPreview === null || ceiling === null) {
-    return { ok: true, value: true };
-  }
-  const existing = await getPreviewRow(db, input.repo, input.prId);
-  const active = await countActivePreviews(db);
-  const isNew = !existing || existing.status === "removed";
-  const projected = (active + (isNew ? 1 : 0)) * perPreview;
-  if (projected > ceiling) {
-    return {
-      ok: false,
-      status: 429,
-      error: "preview_connection_budget_exceeded",
-      detail: connectionBudgetDetail({
-        projected,
-        ceiling,
-        perPreview,
-        active,
-      }),
-    };
-  }
-  return { ok: true, value: true };
 }
 
 /** Shared claim-check-then-act unit behind both orphan droppers. */

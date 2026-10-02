@@ -48,10 +48,11 @@ export function tryWithPreviewLock<T>(
   repo: string,
   prId: number,
   fn: () => Promise<T>,
-): Promise<{ acquired: boolean; value?: T }> {
-  if (isPreviewLocked(repo, prId)) return Promise.resolve({ acquired: false });
+): Promise<{ acquired: true; value: T } | { acquired: false }> {
+  if (isPreviewLocked(repo, prId))
+    return Promise.resolve({ acquired: false as const });
   return withPreviewLock(repo, prId, fn).then((value) => ({
-    acquired: true,
+    acquired: true as const,
     value,
   }));
 }

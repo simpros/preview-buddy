@@ -114,12 +114,17 @@ export {
 export {
   computeExpiresAtMs,
   connectionBudgetDetail,
+  connectionProjection,
   governanceIssueMessage,
+  governanceStatus,
   parseGatewayCap,
   parseGatewayDurationMs,
   parsePreviewGovernanceField,
   previewLimitDetail,
-  resolveGovernanceMs,
+  resolveEffectiveGovernanceMs,
+  type GovernanceConfig,
+  type GovernanceManifest,
+  type GovernanceStatus,
 } from "./governance.ts";
 
 export {

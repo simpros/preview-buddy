@@ -60,6 +60,21 @@ describe("governance expiry", () => {
     expect(planGovernanceExpiry(p, base + 30 * 86400_000)).toBeNull();
   });
 
+  test("stale stored deadline does not outlive a refresh", () => {
+    const base = Date.parse("2026-09-02T12:00:00.000Z");
+    const refreshed = base + 8 * 86400_000;
+    const stale = preview({
+      lastActivityMs: refreshed,
+      ttlMs: 7 * 86400_000,
+      idleMs: null,
+      expiresAtMs: base + 7 * 86400_000,
+    });
+    expect(planGovernanceExpiry(stale, base + 8 * 86400_000)).toBeNull();
+    expect(
+      planGovernanceExpiry(stale, refreshed + 7 * 86400_000),
+    ).toBe("sweep:ttl-expired");
+  });
+
   test("sweep removes expired preview without forge call", async () => {
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     setSystemTime(new Date(base + 8 * 86400_000));
@@ -105,7 +120,14 @@ describe("governance expiry", () => {
       listOpenPrIds: async () => [5, 6],
       drop: async () => true,
       ttlHours: 72 * 365,
-      governance: { maxPreviews: 1, maxPreviewsPerRepo: 1 },
+      governance: {
+        previewTtlMs: null,
+        previewIdleMs: null,
+        maxPreviews: 1,
+        maxPreviewsPerRepo: 1,
+        previewMaxDbConnections: null,
+        postgresMaxConnections: null,
+      },
       log: (m) => {
         logs.push(m);
       },

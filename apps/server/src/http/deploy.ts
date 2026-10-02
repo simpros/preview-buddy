@@ -21,12 +21,12 @@ import {
   previewVolumeIssueMessage,
   requiresDatabase,
   resolveDbRoles,
-  resolveGovernanceMs,
   resolveHealthSpec,
   seedRequiresDatabaseMessage,
   validateHostname,
   type DbRolesMode,
   type DbSpec,
+  type GovernanceManifest,
   type HealthRequest,
   type MailSpec,
   type PreviewAuthSpec,
@@ -44,10 +44,8 @@ import {
   postgresNotConfiguredDetail,
   previewAuthNotConfiguredDetail,
 } from "../config.ts";
+import { checkDeployAdmission } from "../preview/admission.ts";
 import {
-  checkConnectionBudget,
-  checkPreviewCaps,
-  resolveEffectiveGovernanceMs,
   teardownPreview,
   type GovernanceConfig,
   type LifecycleDeps,
@@ -491,7 +489,7 @@ export function resolvePreviewVolumesRequest(
 export function resolveGovernanceRequest(
   body: Pick<DeployBody, "ttl" | "idle_teardown">,
 ):
-  | { ok: true; value: { ttl?: string; idle_teardown?: string } }
+  | { ok: true; value: GovernanceManifest }
   | { ok: false; error: string; detail?: string } {
   const ttl = parsePreviewGovernanceField(body.ttl, "ttl");
   if (!ttl.ok) {
@@ -618,41 +616,14 @@ export function deploy(
     if (!governance.ok) {
       return unprocessable(set, governance);
     }
-    const gatewayGov: GovernanceConfig = {
-      previewTtlMs: deps.governance?.previewTtlMs ?? null,
-      previewIdleMs: deps.governance?.previewIdleMs ?? null,
-      maxPreviewsPerRepo: deps.governance?.maxPreviewsPerRepo ?? null,
-      maxPreviews: deps.governance?.maxPreviews ?? null,
-      previewMaxDbConnections:
-        deps.governance?.previewMaxDbConnections ?? null,
-      postgresMaxConnections: deps.governance?.postgresMaxConnections ?? null,
-    };
-    const caps = await checkPreviewCaps(
+    const admission = await checkDeployAdmission(
       deps.db,
       { repo: target.value.repo, prId: target.value.prId },
-      gatewayGov,
-    );
-    if (!caps.ok) {
-      set.status = caps.status;
-      return caps.detail
-        ? { error: caps.error, detail: caps.detail }
-        : { error: caps.error };
-    }
-    const budget = await checkConnectionBudget(
-      deps.db,
-      { repo: target.value.repo, prId: target.value.prId },
-      gatewayGov,
-    );
-    if (!budget.ok) {
-      set.status = budget.status;
-      return budget.detail
-        ? { error: budget.error, detail: budget.detail }
-        : { error: budget.error };
-    }
-    const governanceMs = resolveEffectiveGovernanceMs(
+      deps.governance,
       governance.value,
-      gatewayGov,
     );
+    if (!admission.ok) return mapResult(admission, set);
+    const governanceMs = admission.value;
     const plan = resolvePreviewPlan(deps.materialization, {
       spec: deploySpecs.value.spec,
       slug: body.slug,
@@ -705,7 +676,6 @@ export function deploy(
         : {}),
       plan,
       reseed: body.reseed === true,
-      governance: governance.value,
       governanceMs,
       ...(deps.materialization.traefikTls !== undefined
         ? { traefikTls: deps.materialization.traefikTls }

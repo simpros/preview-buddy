@@ -1,4 +1,5 @@
-import type { DataVolumeRef } from "@sprout/preview-env";
+import type { DataVolumeRef, GovernanceConfig } from "@sprout/preview-env";
+import { governanceStatus } from "@sprout/preview-env";
 import { isForgeApiError } from "../forge/types.ts";
 
 export type SweepReason =
@@ -52,12 +53,7 @@ export type SweepPorts = {
   /** True if resources were removed; false if the plan was stale. */
   drop: (deletion: SweepDeletion) => Promise<boolean>;
   ttlHours: number;
-  governance?: {
-    maxPreviewsPerRepo?: number | null;
-    maxPreviews?: number | null;
-    previewMaxDbConnections?: number | null;
-    postgresMaxConnections?: number | null;
-  };
+  governance?: GovernanceConfig;
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
 
@@ -284,42 +280,36 @@ function activityBaseMs(preview: SweepPreview): number | null {
 }
 
 /**
- * Governance expiry from the stored per-preview deadlines. The cheap activity
- * signal is the last successful deploy (including reseed/reset); see
- * docs/previews.md. Returns the reason to expire with, or null to keep.
+ * Governance expiry derived from the last activity plus the stored
+ * per-preview durations. The stored expires_at is write-only for the read
+ * surface: deriving here keeps a stale deadline from outliving a refresh.
+ * The cheap activity signal is the last successful deploy (including
+ * reseed/reset); see docs/previews.md. Returns the reason, or null to keep.
  */
 export function planGovernanceExpiry(
   preview: SweepPreview,
   nowMs: number,
 ): "sweep:ttl-expired" | "sweep:idle-expired" | null {
-  const expiresAtMs = preview.expiresAtMs ?? null;
-  const ttlMs = preview.ttlMs ?? null;
-  const idleMs = preview.idleMs ?? null;
-  if (expiresAtMs !== null) {
-    if (nowMs < expiresAtMs) return null;
-    const base = activityBaseMs(preview);
-    if (base === null) return "sweep:ttl-expired";
-    const ttlDeadline = ttlMs !== null ? base + ttlMs : null;
-    const idleDeadline = idleMs !== null ? base + idleMs : null;
-    const ttlExpired = ttlDeadline !== null && nowMs >= ttlDeadline;
-    const idleExpired = idleDeadline !== null && nowMs >= idleDeadline;
-    if (ttlExpired && idleExpired) {
-      return ttlDeadline! <= idleDeadline!
-        ? "sweep:ttl-expired"
-        : "sweep:idle-expired";
-    }
-    if (ttlExpired) return "sweep:ttl-expired";
-    if (idleExpired) return "sweep:idle-expired";
-    return "sweep:ttl-expired";
-  }
-  // Back-compat for rows written before governance columns existed: derive
-  // from last activity (or createdAt) plus stored per-preview durations.
   const base = activityBaseMs(preview);
   if (base === null) return null;
-  if (ttlMs !== null && nowMs >= base + ttlMs) {
+  const ttlDeadline =
+    preview.ttlMs != null ? base + preview.ttlMs : null;
+  const idleDeadline =
+    preview.idleMs != null ? base + preview.idleMs : null;
+  if (
+    ttlDeadline !== null &&
+    idleDeadline !== null &&
+    nowMs >= ttlDeadline &&
+    nowMs >= idleDeadline
+  ) {
+    return ttlDeadline <= idleDeadline
+      ? "sweep:ttl-expired"
+      : "sweep:idle-expired";
+  }
+  if (ttlDeadline !== null && nowMs >= ttlDeadline) {
     return "sweep:ttl-expired";
   }
-  if (idleMs !== null && nowMs >= base + idleMs) {
+  if (idleDeadline !== null && nowMs >= idleDeadline) {
     return "sweep:idle-expired";
   }
   return null;
@@ -332,19 +322,16 @@ function logOverCap(
   const gov = ports.governance;
   if (!gov) return;
   const live = previews.filter((p) => p.status !== "removed");
-  const maxTotal = gov.maxPreviews ?? null;
-  if (maxTotal !== null && live.length > maxTotal) {
+  const status = governanceStatus(live, gov);
+  const maxTotal = gov.maxPreviews;
+  if (maxTotal !== null && status.total > maxTotal) {
     ports.log?.(
-      `sweep over cap SPROUT_MAX_PREVIEWS (${live.length} > ${maxTotal})`,
+      `sweep over cap SPROUT_MAX_PREVIEWS (${status.total} > ${maxTotal})`,
     );
   }
-  const perRepo = gov.maxPreviewsPerRepo ?? null;
+  const perRepo = gov.maxPreviewsPerRepo;
   if (perRepo !== null) {
-    const byRepo = new Map<string, number>();
-    for (const p of live) {
-      byRepo.set(p.canonicalRepoId, (byRepo.get(p.canonicalRepoId) ?? 0) + 1);
-    }
-    for (const [repo, count] of byRepo) {
+    for (const [repo, count] of status.byRepo) {
       if (count > perRepo) {
         ports.log?.(
           `sweep over cap SPROUT_MAX_PREVIEWS_PER_REPO ${repo} (${count} > ${perRepo})`,
@@ -352,15 +339,18 @@ function logOverCap(
       }
     }
   }
-  const perPreview = gov.previewMaxDbConnections ?? null;
-  const ceiling = gov.postgresMaxConnections ?? null;
-  if (perPreview !== null && ceiling !== null) {
-    const projected = live.length * perPreview;
-    if (projected > ceiling) {
-      ports.log?.(
-        `sweep over connection budget (projected ${projected} > ceiling ${ceiling}; ` +
-          `${live.length} previews x ${perPreview} per preview)`,
-      );
-    }
+  const perPreview = gov.previewMaxDbConnections;
+  const ceiling = gov.postgresMaxConnections;
+  const { projected, over } = status.connections;
+  if (
+    over &&
+    projected !== null &&
+    perPreview !== null &&
+    ceiling !== null
+  ) {
+    ports.log?.(
+      `sweep over connection budget (projected ${projected} > ceiling ${ceiling}; ` +
+        `${status.total} previews x ${perPreview} per preview)`,
+    );
   }
 }

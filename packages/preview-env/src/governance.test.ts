@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeExpiresAtMs,
   connectionProjection,
+  governanceStatus,
   parseGatewayCap,
   parseGatewayDurationMs,
   parsePreviewGovernanceField,
@@ -87,5 +88,26 @@ describe("preview governance durations", () => {
     expect(
       connectionProjection({ activePreviews: 8, perPreview: null, ceiling: 100 }),
     ).toEqual({ projected: null, over: false });
+  });
+
+  test("governance status counts once for caps and current usage", () => {
+    const previews = [
+      { canonicalRepoId: "a" },
+      { canonicalRepoId: "a" },
+      { canonicalRepoId: "b" },
+    ];
+    const status = governanceStatus(previews, {
+      maxPreviews: 10,
+      maxPreviewsPerRepo: 10,
+      previewMaxDbConnections: 12,
+      postgresMaxConnections: 100,
+    });
+    expect(status.total).toBe(3);
+    expect(status.byRepo.get("a")).toBe(2);
+    expect(status.connections).toEqual({ projected: 36, over: false });
+    expect(governanceStatus(previews, undefined).connections).toEqual({
+      projected: null,
+      over: false,
+    });
   });
 });

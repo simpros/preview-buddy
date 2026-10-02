@@ -243,6 +243,12 @@ describe("buildMaterializationCtx", () => {
       previewPortDefault: 8080,
       seedTimeout: 180,
       port: 7331,
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
       previewAuth: {
         secret: "sekrit",
         address: "http://gateway:7331/v1/internal/preview-auth",
@@ -269,6 +275,12 @@ describe("buildMaterializationCtx", () => {
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
       otlp: { endpoint: "", headers: {} },
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
     });
     expect(bare.previewAuth).toBeUndefined();
   });

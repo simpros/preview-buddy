@@ -398,6 +398,12 @@ describe("loadConfig", () => {
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
       otlp: { endpoint: "", headers: {} },
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
     });
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
@@ -441,6 +447,12 @@ describe("loadConfig", () => {
       },
       telemetry: { enabled: true, endpoint: "", auth: "" },
       otlp: { endpoint: "", headers: {} },
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
@@ -482,6 +494,12 @@ describe("loadConfig", () => {
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
       otlp: { endpoint: "", headers: {} },
+      previewTtlMs: null,
+      previewIdleMs: null,
+      maxPreviewsPerRepo: null,
+      maxPreviews: null,
+      previewMaxDbConnections: null,
+      postgresMaxConnections: null,
     });
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");

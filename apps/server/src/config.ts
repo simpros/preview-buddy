@@ -165,6 +165,18 @@ export type Config = {
   telemetry: TelemetryState;
   /** Operator-owned trace export; active exactly when endpoint is set. */
   otlp: OtlpConfig;
+  /** Null means off (unbounded); manifest preview.ttl overrides. */
+  previewTtlMs: number | null;
+  /** Null means off; measured from the last successful deploy. */
+  previewIdleMs: number | null;
+  /** Null means off (unbounded). */
+  maxPreviewsPerRepo: number | null;
+  /** Null means off (unbounded). */
+  maxPreviews: number | null;
+  /** Expected per-preview DB connections; null means no budget. */
+  previewMaxDbConnections: number | null;
+  /** Instance ceiling for the budget arithmetic; null means no budget. */
+  postgresMaxConnections: number | null;
   /** Null/undefined means off (unbounded); manifest preview.ttl overrides. */
   previewTtlMs?: number | null;
   /** Null/undefined means off; measured from the last successful deploy. */
@@ -177,6 +189,18 @@ export type Config = {
   previewMaxDbConnections?: number | null;
   /** Instance ceiling for the budget arithmetic; null/undefined means no budget. */
   postgresMaxConnections?: number | null;
+  /** Null means off (unbounded); manifest preview.ttl overrides. */
+  previewTtlMs: number | null;
+  /** Null means off; measured from the last successful deploy. */
+  previewIdleMs: number | null;
+  /** Null means off (unbounded). */
+  maxPreviewsPerRepo: number | null;
+  /** Null means off (unbounded). */
+  maxPreviews: number | null;
+  /** Expected per-preview DB connections; null means no budget. */
+  previewMaxDbConnections: number | null;
+  /** Instance ceiling for the budget arithmetic; null means no budget. */
+  postgresMaxConnections: number | null;
 };
 
 function parsePositiveInt(
@@ -648,10 +672,10 @@ export function loadConfig(): Config {
 /** Loud boot warning when the gateway runs unbounded. */
 export function governanceUnboundedWarning(config: Config): string | null {
   if (
-    (config.previewTtlMs ?? null) === null &&
-    (config.previewIdleMs ?? null) === null &&
-    (config.maxPreviewsPerRepo ?? null) === null &&
-    (config.maxPreviews ?? null) === null
+    config.previewTtlMs === null &&
+    config.previewIdleMs === null &&
+    config.maxPreviewsPerRepo === null &&
+    config.maxPreviews === null
   ) {
     return (
       "preview governance is unbounded (SPROUT_PREVIEW_TTL, " +

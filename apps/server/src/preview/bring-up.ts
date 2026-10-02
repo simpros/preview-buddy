@@ -193,7 +193,7 @@ function expiryForActivity(
 async function closeRunning(
   deps: LifecycleDeps,
   row: PreviewRow,
-  input?: ProvisionInput,
+  input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
   const now = utcIsoNow();
   const updated = await updatePreviewRow(
@@ -204,9 +204,9 @@ async function closeRunning(
       bringUpPlan: null,
       ...clearLastError,
       lastActivityAt: now,
-      expiresAt: expiryForActivity(now, input?.governanceMs),
-      ttlMs: input?.governanceMs?.ttlMs ?? null,
-      idleMs: input?.governanceMs?.idleMs ?? null,
+      expiresAt: expiryForActivity(now, input.governanceMs),
+      ttlMs: input.governanceMs?.ttlMs ?? null,
+      idleMs: input.governanceMs?.idleMs ?? null,
       expiryReason: null,
       updatedAt: now,
     },
@@ -443,7 +443,7 @@ export async function completeBringUp(
     case "sync_close":
       return syncThenCloseRunning(deps, row, input);
     case "close":
-      return closeRunning(deps, row);
+      return closeRunning(deps, row, input);
     case "full_replace":
       return ensureThenAttach(deps, row, input);
   }
