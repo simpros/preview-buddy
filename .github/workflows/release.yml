@@ -66,11 +66,33 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check telemetry destination is configured
+        if: github.repository == 'simpros/sprout'
+        env:
+          ENDPOINT: ${{ vars.SPROUT_TELEMETRY_ENDPOINT }}
+          AUTH: ${{ secrets.SPROUT_TELEMETRY_AUTH }}
+        run: |
+          if [ -z "$ENDPOINT" ] || [ -z "$AUTH" ]; then
+            echo "SPROUT_TELEMETRY_ENDPOINT (variable) and SPROUT_TELEMETRY_AUTH (secret) must both be set for upstream releases" >&2
+            exit 1
+          fi
+      - name: Warn when telemetry destination is missing (forks)
+        if: github.repository != 'simpros/sprout'
+        env:
+          ENDPOINT: ${{ vars.SPROUT_TELEMETRY_ENDPOINT }}
+          AUTH: ${{ secrets.SPROUT_TELEMETRY_AUTH }}
+        run: |
+          if [ -z "$ENDPOINT" ] || [ -z "$AUTH" ]; then
+            echo "::warning::telemetry destination not configured; the image will report nothing"
+          fi
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          build-args: SPROUT_VERSION=${{ needs.meta.outputs.version }}
+          build-args: |
+            SPROUT_VERSION=${{ needs.meta.outputs.version }}
+            SPROUT_TELEMETRY_ENDPOINT=${{ vars.SPROUT_TELEMETRY_ENDPOINT }}
+            SPROUT_TELEMETRY_AUTH=${{ secrets.SPROUT_TELEMETRY_AUTH }}
           tags: ${{ steps.tags.outputs.tags }}
 
   cli:

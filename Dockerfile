@@ -1,5 +1,7 @@
 FROM oven/bun:1.4.0
 ARG SPROUT_VERSION=0.8.3
+ARG SPROUT_TELEMETRY_ENDPOINT=
+ARG SPROUT_TELEMETRY_AUTH=
 LABEL org.opencontainers.image.title="sprout"
 LABEL org.opencontainers.image.description="CI-driven preview gateway (preview-db + app-deployment)"
 LABEL org.opencontainers.image.version="${SPROUT_VERSION}"
@@ -28,5 +30,7 @@ RUN printf '%s\n' '#!/usr/bin/env bash' \
 WORKDIR /app/apps/server
 ENV SPROUT_STATE_DB_PATH=/data/sprout.db
 ENV SPROUT_ADMIN_TOKEN_PATH=/data/admin-token
+ENV SPROUT_TELEMETRY_ENDPOINT=${SPROUT_TELEMETRY_ENDPOINT}
+ENV SPROUT_TELEMETRY_AUTH=${SPROUT_TELEMETRY_AUTH}
 EXPOSE 7331
 CMD ["bun", "run", "start"]
