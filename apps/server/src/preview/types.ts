@@ -59,6 +59,9 @@ export type LifecycleDeps = {
    * the preview up.
    */
   phaseTimer?: PhaseTimer;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms) for the read surface,
+   * so responses show the same deadline the sweep enforces. */
+  legacyTtlMs: number | null;
 };
 
 /** Bring-up phases with a telemetry interest, nothing more. */
@@ -120,9 +123,6 @@ export type ProvisionInput = {
   auth?: PreviewAuthSpec;
   previewAuth?: PreviewAuthConfig;
   governanceMs: EffectiveGovernanceMs;
-  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms) for the read surface,
-   * so the deploy response shows the same deadline the sweep enforces. */
-  legacyTtlMs: number | null;
 };
 
 export type TeardownInput = {

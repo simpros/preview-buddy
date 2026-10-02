@@ -62,14 +62,12 @@ export function governanceIssueMessage(path: string, raw: string): string {
 
 /**
  * Manifest-level parse: undefined means inherit the gateway default, "off"
- * disables, otherwise a duration string. Callers already know the field, so
- * the failure only carries the offending input for the message. The honest
- * cheap activity signal is the last successful deploy (including
- * reseed/reset) — see docs/previews.md.
+ * disables, otherwise a duration string. The failure carries only the
+ * offending input; callers already know which field they asked about, so
+ * they choose the path and error code. The honest cheap activity signal is
+ * the last successful deploy (including reseed/reset) — see docs/previews.md.
  */
-export function parsePreviewGovernanceField(
-  raw: unknown,
-):
+export function parsePreviewGovernanceField(raw: unknown):
   | { ok: true; value: { raw: string; ms: number | null } | undefined }
   | { ok: false; raw: string } {
   if (raw === undefined) return { ok: true, value: undefined };

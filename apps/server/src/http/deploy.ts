@@ -542,7 +542,6 @@ export function deploy(
     materialization: PreviewMaterializationCtx;
     telemetry: TelemetryDeployHook;
     governance: GovernanceConfig;
-    legacyTtlMs: number | null;
   },
 ) {
   return async ({
@@ -678,7 +677,6 @@ export function deploy(
       plan,
       reseed: body.reseed === true,
       governanceMs,
-      legacyTtlMs: deps.legacyTtlMs,
       ...(deps.materialization.traefikTls !== undefined
         ? { traefikTls: deps.materialization.traefikTls }
         : {}),

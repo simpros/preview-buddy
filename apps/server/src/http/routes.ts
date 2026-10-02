@@ -63,6 +63,7 @@ export function createRoutes(deps: RouteDeps) {
     previewDb: deps.previewDb,
     app: deps.app,
     dataVolumes: deps.dataVolumes,
+    legacyTtlMs: deps.legacyTtlMs,
   };
   const deployDeps = {
     ...lifecycle,

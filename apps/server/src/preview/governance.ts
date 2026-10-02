@@ -5,7 +5,6 @@ import {
   type GovernanceManifest,
 } from "@sprout/preview-env";
 
-/** One hours-to-ms conversion for the legacy creation-age bound. */
 export function hoursToMs(hours: number): number {
   return hours * 60 * 60 * 1000;
 }
@@ -39,15 +38,16 @@ export function parseGatewayCap(
   return value;
 }
 
-/** Manifest override wins; "off" at the effective level disables. Pure
- * lookup: the manifest already carries the parsed bound, so there is
- * nothing to re-parse and nothing to throw. */
+/** Manifest override wins; "off" at the effective level disables. Pure lookup:
+ * the manifest already carries the parsed bound, so there is nothing to
+ * re-parse and nothing to throw. */
 export function resolveEffectiveGovernanceMs(
   manifest: GovernanceManifest | undefined,
   gateway: Pick<GovernanceConfig, "previewTtlMs" | "previewIdleMs">,
 ): EffectiveGovernanceMs {
   return {
-    ttlMs: manifest?.ttl !== undefined ? manifest.ttl.ms : gateway.previewTtlMs,
+    ttlMs:
+      manifest?.ttl !== undefined ? manifest.ttl.ms : gateway.previewTtlMs,
     idleMs:
       manifest?.idle_teardown !== undefined
         ? manifest.idle_teardown.ms
@@ -99,8 +99,8 @@ export type GovernanceStatus = {
 
 /**
  * One pass over live previews for the cap checks. Connection budget is not
- * part of the status: both callers project it from `connectionProjection`
- * with an explicit count, so there is no hidden +1 convention.
+ * part of the status: the evaluator projects it with an explicit count, so
+ * there is no hidden +1 convention.
  */
 export function governanceStatus(
   previews: readonly { canonicalRepoId: string }[],
@@ -117,8 +117,8 @@ export function governanceStatus(
 
 /**
  * Projected connections for exactly `previews` live previews, or null when
- * no budget is configured. Callers pass the candidate explicitly: admission
- * includes the newcomer (+1), the sweep passes the current total as-is.
+ * no budget is configured. The evaluator passes the candidate explicitly:
+ * admission includes the newcomer, the sweep passes the current total as-is.
  */
 export function connectionProjection(input: {
   previews: number;
@@ -138,9 +138,34 @@ export type GovernanceViolation =
       projected: number;
       ceiling: number;
       perPreview: number;
-      /** Live previews the projection counts, candidate included. */
       previews: number;
     };
+
+/**
+ * Single owner of violation presentation, shared by admission (which maps
+ * violations to 429s) and the sweep (which prefixes them as over-limit
+ * logs). One switch, no second copy of the wording in either caller.
+ */
+export function violationMessage(violation: GovernanceViolation): string {
+  switch (violation.kind) {
+    case "per-repo-cap":
+      return (
+        `SPROUT_MAX_PREVIEWS_PER_REPO limit reached (limit ${violation.cap}, ` +
+        `current ${violation.count})`
+      );
+    case "total-cap":
+      return (
+        `SPROUT_MAX_PREVIEWS limit reached (limit ${violation.cap}, ` +
+        `current ${violation.count})`
+      );
+    case "connection-budget":
+      return (
+        `preview connection budget exceeded (projected ${violation.projected} > ` +
+        `ceiling ${violation.ceiling}; ${violation.previews} previews x ` +
+        `${violation.perPreview} per preview)`
+      );
+  }
+}
 
 /**
  * Single evaluator for the cap/budget policy, shared by admission (which maps
@@ -148,6 +173,8 @@ export type GovernanceViolation =
  * not-yet-inserted candidate: admission passes it so the newcomer counts
  * against the caps (`count + 1 > cap`, i.e. reject at the cap), while the
  * sweep passes null to report only rows already over (`count > cap`).
+ * Presentation lives in `violationMessage`: one switch, no second copy of
+ * the wording in either caller.
  */
 export function evaluateGovernance(
   gov: GovernanceConfig,
@@ -203,31 +230,4 @@ export function evaluateGovernance(
   }
 
   return violations;
-}
-
-/**
- * Sole violation presenter: admission uses it as the 429 detail, the sweep
- * as the log body. The budget counts the previews the projection counts
- * (candidate included on admission), so projected always equals
- * previews x perPreview with no hidden convention.
- */
-export function violationMessage(violation: GovernanceViolation): string {
-  switch (violation.kind) {
-    case "per-repo-cap":
-      return (
-        `SPROUT_MAX_PREVIEWS_PER_REPO limit reached ` +
-        `(limit ${violation.cap}, current ${violation.count})`
-      );
-    case "total-cap":
-      return (
-        `SPROUT_MAX_PREVIEWS limit reached ` +
-        `(limit ${violation.cap}, current ${violation.count})`
-      );
-    case "connection-budget":
-      return (
-        `preview connection budget exceeded ` +
-        `(projected ${violation.projected} > ceiling ${violation.ceiling}; ` +
-        `${violation.previews} previews x ${violation.perPreview} per preview)`
-      );
-  }
 }
