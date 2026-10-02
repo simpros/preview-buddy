@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   assembleSite,
-  docsGroups,
   docsPages,
   docsSidebar,
   listFilesRecursive,

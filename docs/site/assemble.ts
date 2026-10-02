@@ -27,41 +27,51 @@ export const repoRootDir = resolve(siteDir, "../..");
 // so generated URLs and the gate resolve against one source of truth.
 export const SITE_ORIGIN = "https://simpros.github.io/sprout";
 
-export type DocsGroup = "Start" | "Adopting" | "Previews" | "Operating";
-
 export type DocsPage = {
   file: string;
   title: string;
   description: string;
-  group: DocsGroup;
+  role?: "Human" | "Agent";
   entry?: boolean;
 };
 
-// The group order, declared once: the sidebar and the docs index render
-// groups in this order, so the two cannot disagree about structure. (The
-// legacy map stubs `docs/adoption.md` and `docs/deploy.md` were deleted, so
-// there is no legacy tail: nothing published may point at them.)
-export const docsGroups: DocsGroup[] = ["Start", "Adopting", "Previews", "Operating"];
+// Group order and membership live here once: the sidebar and the docs index
+// render these groups in order, so the two cannot disagree about structure.
+// Nothing published may point at the legacy `adoption`/`deploy` stubs.
+function group<Name extends string>(name: Name, pages: DocsPage[]): { name: Name; pages: DocsPage[] } {
+  return { name, pages };
+}
 
-// The only description of the page set: the publish list, the rendered HTML,
-// docs/index.html, and llms.txt are all derived from this. Entries sit in
-// group order, so the manifest doubles as the reading order.
-export const docsPages: DocsPage[] = [
-  { file: "docs/getting-started.md", title: "Getting started", description: "first preview in one sitting.", group: "Start" },
-  { file: "docs/onboarding-prompt.md", title: "Onboarding prompt", description: "copy-paste agent block (entry point for agents).", group: "Start", entry: true },
-  { file: "docs/adopting-a-repo.md", title: "Adopting a repo", description: "sprout.yaml manifest reference and app entrypoints.", group: "Adopting" },
-  { file: "docs/ci-integration.md", title: "CI integration", description: "GitLab component, GitHub reusable workflow, variables, reset, notes.", group: "Adopting" },
-  { file: "docs/previews.md", title: "Previews", description: "lifecycle: database providers, seeding, services, mail.", group: "Previews" },
-  { file: "docs/operator-deploy.md", title: "Operator deploy", description: "gateway compose stack, Traefik, env reference, admin token.", group: "Operating" },
-  { file: "docs/cli-reference.md", title: "CLI reference", description: "every sprout command, debugging, tokens.", group: "Operating" },
-  { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "adopter and operator error catalogue.", group: "Operating" },
-  { file: "docs/herdr-integration.md", title: "Herdr integration", description: "operator-side review automation.", group: "Operating" },
+export const docsGroups = [
+  group("Start", [
+    { file: "docs/getting-started.md", title: "Getting started", description: "first preview in one sitting.", role: "Human" },
+    { file: "docs/onboarding-prompt.md", title: "Onboarding prompt", description: "copy-paste agent block (entry point for agents).", role: "Agent", entry: true },
+  ]),
+  group("Adopting", [
+    { file: "docs/adopting-a-repo.md", title: "Adopting a repo", description: "sprout.yaml manifest reference and app entrypoints." },
+    { file: "docs/ci-integration.md", title: "CI integration", description: "GitLab component, GitHub reusable workflow, variables, reset, notes." },
+  ]),
+  group("Previews", [
+    { file: "docs/previews.md", title: "Previews", description: "lifecycle: database providers, seeding, services, mail." },
+  ]),
+  group("Operating", [
+    { file: "docs/operator-deploy.md", title: "Operator deploy", description: "gateway compose stack, Traefik, env reference, admin token." },
+    { file: "docs/cli-reference.md", title: "CLI reference", description: "every sprout command, debugging, tokens." },
+    { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "adopter and operator error catalogue." },
+    { file: "docs/herdr-integration.md", title: "Herdr integration", description: "operator-side review automation." },
+  ]),
 ];
 
-// The marketing page in the same manifest shape as every docs page: the
+export type DocsGroup = (typeof docsGroups)[number]["name"];
+
+// The flat page set, derived once: the publish list and llms.txt read this,
+// the sidebar and the docs index read the groups above.
+export const docsPages: DocsPage[] = docsGroups.flatMap((g) => g.pages);
+
+// The marketing page carries the same page shape as every docs page: the
 // source fragment carries no envelope, so its title and description live
-// here, next to `docsPages`.
-export const marketingPage: Omit<DocsPage, "group"> = {
+// here, next to `docsGroups`.
+export const marketingPage: DocsPage = {
   file: siteEntryPath,
   title: "sprout — every pull request gets its own preview",
   description:
@@ -88,30 +98,26 @@ function renderedHtmlPages(): Set<string> {
   return new Set(docsPages.map((p) => pageHtmlFile(p.file)));
 }
 
+// One section per manifest group: the Start entries keep their Human/Agent
+// roles from the manifest, so the landing page lists every page exactly once
+// and the renderer never looks a page up by literal path.
 export function renderDocsIndexHtml(): string {
-  const gettingStarted = docsPages.find((p) => p.file === "docs/getting-started.md")!;
-  const onboarding = docsEntry();
-  const item = (p: DocsPage) =>
-    `      <li><a href="${pageIndexHref(p)}">${escapeHtml(p.title)}</a> — ${escapeHtml(p.description)}</li>`;
-  const groupSection = (group: DocsGroup): string =>
+  const item = (p: DocsPage) => {
+    const prefix = p.role ? `${p.role} — ` : "";
+    return `      <li>${prefix}<a href="${pageIndexHref(p)}">${escapeHtml(p.title)}</a> — ${escapeHtml(p.description)}</li>`;
+  };
+  const groupSection = (group: { name: string; pages: DocsPage[] }): string =>
     [
       `    <section class="index-group">`,
-      `      <h2>${escapeHtml(group)}</h2>`,
+      `      <h2>${escapeHtml(group.name)}</h2>`,
       `      <ul>`,
-      ...docsPages.filter((p) => p.group === group).map(item),
+      ...group.pages.map(item),
       `      </ul>`,
       `    </section>`,
     ].join("\n");
   const bodyHtml = [
     "    <h1>sprout docs</h1>",
     "    <p>Markdown is canonical: every page below is served as plain <code>.md</code> (agents) and as rendered <code>.html</code> (humans) from the same source. Machine-readable index: <a href=\"../llms.txt\">llms.txt</a>.</p>",
-    "    <section class=\"index-start\">",
-    "      <h2>Start here</h2>",
-    "      <ul>",
-    `      <li>Human — <a href="${pageIndexHref(gettingStarted)}">${escapeHtml(gettingStarted.title)}</a>: ${escapeHtml(gettingStarted.description)}</li>`,
-    `      <li>Agent — <a href="${pageIndexHref(onboarding)}">${escapeHtml(onboarding.title)}</a>: ${escapeHtml(onboarding.description)}</li>`,
-    "      </ul>",
-    "    </section>",
     ...docsGroups.map(groupSection),
   ].join("\n");
   return renderShell({
@@ -133,18 +139,16 @@ export function renderDocsIndexHtml(): string {
 export function docsSidebar(outputPath: string, current?: string): SidebarGroup[] {
   const prefix = docsPrefixFor(outputPath);
   const currentGroup = current
-    ? docsPages.find((p) => p.file === current)?.group
+    ? docsGroups.find((g) => g.pages.some((p) => p.file === current))?.name
     : undefined;
-  return docsGroups.map((name, index) => ({
-    name,
-    open: currentGroup ? currentGroup === name : index === 0,
-    items: docsPages
-      .filter((p) => p.group === name)
-      .map((p) => ({
-        href: `${prefix}${pageIndexHref(p)}`,
-        title: p.title,
-        ...(current === p.file ? { current: true as const } : {}),
-      })),
+  return docsGroups.map((group, index) => ({
+    name: group.name,
+    open: currentGroup ? currentGroup === group.name : index === 0,
+    items: group.pages.map((p) => ({
+      href: `${prefix}${pageIndexHref(p)}`,
+      title: p.title,
+      ...(current === p.file ? { current: true as const } : {}),
+    })),
   }));
 }
 

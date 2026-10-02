@@ -10,7 +10,7 @@
       --link: #6ec8ff;
       --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Consolas", monospace;
       --sans: system-ui, "Segoe UI", sans-serif;
-      --max: 52rem;
+      --max: 70rem;
     }
 
     * { box-sizing: border-box; }
@@ -30,7 +30,7 @@
     a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 0.15em; }
     a:hover { color: #9ad8ff; }
 
-    .wrap { max-width: 70rem; margin: 0 auto; padding: 0 1.25rem 4rem; }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 1.25rem 4rem; }
 
     header.hero {
       padding: 3.5rem 0 2.5rem;
@@ -243,8 +243,8 @@
     nav.docs-sidebar li a[aria-current="page"] { color: var(--text); font-weight: 600; }
 
     /* Grouped docs index: one section per manifest group. */
-    section.index-group ul, section.index-start ul { list-style: none; padding-left: 0; }
-    section.index-group li, section.index-start li { margin: 0.5rem 0; }
+    section.index-group ul { list-style: none; padding-left: 0; }
+    section.index-group li { margin: 0.5rem 0; }
 
     /* Narrow screens: the sidebar collapses behind its toggle (CSS-only, so
        the menu works with scripting disabled) and the content stacks below. */
