@@ -2,10 +2,9 @@
 //
 // TanStack Markdown is the parser: markdown stays canonical, is parsed once
 // into an AST, and rendered from there — heading ids, the "On this page"
-// TOC, and the code block component all read the same tree instead of
-// regexing rendered HTML. Heading ids follow GitHub's anchor rule (the
-// dialect every in-corpus `#fragment` already assumes), with GitHub-style
-// dedupe (`head`, `head-1`, …).
+// TOC, and the code block component all read the same tree. Two string-level
+// post-steps remain, each documented at its site: table scroll containers
+// and `.md` → `.html` link rewrites.
 import { parseMarkdown } from "@tanstack/markdown";
 import type {
   BlockNode,
@@ -26,7 +25,8 @@ import {
 // GitHub's anchor rule: lowercase, drop everything but letters/numbers/marks,
 // `_`, `-`, and spaces, then spaces become hyphens. Punctuation between
 // spaces leaves double hyphens (`A → B` → `a--b`); that is the form historic
-// external anchors use, so the HTML view must emit it too.
+// external anchors use, so the HTML view must emit it too. Repeats dedupe
+// GitHub-style (`head`, `head-1`, …).
 export function slugHeading(text: string): string {
   return text
     .toLowerCase()
@@ -61,30 +61,49 @@ function parseMarkdownDocument(markdown: string): MarkdownDocument {
 }
 
 function renderDocumentBody(document: MarkdownDocument): string {
-  return wrapTables(
-    renderHtml(document, {
-      allowHtml: true,
-      // No printed `#` beside headings: ids still ship (the TOC and every
-      // `#fragment` link resolve against them) but the anchor affordance
-      // lives in CSS hover/focus, not as a literal character in the markup.
-      headingAnchors: false,
-      extensions: markdownExtensions,
-    }),
+  return withInlineTocSlot(
+    wrapTables(
+      renderHtml(document, {
+        allowHtml: true,
+        // No printed `#` beside headings: ids still ship (the TOC and every
+        // `#fragment` link resolve against them) and each heading carries an
+        // empty focusable link whose `#` is drawn by CSS on hover/focus, so
+        // no literal character sits in the markup.
+        headingAnchors: {
+          content: "",
+          className: "heading-anchor",
+          tabIndex: 0,
+          ariaHidden: false,
+        },
+        extensions: markdownExtensions,
+      }),
+    ),
   );
+}
+
+// Slot where the shell drops the inline "On this page" card: emitted here,
+// next to the renderer that owns the body HTML, so the shell fills it by
+// plain substitution instead of parsing the body to find the `h1`. Every
+// rendered body carries exactly one slot — after the first heading close,
+// or at the top when a page opens without one (no docs page does today;
+// the fallback keeps the card from silently vanishing on a future one).
+export const INLINE_TOC_SLOT = "<!--docs-inline-toc-->";
+
+function withInlineTocSlot(bodyHtml: string): string {
+  const close = bodyHtml.indexOf("</h1>");
+  if (close === -1) return `${INLINE_TOC_SLOT}\n${bodyHtml}`;
+  const at = close + "</h1>".length;
+  return `${bodyHtml.slice(0, at)}\n${INLINE_TOC_SLOT}\n${bodyHtml.slice(at)}`;
 }
 
 // Rendered tables own their scroll container: the wrapper carries the
 // overflow and the sticky header, so a wide table scrolls inside its box
-// instead of pushing the page sideways. The offset check keeps the wrap
-// idempotent: a table already inside a wrapper is left alone.
-const TABLEWRAP_OPEN = '<div class="tablewrap overflow-auto">';
-export function wrapTables(html: string): string {
+// instead of pushing the page sideways.
+const TABLEWRAP_OPEN = '<div class="tablewrap">';
+function wrapTables(html: string): string {
   return html.replace(
     /<table[\s\S]*?<\/table>/g,
-    (table: string, offset: number, full: string) =>
-      full.slice(Math.max(0, offset - TABLEWRAP_OPEN.length), offset) === TABLEWRAP_OPEN
-        ? table
-        : `${TABLEWRAP_OPEN}${table}</div>`,
+    (table: string) => `${TABLEWRAP_OPEN}${table}</div>`,
   );
 }
 

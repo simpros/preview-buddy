@@ -21,25 +21,31 @@ export const PROMPT_LANG_LABEL = "text · prompt";
 export const PROMPT_SOURCE_FILE = "onboarding-prompt.md";
 
 export function isPromptFence(node: { meta?: string }): boolean {
-  return node.meta?.split(/\s+/).includes(PROMPT_FENCE_META) ?? false;
+  return hasMetaToken(node.meta, PROMPT_FENCE_META);
 }
 
-// A filename token in the fence meta (` ```yaml .sprout.yaml `) names the
-// source file shown in the header. The only other meta token the fence
-// contract allows is the `prompt` tag, so the first token that is not the tag
-// is the file and anything else is absent, never shape-sniffed.
-export function fileFromMeta(meta: string | undefined): string | undefined {
-  if (!meta) return undefined;
-  return meta.split(/\s+/).find((token) => token.length > 0 && token !== PROMPT_FENCE_META);
+function hasMetaToken(meta: string | undefined, token: string): boolean {
+  return meta?.split(/\s+/).includes(token) ?? false;
 }
+
+// Opt-in fence tag for command blocks: ` ```sh copy=commands ` copies
+// without the leading `$ ` on each line. Copying is verbatim unless the
+// markup says otherwise — a block whose lines merely happen to start with
+// `$ ` never rewrites the clipboard.
+export const COPY_COMMANDS_META = "copy=commands";
 
 // The header is explicit data, never derived: callers that know the fence
 // contract pass the exact labels to render, so changing copy wording cannot
-// silently rewrite the language line or inject a filename.
+// silently rewrite the language line or inject a filename. The filename
+// itself comes from the parser's own `file` field (`file=`/`title=` fence
+// meta), never from shape-sniffing the freeform meta string: tokens the
+// parser understands as highlight ranges (`{1,3}`), `lines=`, or
+// `framework=` must never render as a source filename.
 export type CodeBlockHeader = {
   copyLabel?: string;
   langLabel?: string;
   file?: string;
+  copyCommands?: boolean;
 };
 
 // One markup shape, used everywhere: language label plus the source file
@@ -55,7 +61,7 @@ export function codeBlockFigure(
   const fileLabel = header.file;
   const copyLabel = header.copyLabel ?? "Copy code block";
   return [
-    `<figure class="codeblock" data-lang="${escapeHtml(shown)}">`,
+    `<figure class="codeblock" data-lang="${escapeHtml(shown)}"${header.copyCommands ? ' data-copy="commands"' : ""}>`,
     `  <div class="codeblock-bar">`,
     `    <span class="codeblock-lang">${escapeHtml(langLabel)}</span>`,
     ...(fileLabel ? [`    <span class="codeblock-file">${escapeHtml(fileLabel)}</span>`] : []),
@@ -70,45 +76,51 @@ export const codeBlockExtension: MarkdownExtension = {
   name: "codeblock",
   renderHtml(node) {
     if (node.type === "code") {
-      const file = fileFromMeta(node.meta);
       if (isPromptFence(node)) {
-        return codeBlockFigure(node.lang, node.value, {
-          copyLabel: PROMPT_COPY_LABEL,
-          langLabel: PROMPT_LANG_LABEL,
-          file: file ?? PROMPT_SOURCE_FILE,
-        });
+        return codeBlockFigure(node.lang, node.value, promptHeader(node.file));
       }
-      return codeBlockFigure(node.lang, node.value, { file });
+      return codeBlockFigure(node.lang, node.value, {
+        file: node.file,
+        copyCommands: hasMetaToken(node.meta, COPY_COMMANDS_META),
+      });
     }
     return undefined;
   },
 };
 
-// The one place the prompt header lives: assembly calls this for the
-// embedded prompt figure instead of composing it by hand.
-export function promptFigure(prompt: string): string {
-  return codeBlockFigure("text", prompt, {
+// The one place the prompt header lives: the extension and assembly both
+// read it from here, so the two can never drift apart.
+export function promptHeader(file?: string): CodeBlockHeader {
+  return {
     copyLabel: PROMPT_COPY_LABEL,
     langLabel: PROMPT_LANG_LABEL,
-    file: PROMPT_SOURCE_FILE,
-  });
+    file: file ?? PROMPT_SOURCE_FILE,
+  };
+}
+
+// Assembly calls this for the embedded prompt figure instead of composing
+// it by hand.
+export function promptFigure(prompt: string): string {
+  return codeBlockFigure("text", prompt, promptHeader());
 }
 
 // Wired once per page by the shell: click copies the sibling `<code>` text,
 // the button confirms inline and reverts, and the polite live region
-// announces the outcome. Command blocks (`$ sprout …` on every line) copy
-// without the leading `$`, so pasting runs. Without a clipboard API the
-// text is selected instead, and the label says so rather than failing
+// announces the outcome. Figures tagged `data-copy="commands"` (from the
+// `copy=commands` fence tag) copy without the leading `$ ` on each line, so
+// pasting runs; every other block copies verbatim. Without a clipboard API
+// the text is selected instead, and the label says so rather than failing
 // silently.
 export const codeBlockScript = `(() => {
   const status = document.querySelector(".codeblock-status");
   function announce(message) {
     if (status) status.textContent = message;
   }
-  function copyValue(value) {
+  function copyValue(value, commands) {
+    if (!commands) return value;
     const lines = value.split("\\n");
-    const commands = lines.filter((line) => line.trim().length > 0);
-    if (commands.length > 0 && commands.every((line) => line.trimStart().startsWith("$ "))) {
+    const significant = lines.filter((line) => line.trim().length > 0);
+    if (significant.length > 0 && significant.every((line) => line.trimStart().startsWith("$ "))) {
       return lines.map((line) => line.replace(/^\\s*\\$\\s?/, "")).join("\\n");
     }
     return value;
@@ -141,7 +153,8 @@ export const codeBlockScript = `(() => {
       button.classList.remove("done");
     });
     button.addEventListener("click", async () => {
-      const value = copyValue(code.textContent || "");
+      const commands = figure && figure.getAttribute && figure.getAttribute("data-copy") === "commands";
+      const value = copyValue(code.textContent || "", commands);
       try {
         if (!navigator.clipboard) throw new Error("no clipboard");
         await navigator.clipboard.writeText(value);

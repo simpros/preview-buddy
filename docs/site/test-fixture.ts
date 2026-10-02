@@ -14,8 +14,8 @@ const dirSamples: Record<string, string> = {
 };
 
 const overlays: Record<string, string> = {
-  // Body fragment like the production source: no envelope, no theme marker,
-  // no `.wrap` — the shell supplies those.
+  // Body fragment like the production source: no envelope, no theme marker —
+  // the shell supplies those.
   "docs/site/marketing.html":
     `<a href="../operator-deploy.md">deploy</a><a href="../getting-started.md">start</a>\n`,
   "docs/index.html":

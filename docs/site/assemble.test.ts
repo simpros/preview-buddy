@@ -387,9 +387,10 @@ describe("shared shell, code blocks, and prompt embedding", () => {
       for (const { title } of docsPages) {
         expect(sidebar).toContain(`>${title}</a>`);
       }
-      // No literal `#` printed next to any heading: ids ship, the anchor
-      // affordance lives in CSS, not as a character in the markup.
-      expect(html).not.toContain("anchor-heading");
+      // No literal `#` printed next to any heading on any page: the
+      // `heading-anchor` links the renderer appends are empty, and their
+      // `#` is drawn by CSS.
+      expect(html).not.toContain(">#</a>");
     }
     const marketing = await readFile(join(out, siteEntryPath), "utf8");
     expect(marketing).toContain('<header class="hero">');
@@ -402,6 +403,13 @@ describe("shared shell, code blocks, and prompt embedding", () => {
     );
     expect(gettingStarted).toContain('src="../assets/sprout-mark.png"');
     expect(gettingStarted).toContain('href="../assets/favicon-32.png"');
+    // Markdown-rendered headings carry the empty anchor link (CSS draws
+    // the `#`); the hand-built marketing/index bodies carry none.
+    expect(gettingStarted).toContain('class="heading-anchor"');
+    expect(marketing).not.toContain('class="heading-anchor"');
+    // The manifest fence names its file via `file=` meta, read from the
+    // parser's own field — the header shows `yaml · .sprout.yaml`.
+    expect(gettingStarted).toContain('<span class="codeblock-file">.sprout.yaml</span>');
   });
 
   test("every fenced block renders as the component; no bare pre remains", async () => {
@@ -502,8 +510,8 @@ describe("shared shell, code blocks, and prompt embedding", () => {
   test("marketing page is rendered, not copied verbatim", async () => {
     const source = await readFile(join(repoRootDir, marketingSourcePath), "utf8");
     const html = await readFile(join(out, siteEntryPath), "utf8");
-    // The source is a body fragment: no envelope, no wrap —
-    // the shell inlines the theme and owns `.wrap` for every page.
+    // The source is a body fragment: no envelope —
+    // the shell inlines the theme for every page.
     expect(source).not.toContain("<!DOCTYPE html>");
     expect(source).not.toContain("<html");
     expect(source).not.toContain("<head>");
@@ -551,9 +559,9 @@ describe("shared shell, code blocks, and prompt embedding", () => {
 
   test("rendered tables own their scroll container", async () => {
     const cli = await readFile(join(out, "docs/cli-reference.html"), "utf8");
-    expect(cli).toContain('<div class="tablewrap overflow-auto"><table>');
+    expect(cli).toContain('<div class="tablewrap"><table>');
     // Every table on the page sits inside exactly one scroll container.
-    expect(cli.match(/<div class="tablewrap overflow-auto">/g)?.length).toBe(
+    expect(cli.match(/<div class="tablewrap">/g)?.length).toBe(
       cli.match(/<table/g)?.length,
     );
   });

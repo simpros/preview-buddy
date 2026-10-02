@@ -3,8 +3,9 @@ import {
   codeBlockExtension,
   codeBlockFigure,
   codeBlockScript,
-  fileFromMeta,
+  COPY_COMMANDS_META,
   promptFigure,
+  promptHeader,
   PROMPT_COPY_LABEL,
   PROMPT_LANG_LABEL,
   PROMPT_SOURCE_FILE,
@@ -55,9 +56,9 @@ describe("codeBlockFigure", () => {
     ).toBeUndefined();
   });
 
-  test("extension reads the filename out of the fence meta", () => {
+  test("extension reads the filename from the parser's file field", () => {
     const rendered = codeBlockExtension.renderHtml!(
-      { type: "code", lang: "yaml", meta: ".sprout.yaml", value: "k: v" },
+      { type: "code", lang: "yaml", file: ".sprout.yaml", value: "k: v" },
       { options: {}, renderBlock: () => "", renderInline: () => "" },
     );
     expect(rendered).toContain('<span class="codeblock-file">.sprout.yaml</span>');
@@ -68,30 +69,45 @@ describe("codeBlockFigure", () => {
     expect(plain).not.toContain("codeblock-file");
   });
 
-  test("promptFigure is the one place the prompt header lives", () => {
-    expect(promptFigure("You are onboarding")).toBe(
-      codeBlockFigure("text", "You are onboarding", {
-        copyLabel: "Copy onboarding prompt",
-        langLabel: PROMPT_LANG_LABEL,
-        file: PROMPT_SOURCE_FILE,
-      }),
-    );
+  test("parser highlight meta never renders as a source filename", () => {
+    for (const meta of ["{1,3}", "lines=1-3", "framework=react"]) {
+      const rendered = codeBlockExtension.renderHtml!(
+        { type: "code", lang: "ts", meta, value: "k: v" },
+        { options: {}, renderBlock: () => "", renderInline: () => "" },
+      );
+      expect(rendered).not.toContain("codeblock-file");
+    }
   });
-});
 
-describe("fileFromMeta", () => {
-  test("takes the file-shaped token and ignores the prompt tag", () => {
-    expect(fileFromMeta(undefined)).toBeUndefined();
-    expect(fileFromMeta("prompt")).toBeUndefined();
-    expect(fileFromMeta(".sprout.yaml")).toBe(".sprout.yaml");
-    expect(fileFromMeta("prompt .sprout.yaml")).toBe(".sprout.yaml");
-    expect(fileFromMeta("prompt")).toBeUndefined();
+  test("extension tags command blocks for $-less copy, nothing else", () => {
+    const tagged = codeBlockExtension.renderHtml!(
+      { type: "code", lang: "sh", meta: COPY_COMMANDS_META, value: "$ x\n" },
+      { options: {}, renderBlock: () => "", renderInline: () => "" },
+    );
+    expect(tagged).toContain('data-copy="commands"');
+    const untagged = codeBlockExtension.renderHtml!(
+      { type: "code", lang: "sh", value: "$ x\n" },
+      { options: {}, renderBlock: () => "", renderInline: () => "" },
+    );
+    expect(untagged).not.toContain("data-copy");
+  });
+
+  test("promptFigure and the extension share one prompt header", () => {
+    expect(promptFigure("You are onboarding")).toBe(
+      codeBlockFigure("text", "You are onboarding", promptHeader()),
+    );
+    expect(
+      codeBlockExtension.renderHtml!(
+        { type: "code", lang: "text", meta: "prompt", value: "You are onboarding" },
+        { options: {}, renderBlock: () => "", renderInline: () => "" },
+      ),
+    ).toBe(promptFigure("You are onboarding"));
   });
 });
 
 type Listener = (event?: unknown) => unknown;
 
-function installStubDom(codeText: string, clipboard: boolean): {
+function installStubDom(codeText: string, clipboard: boolean, dataCopy: string | null = null): {
   button: {
     textContent: string;
     classes: Set<string>;
@@ -120,7 +136,10 @@ function installStubDom(codeText: string, clipboard: boolean): {
     },
   };
   const code = { textContent: codeText };
-  const figure = { querySelector: () => code };
+  const figure = {
+    querySelector: () => code,
+    getAttribute: (name: string) => (name === "data-copy" ? dataCopy : null),
+  };
   const status = { textContent: "" };
   const written: string[] = [];
   const selected: { node: unknown } = { node: null };
@@ -175,10 +194,16 @@ describe("codeBlockScript", () => {
     expect(button.textContent).toBe("Copy");
   });
 
-  test("strips the leading $ off command blocks when copying", async () => {
-    const { button, written } = installStubDom("$ sprout doctor\n$ sprout ci preview\n", true);
+  test("strips the leading $ off tagged command blocks when copying", async () => {
+    const { button, written } = installStubDom("$ sprout doctor\n$ sprout ci preview\n", true, "commands");
     await button.fire("click");
     expect(written).toEqual(["sprout doctor\nsprout ci preview\n"]);
+  });
+
+  test("copies $ lines verbatim without the commands tag", async () => {
+    const { button, written } = installStubDom("$ sprout doctor\n$ sprout ci preview\n", true);
+    await button.fire("click");
+    expect(written).toEqual(["$ sprout doctor\n$ sprout ci preview\n"]);
   });
 
   test("selects the text and says so without a clipboard API", async () => {

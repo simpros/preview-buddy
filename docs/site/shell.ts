@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import type { MarkdownHeading } from "@tanstack/markdown";
 import { codeBlockScript } from "./codeblock.ts";
 import { escapeHtml } from "./html.ts";
+import { INLINE_TOC_SLOT } from "./markdown.ts";
 
 export const PROMPT_MARKER = "<!-- docs-onboarding-prompt -->";
 
@@ -192,16 +193,17 @@ function renderTocInline(headings: MarkdownHeading[]): string {
   ].join("\n");
 }
 
-// The inline card reads directly under the `h1`: splice it after the first
-// heading close, falling back to the top of the body when a page opens
-// without one (no docs page does today; the fallback keeps the card from
-// silently vanishing on a future one).
-function withInlineToc(bodyHtml: string, inline: string): string {
-  if (inline === "") return bodyHtml;
-  const close = bodyHtml.indexOf("</h1>");
-  if (close === -1) return `${inline}\n${bodyHtml}`;
-  const at = close + "</h1>".length;
-  return `${bodyHtml.slice(0, at)}\n${inline}\n${bodyHtml.slice(at)}`;
+// The inline card fills the slot the markdown renderer leaves in the body
+// (after the first `h1`, or at the top when a page opens without one):
+// plain substitution, so the shell never parses body HTML to decide where
+// its chrome goes. Non-markdown bodies carry no slot and pass an empty card,
+// so substitution is a no-op for them; the prepend fallback only triggers
+// for a hand-built body paired with a non-empty card, which no call site
+// does today.
+function fillInlineTocSlot(bodyHtml: string, inline: string): string {
+  if (inline === "") return bodyHtml.split(INLINE_TOC_SLOT).join("");
+  if (!bodyHtml.includes(INLINE_TOC_SLOT)) return `${inline}\n${bodyHtml}`;
+  return bodyHtml.split(INLINE_TOC_SLOT).join(inline);
 }
 
 export type ShellOptions = {
@@ -214,21 +216,25 @@ export type ShellOptions = {
 };
 
 // Scroll-spy for the "On this page" lists: the link matching the highest
-// h2–h4 heading above the reading position carries `.active`, in the rail
-// and in the inline card alike. Throttled through `requestAnimationFrame`,
+// TOC-named heading above the reading position carries `.active`, in the
+// rail and in the inline card alike. Tracked headings derive from the
+// rendered TOC links, so the spy can never name a heading the list omits
+// or miss one it shows; the flip line matches the `scroll-margin-top` the
+// stylesheet gives headings. Throttled through `requestAnimationFrame`,
 // passive, and a no-op on pages without headings. The movement itself is a
 // CSS class flip (gated by `prefers-reduced-motion` there); this script
 // never animates.
 const scrollSpyScript = `(() => {
-  const heads = Array.from(document.querySelectorAll("main :is(h2,h3,h4)[id]"));
   const links = Array.from(document.querySelectorAll(".toc a, .toc-inline a"));
+  const ids = [...new Set(links.map((link) => link.getAttribute("href")).filter((href) => href && href.startsWith("#")).map((href) => href.slice(1)))];
+  const heads = ids.map((id) => document.getElementById(id)).filter((head) => head);
   if (heads.length === 0 || links.length === 0) return;
   let ticking = false;
   function spy() {
     ticking = false;
     let current = heads[0]?.id ?? "";
     for (const head of heads) {
-      if (head.getBoundingClientRect().top <= 96) current = head.id;
+      if (head.getBoundingClientRect().top <= 74) current = head.id;
     }
     if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
       current = heads[heads.length - 1]?.id ?? current;
@@ -282,7 +288,7 @@ export function renderShell(opts: ShellOptions): string {
     renderSidebar(opts.sidebar),
     "<main>",
     ...(crumb === "" ? [] : [crumb]),
-    withInlineToc(opts.bodyHtml, inline),
+    fillInlineTocSlot(opts.bodyHtml, inline),
     "</main>",
     ...(rail === "" ? [] : [rail]),
     "</div>",

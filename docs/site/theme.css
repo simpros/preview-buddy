@@ -195,6 +195,22 @@
       font-weight: 640;
       scroll-margin-top: 74px;
     }
+    /* Per-heading deep links: the renderer appends an empty focusable link
+       to every heading with an id; CSS draws the `#`, revealed on
+       heading hover or link focus, so no literal character sits in the
+       markup. Keyboard readers navigate by the "On this page" links. */
+    .heading-anchor { text-decoration: none; }
+    .heading-anchor::after {
+      content: "#";
+      margin-left: 0.35rem;
+      font-size: 0.85em;
+      font-weight: 400;
+      color: var(--faint);
+      opacity: 0;
+      transition: opacity 150ms var(--ease-out), color 150ms var(--ease-out);
+    }
+    main :is(h1, h2, h3, h4, h5, h6):hover .heading-anchor::after,
+    .heading-anchor:focus-visible::after { opacity: 1; color: var(--accent); }
     main p { margin: 0.72rem 0; color: var(--muted); }
     main p strong, main li strong { color: var(--text); }
     main ul, main ol { color: var(--muted); padding-left: 1.15rem; margin: 0.72rem 0; }
@@ -587,13 +603,18 @@
     @keyframes toc-in { from { opacity: 0; } to { opacity: 1; } }
     .toc-inline[open] > ul { animation: toc-in 160ms var(--ease-out); }
 
+    /* Full-bleed rule, inset content: the border spans the viewport while
+       the text shares the shell's max width and gutters, so the footer
+       aligns with `main` at every viewport instead of sitting flush
+       against the edge. */
     footer {
       border-top: 1px solid var(--border);
       margin-top: 0.375rem;
+      padding: 1.1rem clamp(14px, 3vw, 28px) 2.5rem;
       color: var(--muted);
       font-size: 13px;
     }
-    footer p { margin: 0; color: var(--muted); }
+    footer p { margin: 0 auto; max-width: var(--max); color: var(--muted); }
 
     @media (min-width: 640px) {
       .hero { grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr); gap: 2.75rem; align-items: end; }
@@ -679,21 +700,30 @@
     }
 
     @media (max-width: 640px) {
-      /* Long lines wrap instead of truncating; wide tables stack into
-         labelled rows. The thead stays in the DOM at zero height so the
-         sticky-header structure survives while rows read as cards. */
+      /* Long lines wrap instead of truncating; the spec table stacks into
+         labelled rows. Card-ification stays scoped to `.spectable`: docs
+         tables keep their `.tablewrap` horizontal scroll, so no column
+         loses its header meaning. The thead is clipped out of sight but
+         stays in the accessibility tree, so header cells are still
+         announced while rows read as cards. */
       .codeblock-bar { flex-wrap: wrap; }
       figure.codeblock pre { white-space: pre-wrap; overflow-wrap: anywhere; }
       .tablewrap { max-height: none; }
-      table { display: block; }
-      thead { display: block; height: 0; overflow: hidden; }
-      thead tr, thead th { display: none; }
-      tbody, tbody tr, tbody td { display: block; width: auto; }
-      tbody tr { padding: 11px 13px; border-bottom: 1px solid var(--line); }
-      tbody tr:last-child { border-bottom: 0; }
-      tbody tr:nth-child(even) { background: rgba(26, 34, 44, 0.55); }
-      tbody td { border: 0; padding: 0; }
-      tbody td:first-child { color: var(--text); font-weight: 600; margin-bottom: 4px; }
+      table.spectable { display: block; min-width: 0; }
+      table.spectable thead { display: block; height: 0; overflow: hidden; }
+      table.spectable thead tr, table.spectable thead th {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+      table.spectable tbody, table.spectable tbody tr, table.spectable tbody td { display: block; width: auto; }
+      table.spectable tbody tr { padding: 11px 13px; border-bottom: 1px solid var(--line); }
+      table.spectable tbody tr:last-child { border-bottom: 0; }
+      table.spectable tbody tr:nth-child(even) { background: rgba(26, 34, 44, 0.55); }
+      table.spectable tbody td { border: 0; padding: 0; }
       table.spectable tbody td:first-child { color: var(--muted); font-size: 12.5px; font-weight: 400; margin-bottom: 5px; }
       table.spectable tbody td:first-child::before {
         content: "Requirement · ";
