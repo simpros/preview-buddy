@@ -61,7 +61,7 @@ export const docsPages: DocsPage[] = [
 // The marketing page in the same manifest shape as every docs page: the
 // source fragment carries no envelope, so its title and description live
 // here, next to `docsPages`.
-export const marketingPage: DocsPage = {
+export const marketingPage: Omit<DocsPage, "group"> = {
   file: siteEntryPath,
   title: "sprout — every pull request gets its own preview",
   description:
