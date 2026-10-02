@@ -205,16 +205,10 @@
     img { max-width: 100%; height: auto; }
 
     /* Grouped sidebar: one disclosure per manifest group. The current page
-       carries `aria-current`; its group renders open from assembly. */
-    .sidebar-state {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip: rect(0 0 0 0);
-      white-space: nowrap;
-    }
-    .sidebar-toggle { display: none; }
+       carries `aria-current`; its group renders open from assembly. The
+       toggle input exists only where the toggle label does (narrow screens),
+       so desktop keyboard users never land on an invisible control. */
+    .sidebar-state, .sidebar-toggle { display: none; }
     nav.docs-sidebar {
       position: sticky;
       top: 1rem;
@@ -251,6 +245,15 @@
     @media (max-width: 760px) {
       .layout { display: block; }
       .layout > main { max-width: 100%; }
+      .sidebar-state {
+        display: block;
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
       .sidebar-toggle {
         display: block;
         border: 1px solid var(--border);

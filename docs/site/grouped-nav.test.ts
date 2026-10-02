@@ -112,6 +112,11 @@ describe("grouped docs navigation", () => {
         docsGroups[0].name,
       ]);
     }
+    // A supplied current page must be a manifest file: typos fail loudly
+    // instead of rendering with no marker and the wrong group open.
+    expect(() => docsSidebar("docs/x.html", "docs/does-not-exist.md")).toThrow(
+      "not in manifest",
+    );
     // One assembled smoke check that the model reaches the markup.
     const sidebar = sidebarBlock(await readOut("docs/previews.html"));
     expect(sidebar.match(/aria-current="page"/g)).toHaveLength(1);

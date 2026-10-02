@@ -36,7 +36,7 @@ function themeCss(): string {
 
 // One sidebar group: the manifest owns names, order, and membership, so the
 // sidebar, the docs index, and llms.txt cannot disagree about the page set.
-export type SidebarItem = {
+type SidebarItem = {
   href: string;
   title: string;
   current?: boolean;

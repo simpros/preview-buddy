@@ -5,12 +5,10 @@ import { join } from "node:path";
 import {
   assembleSite,
   docsPages,
-  docsSidebar,
   listFilesRecursive,
   marketingPage,
   marketingSourcePath,
   pageHtmlFile,
-  pageIndexHref,
   publishDirs,
   publishFiles,
   renderDocsIndexHtml,
