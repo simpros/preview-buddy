@@ -15,9 +15,17 @@ import { bindPreviewDataVolumes } from "./preview/data-volumes.ts";
 import { runMigrations } from "./scripts/migrate.ts";
 import { startGatewaySweep } from "./sweep/start.ts";
 import { createTelemetryReporter } from "./telemetry/reporter.ts";
+import { createTraces } from "./telemetry/traces.ts";
+import { formatOtlpDestination } from "./config.ts";
 
 const config = loadConfig();
 console.log("sprout starting", configSummary(config));
+
+const traces = createTraces(config);
+const tracesDestination = formatOtlpDestination(config.otlp.endpoint);
+console.log(
+  `traces ${tracesDestination === "off" ? "off" : `on → ${tracesDestination}`}`,
+);
 
 const { sql, db } = connectState();
 await runMigrations(sql);
@@ -60,7 +68,16 @@ const telemetry = createTelemetryReporter({ config, db });
 console.log(`telemetry ${telemetry.describe()}`);
 telemetry.startHeartbeat();
 
-startServer({ config, db, previewDb, app, dataVolumes, materialization, telemetry });
+startServer({
+  config,
+  db,
+  previewDb,
+  app,
+  dataVolumes,
+  materialization,
+  telemetry,
+  ...(traces.plugin ? { tracesPlugin: traces.plugin } : {}),
+});
 startGatewaySweep({ config, db, previewDb, app, dataVolumes });
 console.log(
   `sweep scheduled (${config.sweepCron}): first pass on the next boundary`,

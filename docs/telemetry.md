@@ -127,4 +127,48 @@ Setting the two variables at runtime overrides what the image carries, so a
 fork or a company can redirect reporting without rebuilding.
 
 This anonymous upstream channel is separate from `SPROUT_OTLP_*`, the
-opt-in trace backend an operator points at their own collector (#262).
+opt-in trace backend an operator points at their own collector (below).
+
+## Your own trace backend
+
+Point the gateway at any OTLP/HTTP traces backend you run (a collector,
+Tempo, Jaeger, OpenObserve — anything speaking OTLP/HTTP) and deploys show
+up there as distributed traces. Nothing is exported unless you set the
+endpoint; the image carries no trace destination.
+
+```bash
+SPROUT_OTLP_ENDPOINT=https://<openobserve-host>/api/<org>/v1/traces
+SPROUT_OTLP_HEADERS=Authorization=Basic <base64 email:password>,stream-name=default
+```
+
+- `SPROUT_OTLP_ENDPOINT` is the OTLP/HTTP **traces** URL, used verbatim as
+  the exporter's `url`. It must be an absolute `http(s)` URL or boot fails
+  naming the variable. The signal path is part of the URL: an OpenObserve
+  base such as `/api/<org>` without `/v1/traces` answers `403`, so keep the
+  full traces path. `stream-name=<stream>` is an optional extra header, not
+  part of the URL.
+- `SPROUT_OTLP_HEADERS` is comma-separated `name=value` pairs sent verbatim
+  on every export request. Each entry splits on the first `=` only, so a
+  base64 `Authorization` value keeps its padding. An entry without `=`, or
+  with an empty name, fails boot naming the entry.
+- Tracing is active exactly when the endpoint is set. With no endpoint there
+  is no SDK, no export, and no boot failure — the boot line reports
+  `traces: "off"`, otherwise `traces: "<host>/<path>"`. Header values never
+  appear in the boot line or the config summary (`otlpHeaders` is
+  `"[set]"` / `"[empty]"`).
+
+What is exported: one server span per inbound request (renamed
+`<METHOD> <path>`, `/healthz` excluded so the compose healthcheck does not
+fill the backend), and one `preview.deploy` root trace per deploy attempt
+with `preview.db` (database provision/reset), `preview.app` (container
+replace plus health gate), and `preview.seed` (seed image run) children. The
+deploy is detached from the request that accepted it, so it is its own root
+trace correlated by attributes, not by trace id. Deploy attributes are
+`sprout.repo`, `sprout.pr`, `sprout.slug`, `sprout.plan`, and `sprout.status`;
+failures set status `ERROR` and record the exception. Export uses a batch
+processor, never the request path, with no signal handling — a slow or dead
+backend cannot block or crash the gateway.
+
+Privacy: the operator's own values go to the operator's own backend — and
+still never `appEnv`, DSNs, tokens, request bodies or headers, because a
+trace backend is a second copy of whatever ends up in it.

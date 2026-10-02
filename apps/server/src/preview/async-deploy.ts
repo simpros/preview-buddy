@@ -1,3 +1,4 @@
+import { SpanStatusCode, context, trace } from "@opentelemetry/api";
 import type { Result } from "./result.ts";
 import { captureDeployOutcome } from "./deploy-outcome.ts";
 import {
@@ -16,6 +17,7 @@ import {
 import { createPhaseCollector } from "./timing.ts";
 import type { BringUpPlan } from "./types.ts";
 import type { TelemetryDeployHook } from "../telemetry/contract.ts";
+import { TRACER_NAME } from "../telemetry/traces.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -78,37 +80,73 @@ export async function runAsyncDeploy(
   const key = previewKey(input.repo, input.prId);
   const startedAt = Date.now();
   const phases = createPhaseCollector();
-  try {
-    await provisionPreview({ ...deps, phaseTimer: phases.timer }, input);
-  } catch (err) {
-    console.warn("provision:background_failed", err);
-    try {
-      await withPreviewLock(input.repo, input.prId, async () => {
-        const row = await getPreviewRow(deps.db, input.repo, input.prId);
-        if (!row || row.status === "removing" || row.status === "removed") {
-          return;
-        }
-        await markPreviewFailed(
-          deps.db,
-          input.repo,
-          input.prId,
-          "preview_app_deploy_failed",
+  const tracer = deps.tracer ?? trace.getTracer(TRACER_NAME);
+  await tracer.startActiveSpan(
+    "preview.deploy",
+    {
+      attributes: {
+        "sprout.repo": input.repo,
+        "sprout.pr": input.prId,
+        "sprout.slug": input.slug,
+        "sprout.plan": plan,
+      },
+    },
+    async (span) => {
+      const traceContext = trace.setSpan(context.active(), span);
+      let caught: unknown;
+      try {
+        await provisionPreview(
+          { ...deps, phaseTimer: phases.timer, tracer, traceContext },
+          input,
         );
-      });
-    } catch {
-    }
-  } finally {
-    const outcome = await captureDeployOutcome(deps.db, {
-      repo: input.repo,
-      prId: input.prId,
-      plan,
-      startedAt,
-      phaseMs: phases.phaseMs,
-    });
-    inFlightDeploys.delete(key);
-    // exportEvent never rejects, so there is nothing to catch here.
-    if (outcome) deps.telemetry.reportDeployOutcome(outcome);
-  }
+      } catch (err) {
+        caught = err;
+        console.warn("provision:background_failed", err);
+        try {
+          await withPreviewLock(input.repo, input.prId, async () => {
+            const row = await getPreviewRow(deps.db, input.repo, input.prId);
+            if (!row || row.status === "removing" || row.status === "removed") {
+              return;
+            }
+            await markPreviewFailed(
+              deps.db,
+              input.repo,
+              input.prId,
+              "preview_app_deploy_failed",
+            );
+          });
+        } catch {
+        }
+      } finally {
+        const outcome = await captureDeployOutcome(deps.db, {
+          repo: input.repo,
+          prId: input.prId,
+          plan,
+          startedAt,
+          phaseMs: phases.phaseMs,
+        });
+        inFlightDeploys.delete(key);
+        if (outcome) {
+          span.setAttribute("sprout.status", outcome.outcome);
+          if (outcome.outcome === "failed") {
+            span.setStatus({ code: SpanStatusCode.ERROR });
+            span.recordException(
+              new Error(outcome.failureClass ?? "deploy_failed"),
+            );
+          }
+          // exportEvent never rejects, so there is nothing to catch here.
+          deps.telemetry.reportDeployOutcome(outcome);
+        } else {
+          span.setAttribute("sprout.status", "unknown");
+          if (caught !== undefined) {
+            span.setStatus({ code: SpanStatusCode.ERROR });
+            span.recordException(caught as Error);
+          }
+        }
+        span.end();
+      }
+    },
+  );
 }
 
 export function gateReadablePreviewRow(

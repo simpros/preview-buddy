@@ -9,6 +9,7 @@ import {
   utcIsoNow,
   type PreviewRow,
 } from "./row.ts";
+import type { Context, Tracer } from "@opentelemetry/api";
 import type { BringUpPlan, PhaseTimer } from "./types.ts";
 import { timed } from "./timing.ts";
 
@@ -16,6 +17,8 @@ export type SeedPhaseDeps = {
   db: StateDb;
   app: Pick<PreviewAppOps, "runSeed">;
   phaseTimer?: PhaseTimer;
+  tracer?: Tracer;
+  traceContext?: Context;
 };
 
 import type { PreviewDbPlan } from "./runtime.ts";

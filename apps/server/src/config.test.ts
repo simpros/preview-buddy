@@ -73,6 +73,8 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_PREVIEW_AUTH_ADDRESS;
   delete process.env.SPROUT_TELEMETRY_ENDPOINT;
   delete process.env.SPROUT_TELEMETRY_AUTH;
+  delete process.env.SPROUT_OTLP_ENDPOINT;
+  delete process.env.SPROUT_OTLP_HEADERS;
   delete process.env.DO_NOT_TRACK;
 }
 
@@ -387,6 +389,7 @@ describe("loadConfig", () => {
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
@@ -429,6 +432,7 @@ describe("loadConfig", () => {
         password: "pw",
       },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
@@ -469,6 +473,7 @@ describe("loadConfig", () => {
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
       telemetry: { enabled: true, endpoint: "", auth: "" },
+      otlp: { endpoint: "", headers: {} },
     });
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");

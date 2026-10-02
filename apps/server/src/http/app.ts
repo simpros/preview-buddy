@@ -1,3 +1,4 @@
+import type { Elysia } from "elysia";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { Config } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
@@ -15,6 +16,7 @@ export type ServerDeps = {
   dataVolumes: PreviewDataVolumes;
   materialization: PreviewMaterializationCtx;
   telemetry?: TelemetryDeployHook;
+  tracesPlugin?: Elysia<any, any, any, any, any, any, any>;
 };
 
 export function startServer(deps: ServerDeps) {
@@ -27,5 +29,6 @@ export function startServer(deps: ServerDeps) {
     dashboard: deps.config.dashboard,
     extraGitlabHosts: deps.config.extraGitlabHosts,
     telemetry: deps.telemetry ?? NO_TELEMETRY,
+    ...(deps.tracesPlugin ? { tracesPlugin: deps.tracesPlugin } : {}),
   }).listen(deps.config.port);
 }

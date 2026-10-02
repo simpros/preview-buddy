@@ -30,6 +30,7 @@ function testConfig(overrides: Partial<Config> = {}): Config {
     port: 7331,
     dashboard: { enabled: false, user: "", password: "" },
     telemetry: { enabled: true, endpoint: "", auth: "" },
+    otlp: { endpoint: "", headers: {} },
     ...overrides,
   };
 }

@@ -44,6 +44,8 @@ export type TeardownDeps = {
   dataVolumes: PreviewDataVolumes;
 };
 
+import type { Context, Tracer } from "@opentelemetry/api";
+
 export type LifecycleDeps = {
   db: StateDb;
   previewDb: PreviewDbRouter;
@@ -55,6 +57,10 @@ export type LifecycleDeps = {
    * the preview up.
    */
   phaseTimer?: PhaseTimer;
+  /** Deploy trace provider; defaults to the global tracer (no-op when off). */
+  tracer?: Tracer;
+  /** Explicit parent context for phase spans; survives lock hops. */
+  traceContext?: Context;
 };
 
 /** Bring-up phases with a telemetry interest, nothing more. */
