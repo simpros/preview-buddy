@@ -15,6 +15,9 @@ function preview(over: Partial<SweepPreview> = {}): SweepPreview {
     createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
     lastActivityAt: null,
     status: "running",
+    lastActivityMs: null,
+    ttlMs: null,
+    idleMs: null,
     ...over,
   };
 }
@@ -32,7 +35,7 @@ describe("governance expiry", () => {
     });
     // now is past 7d
     setSystemTime(new Date(base + 8 * 86400_000));
-    expect(planGovernanceExpiry(p, Date.now())).toBe("sweep:ttl-expired");
+    expect(planGovernanceExpiry(p, Date.now(), null)).toBe("sweep:ttl-expired");
   });
 
   test("expires by idle with idle reason", () => {
@@ -43,9 +46,9 @@ describe("governance expiry", () => {
       idleMs: 2 * 3600_000,
     });
     expect(
-      planGovernanceExpiry(p, base + 3 * 3600_000),
+      planGovernanceExpiry(p, base + 3 * 3600_000, null),
     ).toBe("sweep:idle-expired");
-    expect(planGovernanceExpiry(p, base + 3600_000)).toBeNull();
+    expect(planGovernanceExpiry(p, base + 3600_000, null)).toBeNull();
   });
 
   test("off at either level disables (null means keep)", () => {
@@ -55,7 +58,19 @@ describe("governance expiry", () => {
       ttlMs: null,
       idleMs: null,
     });
-    expect(planGovernanceExpiry(p, base + 30 * 86400_000)).toBeNull();
+    expect(planGovernanceExpiry(p, base + 30 * 86400_000, null)).toBeNull();
+  });
+
+  test("legacy bound collects boundless rows by creation age", () => {
+    const base = Date.parse("2026-09-02T12:00:00.000Z");
+    const legacyTtlMs = 72 * 3600_000;
+    const p = preview({ createdAtMs: base });
+    expect(planGovernanceExpiry(p, base + legacyTtlMs, legacyTtlMs)).toBe(
+      "sweep:ttl-expired",
+    );
+    expect(
+      planGovernanceExpiry(p, base + legacyTtlMs - 1, legacyTtlMs),
+    ).toBeNull();
   });
 
   test("refreshed activity postpones expiry", () => {
@@ -66,9 +81,9 @@ describe("governance expiry", () => {
       ttlMs: 7 * 86400_000,
       idleMs: null,
     });
-    expect(planGovernanceExpiry(stale, base + 8 * 86400_000)).toBeNull();
+    expect(planGovernanceExpiry(stale, base + 8 * 86400_000, null)).toBeNull();
     expect(
-      planGovernanceExpiry(stale, refreshed + 7 * 86400_000),
+      planGovernanceExpiry(stale, refreshed + 7 * 86400_000, null),
     ).toBe("sweep:ttl-expired");
   });
 
@@ -96,7 +111,7 @@ describe("governance expiry", () => {
         deletions.push(d);
         return true;
       },
-      ttlHours: 72 * 365,
+      legacyTtlMs: 72 * 365 * 3600_000,
       governance: {
         previewTtlMs: null,
         previewIdleMs: null,
@@ -123,7 +138,7 @@ describe("governance expiry", () => {
       listPreviewContainers: async () => [],
       listOpenPrIds: async () => [5, 6],
       drop: async () => true,
-      ttlHours: 72 * 365,
+      legacyTtlMs: 72 * 365 * 3600_000,
       governance: {
         previewTtlMs: null,
         previewIdleMs: null,

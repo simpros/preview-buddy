@@ -1,4 +1,6 @@
-import { resolvePreviewExpiry, deriveMailFromName } from "@sprout/preview-env";
+import { deriveMailFromName } from "@sprout/preview-env";
+import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
+import { resolvePreviewExpiry } from "./governance.ts";
 import type { Result } from "./result.ts";
 import type { PreviewRow } from "./row.ts";
 import type {
@@ -28,33 +30,34 @@ export function parsePreviewStatus(status: string): Result<PreviewStatus> {
 }
 
 /**
- * Read-surface expiry: derived from the same base and bounds the sweep plans
- * from, so the displayed deadline and the deletion decision cannot diverge.
- * Tombstones report null, matching the pre-derivation display.
+ * Read-surface expiry: derived from the same inputs the sweep plans from —
+ * the canonical UTC-instant parse, the governance bounds, and the legacy
+ * creation-age bound — so the displayed deadline and the deletion decision
+ * come from one derivation. Tombstones report null, matching the
+ * pre-derivation display.
  */
 export function expiresAtForRow(
   row: Pick<
     PreviewRow,
     "status" | "lastActivityAt" | "createdAt" | "ttlMs" | "idleMs"
   >,
+  legacyTtlMs: number | null,
 ): string | null {
   if (row.status === "removed") return null;
-  const lastActivityMs =
-    row.lastActivityAt == null ? null : Date.parse(row.lastActivityAt);
-  const createdAtMs = Date.parse(row.createdAt);
   const { expiresAtMs } = resolvePreviewExpiry({
-    lastActivityMs:
-      lastActivityMs !== null && Number.isFinite(lastActivityMs)
-        ? lastActivityMs
-        : null,
-    createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
+    lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
+    createdAtMs: parseUnambiguousUtcMs(row.createdAt),
     ttlMs: row.ttlMs ?? null,
     idleMs: row.idleMs ?? null,
+    legacyTtlMs,
   });
   return expiresAtMs === null ? null : new Date(expiresAtMs).toISOString();
 }
 
-export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
+export function previewSnapshotFromRow(
+  row: PreviewRow,
+  legacyTtlMs: number | null,
+): PreviewSnapshot {
   const status = parsePreviewStatus(row.status);
   const parsed = status.ok ? status.value : "failed";
   const effectiveFrom = row.mailFrom ?? undefined;
@@ -80,7 +83,7 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
       ? { last_error_detail: row.lastErrorDetail }
       : {}),
     last_activity_at: row.lastActivityAt ?? null,
-    expires_at: expiresAtForRow(row),
+    expires_at: expiresAtForRow(row, legacyTtlMs),
     expiry_reason: row.expiryReason ?? null,
   };
 }
@@ -93,8 +96,9 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
 export function presentPreviewSnapshot(
   row: PreviewRow,
   mailboxUrl: string | undefined,
+  legacyTtlMs: number | null,
 ): PreviewSnapshot {
-  const snapshot = previewSnapshotFromRow(row);
+  const snapshot = previewSnapshotFromRow(row, legacyTtlMs);
   if (snapshot.mail_from === undefined || mailboxUrl === undefined) {
     return snapshot;
   }
@@ -126,8 +130,9 @@ export function presentListedPreview(
   row: PreviewRow,
   mailboxUrl: string | undefined,
   status: DisplayPreviewStatus,
+  legacyTtlMs: number | null,
 ): ListedPreview {
-  const snap = presentPreviewSnapshot(row, mailboxUrl);
+  const snap = presentPreviewSnapshot(row, mailboxUrl, legacyTtlMs);
   return {
     canonical_repo_id: snap.canonical_repo_id,
     pr_id: snap.pr_id,
@@ -137,7 +142,7 @@ export function presentListedPreview(
     status,
     created_at: row.createdAt,
     last_activity_at: row.lastActivityAt ?? null,
-    expires_at: expiresAtForRow(row),
+    expires_at: expiresAtForRow(row, legacyTtlMs),
     expiry_reason: row.expiryReason ?? null,
     ...(snap.mail_from !== undefined ? { mail_from: snap.mail_from } : {}),
     ...(snap.mail_from_name !== undefined

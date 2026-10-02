@@ -1,148 +1,61 @@
 import { describe, expect, test } from "bun:test";
 import {
-  computeExpiresAtMs,
-  connectionProjection,
-  governanceStatus,
-  parseGatewayCap,
-  parseGatewayDurationMs,
+  governanceIssueMessage,
+  parseDurationMs,
   parsePreviewGovernanceField,
-  resolveGovernanceMs,
-  resolvePreviewExpiry,
 } from "./governance.ts";
 
 describe("preview governance durations", () => {
   test("parses manifest ttl/idle with off", () => {
-    expect(parsePreviewGovernanceField("7d", "ttl")).toEqual({
+    expect(parsePreviewGovernanceField("7d")).toEqual({
       ok: true,
-      value: "7d",
+      value: { raw: "7d", ms: 7 * 86400_000 },
     });
-    expect(parsePreviewGovernanceField("off", "ttl")).toEqual({
+    expect(parsePreviewGovernanceField("off")).toEqual({
       ok: true,
-      value: "off",
+      value: { raw: "off", ms: null },
     });
-    expect(parsePreviewGovernanceField("OFF", "idle_teardown")).toEqual({
+    expect(parsePreviewGovernanceField("OFF")).toEqual({
       ok: true,
-      value: "off",
+      value: { raw: "off", ms: null },
     });
-    expect(parsePreviewGovernanceField(undefined, "ttl")).toEqual({
+    expect(parsePreviewGovernanceField(undefined)).toEqual({
       ok: true,
       value: undefined,
     });
   });
 
-  test("rejects malformed durations with named errors", () => {
-    const bad = parsePreviewGovernanceField("forever", "ttl");
-    expect(bad.ok).toBe(false);
-    if (!bad.ok) expect(bad.issue.code).toBe("invalid_ttl");
-    const idleBad = parsePreviewGovernanceField("7x", "idle_teardown");
-    expect(idleBad.ok).toBe(false);
+  test("rejects malformed durations, keeping the raw input", () => {
+    expect(parsePreviewGovernanceField("forever")).toEqual({
+      ok: false,
+      raw: "forever",
+    });
+    expect(parsePreviewGovernanceField("7x")).toEqual({
+      ok: false,
+      raw: "7x",
+    });
+    expect(parsePreviewGovernanceField("")).toEqual({
+      ok: false,
+      raw: "",
+    });
+    expect(parsePreviewGovernanceField(42)).toEqual({
+      ok: false,
+      raw: "42",
+    });
   });
 
-  test("gateway duration accepts off and rejects garbage", () => {
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", undefined)).toBeNull();
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "off")).toBeNull();
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "7d")).toBe(
-      7 * 24 * 60 * 60 * 1000,
-    );
-    expect(parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "2h")).toBe(
-      2 * 60 * 60 * 1000,
-    );
-    expect(() =>
-      parseGatewayDurationMs("SPROUT_PREVIEW_TTL", "forever"),
-    ).toThrow("Invalid SPROUT_PREVIEW_TTL");
-  });
-
-  test("gateway caps accept off and reject garbage", () => {
-    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", undefined)).toBeNull();
-    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "off")).toBeNull();
-    expect(parseGatewayCap("SPROUT_MAX_PREVIEWS", "10")).toBe(10);
-    expect(() => parseGatewayCap("SPROUT_MAX_PREVIEWS", "0")).toThrow(
-      "Invalid SPROUT_MAX_PREVIEWS",
+  test("issue message names the path and the raw input", () => {
+    expect(governanceIssueMessage("preview.ttl", "forever")).toBe(
+      'preview.ttl is invalid (expected e.g. 7d, 2h, 30m or off, got "forever")',
     );
   });
 
-  test("manifest overrides gateway and off disables", () => {
-    expect(resolveGovernanceMs("7d", 2 * 3600_000)).toBe(7 * 86400_000);
-    expect(resolveGovernanceMs("off", 2 * 3600_000)).toBeNull();
-    expect(resolveGovernanceMs(undefined, 2 * 3600_000)).toBe(2 * 3600_000);
-    expect(resolveGovernanceMs(undefined, null)).toBeNull();
-  });
-
-  test("expiry is the earlier of ttl and idle", () => {
-    const base = 1_000_000;
-    expect(computeExpiresAtMs(base, 7 * 86400_000, null)).toBe(
-      base + 7 * 86400_000,
-    );
-    expect(computeExpiresAtMs(base, 7 * 86400_000, 2 * 3600_000)).toBe(
-      base + 2 * 3600_000,
-    );
-    expect(computeExpiresAtMs(base, null, null)).toBeNull();
-  });
-
-  test("connection projection counts exactly the previews given", () => {
-    expect(
-      connectionProjection({ previews: 8, perPreview: 12, ceiling: 100 }),
-    ).toEqual({ projected: 96, over: false });
-    expect(
-      connectionProjection({ previews: 9, perPreview: 12, ceiling: 100 }),
-    ).toEqual({ projected: 108, over: true });
-    expect(
-      connectionProjection({ previews: 9, perPreview: null, ceiling: 100 }),
-    ).toEqual({ projected: null, over: false });
-  });
-
-  test("governance status counts once for caps", () => {
-    const previews = [
-      { canonicalRepoId: "a" },
-      { canonicalRepoId: "a" },
-      { canonicalRepoId: "b" },
-    ];
-    const status = governanceStatus(previews);
-    expect(status.total).toBe(3);
-    expect(status.byRepo.get("a")).toBe(2);
-  });
-
-  test("expiry resolves the earlier bound and names the winner", () => {
-    const base = 1_000_000;
-    expect(
-      resolvePreviewExpiry({
-        lastActivityMs: base,
-        createdAtMs: base,
-        ttlMs: 7 * 86400_000,
-        idleMs: null,
-      }),
-    ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
-    expect(
-      resolvePreviewExpiry({
-        lastActivityMs: base,
-        createdAtMs: base,
-        ttlMs: 7 * 86400_000,
-        idleMs: 2 * 3600_000,
-      }),
-    ).toEqual({ expiresAtMs: base + 2 * 3600_000, bound: "idle" });
-    expect(
-      resolvePreviewExpiry({
-        lastActivityMs: null,
-        createdAtMs: base,
-        ttlMs: 7 * 86400_000,
-        idleMs: null,
-      }),
-    ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
-    expect(
-      resolvePreviewExpiry({
-        lastActivityMs: null,
-        createdAtMs: null,
-        ttlMs: 7 * 86400_000,
-        idleMs: null,
-      }),
-    ).toEqual({ expiresAtMs: null, bound: null });
-    expect(
-      resolvePreviewExpiry({
-        lastActivityMs: base,
-        createdAtMs: base,
-        ttlMs: null,
-        idleMs: null,
-      }),
-    ).toEqual({ expiresAtMs: null, bound: null });
+  test("duration grammar rejects non-positive and overflowing amounts", () => {
+    expect(parseDurationMs("7d")).toBe(7 * 86400_000);
+    expect(parseDurationMs("2h")).toBe(2 * 3600_000);
+    expect(parseDurationMs("0d")).toBeNull();
+    expect(parseDurationMs("-1d")).toBeNull();
+    expect(parseDurationMs("7x")).toBeNull();
+    expect(parseDurationMs("999999999999d")).toBeNull();
   });
 });

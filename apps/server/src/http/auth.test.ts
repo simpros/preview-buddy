@@ -357,6 +357,7 @@ describe("ensureAdminToken", () => {
         previewMaxDbConnections: null,
         postgresMaxConnections: null,
       },
+      legacyTtlMs: 72 * 3600_000,
     });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {

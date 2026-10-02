@@ -92,7 +92,7 @@ describe("createLiveSweepPorts", () => {
         listOpenPrIds: async () => [],
       },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
       log: () => {},
     });
 
@@ -138,7 +138,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [1] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const listed = await ports.listPreviews();
@@ -185,7 +185,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [1] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
       log: (message) => {
         logs.push(message);
       },
@@ -241,7 +241,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [1] },
       governance: offGovernance,
-      ttlHours: 1,
+      legacyTtlMs: 3600_000,
       log: (message) => {
         logs.push(message);
       },
@@ -298,7 +298,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
       log: (message) => {
         logs.push(message);
       },
@@ -354,7 +354,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
       log: () => {},
     });
 
@@ -412,7 +412,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [42] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -465,7 +465,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [42] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -523,7 +523,7 @@ describe("createLiveSweepPorts", () => {
         },
       },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -573,7 +573,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [42] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -617,7 +617,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [42] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -645,7 +645,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
     });
 
     const removed = await ports.drop({
@@ -680,7 +680,7 @@ describe("createLiveSweepPorts", () => {
       }),
       forge: { listOpenPrIds: async () => [] },
       governance: offGovernance,
-      ttlHours: 72,
+      legacyTtlMs: 72 * 3600_000,
       log: () => {},
     });
 

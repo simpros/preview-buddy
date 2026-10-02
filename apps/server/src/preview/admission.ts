@@ -1,17 +1,18 @@
 import { ne } from "drizzle-orm";
 import {
-  connectionBudgetDetail,
-  connectionProjection,
-  governanceStatus,
-  previewLimitDetail,
-  resolveEffectiveGovernanceMs,
   type EffectiveGovernanceMs,
   type GovernanceConfig,
   type GovernanceManifest,
-  type GovernanceStatus,
 } from "@sprout/preview-env";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
+import {
+  evaluateGovernance,
+  governanceStatus,
+  resolveEffectiveGovernanceMs,
+  violationMessage,
+  type GovernanceStatus,
+} from "./governance.ts";
 import type { Result } from "./result.ts";
 
 /**
@@ -20,6 +21,12 @@ import type { Result } from "./result.ts";
  * exempt from caps and budget alike: it holds no new slot, and rejecting it
  * could block the redeploy that would reduce connections. Returns the
  * effective governance.
+ *
+ * Caps are best-effort under concurrent submits: the check runs before the
+ * row insert under the per-preview lock, so two simultaneous deploys for new
+ * targets can both pass when one slot remains. Exact enforcement would need
+ * admission serialized against the insert; the overshoot is accepted to keep
+ * deploys concurrent.
  */
 export async function checkDeployAdmission(
   db: StateDb,
@@ -40,57 +47,22 @@ export async function checkDeployAdmission(
   const status: GovernanceStatus = governanceStatus(rows);
 
   if (isNew) {
-    const perRepo = gov.maxPreviewsPerRepo;
-    if (perRepo !== null) {
-      const count = status.byRepo.get(input.repo) ?? 0;
-      if (count >= perRepo) {
-        return {
-          ok: false,
-          status: 429,
-          error: "preview_limit_reached",
-          detail: previewLimitDetail({
-            cap: "SPROUT_MAX_PREVIEWS_PER_REPO",
-            value: perRepo,
-            count,
-          }),
-        };
-      }
-    }
-    const total = gov.maxPreviews;
-    if (total !== null && status.total >= total) {
-      return {
-        ok: false,
-        status: 429,
-        error: "preview_limit_reached",
-        detail: previewLimitDetail({
-          cap: "SPROUT_MAX_PREVIEWS",
-          value: total,
-          count: status.total,
-        }),
-      };
-    }
-    const perPreview = gov.previewMaxDbConnections;
-    const ceiling = gov.postgresMaxConnections;
-    if (perPreview !== null && ceiling !== null) {
-      // The candidate is the +1: admission projects with it included.
-      const budget = connectionProjection({
-        previews: status.total + 1,
-        perPreview,
-        ceiling,
-      });
-      if (budget.over && budget.projected !== null) {
+    const violation = evaluateGovernance(gov, status, { repo: input.repo })[0];
+    if (violation !== undefined) {
+      if (violation.kind === "connection-budget") {
         return {
           ok: false,
           status: 429,
           error: "preview_connection_budget_exceeded",
-          detail: connectionBudgetDetail({
-            projected: budget.projected,
-            ceiling,
-            perPreview,
-            active: status.total,
-          }),
+          detail: violationMessage(violation),
         };
       }
+      return {
+        ok: false,
+        status: 429,
+        error: "preview_limit_reached",
+        detail: violationMessage(violation),
+      };
     }
   }
 

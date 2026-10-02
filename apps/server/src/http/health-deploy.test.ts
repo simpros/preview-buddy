@@ -149,9 +149,13 @@ describe("POST /v1/deploy health polling", () => {
       status: "running",
       preview_url: "https://pr-42.myapp.preview.example.com",
       last_activity_at: expect.any(String),
-      expires_at: null,
+      expires_at: expect.any(String),
       expiry_reason: null,
     });
+    // Unified derivation: boundless rows show created_at + legacy ttlHours.
+    const snap = res.body as {
+      expires_at: string | null;
+    };
 
     const [row] = await testApp!.db
       .select()
@@ -160,6 +164,9 @@ describe("POST /v1/deploy health polling", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
+    expect(snap.expires_at).toBe(
+      new Date(Date.parse(row!.createdAt) + 72 * 3600_000).toISOString(),
+    );
     expect(row?.status).toBe("running");
     expect(healthHits[0]).toBe(`http://${PLAN_FIRST_IP}:3000/health`);
   });
@@ -270,10 +277,19 @@ describe("POST /v1/deploy health polling", () => {
         status: "provisioning",
         created_at: expect.any(String),
         last_activity_at: null,
-        expires_at: null,
+        expires_at: expect.any(String),
         expiry_reason: null,
       },
     ]);
+    // Never-ran rows carry no governance bounds, so the read surface shows
+    // the same legacy creation-age deadline the sweep enforces.
+    const listed = body.previews[0] as {
+      created_at: string;
+      expires_at: string | null;
+    };
+    expect(listed.expires_at).toBe(
+      new Date(Date.parse(listed.created_at) + 72 * 3600_000).toISOString(),
+    );
   });
 
   test("list maps seeding to provisioning", async () => {

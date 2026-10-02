@@ -197,7 +197,7 @@ async function closeRunning(
   );
   return {
     ok: true,
-    value: previewSnapshotFromRow(updated),
+    value: previewSnapshotFromRow(updated, input.legacyTtlMs),
   };
 }
 

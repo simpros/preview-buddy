@@ -391,6 +391,15 @@ describe("GET /dashboard (flag on)", () => {
       materialization: { traefikNetwork: "sprout-traefik" },
       dashboard: { ...ENABLED },
       telemetry: NO_TELEMETRY,
+      governance: {
+        previewTtlMs: null,
+        previewIdleMs: null,
+        maxPreviews: null,
+        maxPreviewsPerRepo: null,
+        previewMaxDbConnections: null,
+        postgresMaxConnections: null,
+      },
+      legacyTtlMs: 72 * 3600_000,
     });
     const res = await probe.handle(
       new Request("http://localhost/dashboard", { headers: dashboardAuth() }),

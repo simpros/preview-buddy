@@ -120,6 +120,9 @@ export type ProvisionInput = {
   auth?: PreviewAuthSpec;
   previewAuth?: PreviewAuthConfig;
   governanceMs: EffectiveGovernanceMs;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms) for the read surface,
+   * so the deploy response shows the same deadline the sweep enforces. */
+  legacyTtlMs: number | null;
 };
 
 export type TeardownInput = {
@@ -161,9 +164,9 @@ export type PreviewSnapshot = {
   mail_from_name?: string;
   last_error?: string;
   last_error_detail?: string;
-  last_activity_at?: string | null;
-  expires_at?: string | null;
-  expiry_reason?: string | null;
+  last_activity_at: string | null;
+  expires_at: string | null;
+  expiry_reason: string | null;
 };
 
 export type TeardownSnapshot = {

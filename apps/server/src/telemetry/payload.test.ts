@@ -24,6 +24,7 @@ function testConfig(overrides: Partial<Config> = {}): Config {
     gitlabToken: "",
     extraGitlabHosts: new Set(),
     ttlHours: 72,
+    legacyTtlMs: 72 * 3600_000,
     sweepCron: "*/30 * * * *",
     previewPortDefault: 8080,
     seedTimeout: 180,
@@ -31,6 +32,12 @@ function testConfig(overrides: Partial<Config> = {}): Config {
     dashboard: { enabled: false, user: "", password: "" },
     telemetry: { enabled: true, endpoint: "", auth: "" },
     otlp: { endpoint: "", headers: {} },
+    previewTtlMs: null,
+    previewIdleMs: null,
+    maxPreviewsPerRepo: null,
+    maxPreviews: null,
+    previewMaxDbConnections: null,
+    postgresMaxConnections: null,
     ...overrides,
   };
 }

@@ -1,10 +1,11 @@
 import type { DataVolumeRef, GovernanceConfig } from "@sprout/preview-env";
+import { isForgeApiError } from "../forge/types.ts";
 import {
-  connectionProjection,
+  evaluateGovernance,
   governanceStatus,
   resolvePreviewExpiry,
-} from "@sprout/preview-env";
-import { isForgeApiError } from "../forge/types.ts";
+  violationMessage,
+} from "../preview/governance.ts";
 import type { PreviewExpiryReason } from "../preview/types.ts";
 
 export type PreviewRef = { slug: string; prId: number };
@@ -20,9 +21,9 @@ export type SweepPreview = {
   createdAtMs: number | null;
   lastActivityAt: string | null;
   status: string;
-  lastActivityMs?: number | null;
-  ttlMs?: number | null;
-  idleMs?: number | null;
+  lastActivityMs: number | null;
+  ttlMs: number | null;
+  idleMs: number | null;
 };
 
 export type SweepDeletion =
@@ -50,7 +51,9 @@ export type SweepPorts = {
   listOpenPrIds: (canonicalRepoId: string) => Promise<number[]>;
   /** True if resources were removed; false if the plan was stale. */
   drop: (deletion: SweepDeletion) => Promise<boolean>;
-  ttlHours: number;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms), computed once in
+   * loadConfig; the sweep never converts units itself. */
+  legacyTtlMs: number | null;
   governance: GovernanceConfig;
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
@@ -177,7 +180,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
   }
 
   const nowMs = Date.now();
-  const cutoff = nowMs - ports.ttlHours * 60 * 60 * 1000;
+  const legacyTtlMs = ports.legacyTtlMs;
   const previewKeys = new Set<string>();
   const remainingPreviews: SweepPreview[] = [];
   const expiryDeletions: SweepDeletion[] = [];
@@ -186,20 +189,10 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
     if (preview.status === "removed") continue;
 
     previewKeys.add(`${preview.slug}:${preview.prId}`);
-    const governanceExpiry = planGovernanceExpiry(preview, nowMs);
+    const governanceExpiry = planGovernanceExpiry(preview, nowMs, legacyTtlMs);
     if (governanceExpiry) {
       expiryDeletions.push({
         reason: governanceExpiry,
-        canonicalRepoId: preview.canonicalRepoId,
-        prId: preview.prId,
-        slug: preview.slug,
-        dbName: preview.dbName,
-        createdAt: preview.createdAt,
-        lastActivityAt: preview.lastActivityAt,
-      });
-    } else if (preview.createdAtMs !== null && preview.createdAtMs < cutoff) {
-      expiryDeletions.push({
-        reason: "sweep:ttl-expired",
         canonicalRepoId: preview.canonicalRepoId,
         prId: preview.prId,
         slug: preview.slug,
@@ -278,17 +271,20 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
  * Governance expiry from the shared preview-env policy: one place decides
  * the base, the earlier bound, and which bound won. Returns the reason, or
  * null to keep. The cheap activity signal is the last successful deploy
- * (including reseed/reset); see docs/previews.md.
+ * (including reseed/reset); see docs/previews.md. The legacy creation-age
+ * bound only collects rows that never received governance columns.
  */
 export function planGovernanceExpiry(
   preview: SweepPreview,
   nowMs: number,
+  legacyTtlMs: number | null,
 ): "sweep:ttl-expired" | "sweep:idle-expired" | null {
   const { expiresAtMs, bound } = resolvePreviewExpiry({
-    lastActivityMs: preview.lastActivityMs ?? null,
+    lastActivityMs: preview.lastActivityMs,
     createdAtMs: preview.createdAtMs,
-    ttlMs: preview.ttlMs ?? null,
-    idleMs: preview.idleMs ?? null,
+    ttlMs: preview.ttlMs,
+    idleMs: preview.idleMs,
+    legacyTtlMs,
   });
   if (expiresAtMs === null || nowMs < expiresAtMs) return null;
   return bound === "ttl" ? "sweep:ttl-expired" : "sweep:idle-expired";
@@ -298,38 +294,9 @@ function logOverCap(
   ports: SweepPorts,
   previews: SweepPreview[],
 ): void {
-  const gov = ports.governance;
   const live = previews.filter((p) => p.status !== "removed");
   const status = governanceStatus(live);
-  const maxTotal = gov.maxPreviews;
-  if (maxTotal !== null && status.total > maxTotal) {
-    ports.log?.(
-      `sweep over cap SPROUT_MAX_PREVIEWS (${status.total} > ${maxTotal})`,
-    );
-  }
-  const perRepo = gov.maxPreviewsPerRepo;
-  if (perRepo !== null) {
-    for (const [repo, count] of status.byRepo) {
-      if (count > perRepo) {
-        ports.log?.(
-          `sweep over cap SPROUT_MAX_PREVIEWS_PER_REPO ${repo} (${count} > ${perRepo})`,
-        );
-      }
-    }
-  }
-  const perPreview = gov.previewMaxDbConnections;
-  const ceiling = gov.postgresMaxConnections;
-  if (perPreview === null || ceiling === null) return;
-  // Current load as-is: no candidate, so no +1 — admission adds it.
-  const { projected, over } = connectionProjection({
-    previews: status.total,
-    perPreview,
-    ceiling,
-  });
-  if (over && projected !== null) {
-    ports.log?.(
-      `sweep over connection budget (projected ${projected} > ceiling ${ceiling}; ` +
-        `${status.total} previews x ${perPreview} per preview)`,
-    );
+  for (const violation of evaluateGovernance(ports.governance, status, null)) {
+    ports.log?.(`sweep over governance limit: ${violationMessage(violation)}`);
   }
 }

@@ -111,6 +111,7 @@ export async function createTestApp(
         telemetry?: TelemetryDeployHook;
         tracesPlugin?: TracesHandle["plugin"];
         governance?: GovernanceConfig;
+        legacyTtlMs?: number | null;
       }
     | string = {},
 ): Promise<TestApp> {
@@ -175,6 +176,7 @@ export async function createTestApp(
         previewMaxDbConnections: null,
         postgresMaxConnections: null,
       },
+      legacyTtlMs: opts.legacyTtlMs ?? 72 * 3600_000,
     }),
     db,
     adminToken,

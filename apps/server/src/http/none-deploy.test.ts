@@ -152,10 +152,18 @@ describe("none previews", () => {
         status: "running",
         created_at: expect.any(String),
         last_activity_at: expect.any(String),
-        expires_at: null,
+        expires_at: expect.any(String),
         expiry_reason: null,
       },
     ]);
+    // Unified derivation: boundless rows show created_at + legacy ttlHours.
+    const listed = body.previews[0] as {
+      created_at: string;
+      expires_at: string | null;
+    };
+    expect(listed.expires_at).toBe(
+      new Date(Date.parse(listed.created_at) + 72 * 3600_000).toISOString(),
+    );
   });
 
   test("companion services start with no database env", async () => {

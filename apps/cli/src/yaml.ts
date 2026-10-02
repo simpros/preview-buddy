@@ -412,12 +412,13 @@ function parseGovernanceField(
   raw: unknown,
   path: "preview.ttl" | "preview.idle_teardown",
 ): Result<string | undefined> {
-  const kind = path === "preview.ttl" ? "ttl" : "idle_teardown";
-  const parsed = parsePreviewGovernanceField(raw, kind);
+  const parsed = parsePreviewGovernanceField(raw);
   if (!parsed.ok) {
-    return { ok: false, error: governanceIssueMessage(path, parsed.issue) };
+    return { ok: false, error: governanceIssueMessage(path, parsed.raw) };
   }
-  return { ok: true, value: parsed.value };
+  // The CLI forwards the normalized string to the gateway; the parsed bound
+  // is re-derived server-side at the deploy boundary.
+  return { ok: true, value: parsed.value?.raw };
 }
 
 function parseServices(

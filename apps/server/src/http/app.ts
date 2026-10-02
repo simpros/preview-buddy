@@ -31,5 +31,6 @@ export function startServer(deps: ServerDeps) {
     telemetry: deps.telemetry ?? NO_TELEMETRY,
     ...(deps.tracesPlugin ? { tracesPlugin: deps.tracesPlugin } : {}),
     governance: deps.config,
+    legacyTtlMs: deps.config.legacyTtlMs,
   }).listen(deps.config.port);
 }

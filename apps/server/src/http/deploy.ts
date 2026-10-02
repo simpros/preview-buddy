@@ -491,20 +491,20 @@ export function resolveGovernanceRequest(
 ):
   | { ok: true; value: GovernanceManifest }
   | { ok: false; error: string; detail?: string } {
-  const ttl = parsePreviewGovernanceField(body.ttl, "ttl");
+  const ttl = parsePreviewGovernanceField(body.ttl);
   if (!ttl.ok) {
     return {
       ok: false,
       error: "invalid_ttl",
-      detail: governanceIssueMessage("preview.ttl", ttl.issue),
+      detail: governanceIssueMessage("preview.ttl", ttl.raw),
     };
   }
-  const idle = parsePreviewGovernanceField(body.idle_teardown, "idle_teardown");
+  const idle = parsePreviewGovernanceField(body.idle_teardown);
   if (!idle.ok) {
     return {
       ok: false,
       error: "invalid_idle_teardown",
-      detail: governanceIssueMessage("preview.idle_teardown", idle.issue),
+      detail: governanceIssueMessage("preview.idle_teardown", idle.raw),
     };
   }
   return {
@@ -542,6 +542,7 @@ export function deploy(
     materialization: PreviewMaterializationCtx;
     telemetry: TelemetryDeployHook;
     governance: GovernanceConfig;
+    legacyTtlMs: number | null;
   },
 ) {
   return async ({
@@ -677,6 +678,7 @@ export function deploy(
       plan,
       reseed: body.reseed === true,
       governanceMs,
+      legacyTtlMs: deps.legacyTtlMs,
       ...(deps.materialization.traefikTls !== undefined
         ? { traefikTls: deps.materialization.traefikTls }
         : {}),
@@ -701,13 +703,15 @@ export function deploy(
     return presentPreviewSnapshot(
       accepted.value.row,
       deps.materialization.mail?.uiUrl,
+      deps.legacyTtlMs,
     );
   };
 }
 
 export function getPreview(
   deps: LifecycleDeps,
-  mailboxUrl?: string,
+  mailboxUrl: string | undefined,
+  legacyTtlMs: number | null,
 ) {
   return async ({
     query,
@@ -725,7 +729,7 @@ export function getPreview(
       query.pr_id,
     );
     if (!result.ok) return mapResult(result, set);
-    return presentPreviewSnapshot(result.value, mailboxUrl);
+    return presentPreviewSnapshot(result.value, mailboxUrl, legacyTtlMs);
   };
 }
 

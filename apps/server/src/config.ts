@@ -5,9 +5,11 @@ import type {
 import type { TelemetryState } from "./telemetry/destination.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
 import {
+  hoursToMs,
   parseGatewayCap,
   parseGatewayDurationMs,
-} from "@sprout/preview-env";
+} from "./preview/governance.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -155,6 +157,9 @@ export type Config = {
   extraGitlabHosts: ReadonlySet<string>;
   adminToken?: string;
   ttlHours: number;
+  /** SPROUT_TTL_HOURS as ms, derived once here so read and sweep surfaces
+   * share one bound without converting units themselves. */
+  legacyTtlMs: number;
   sweepCron: string;
   previewPortDefault: number;
   seedTimeout: number;
@@ -165,43 +170,7 @@ export type Config = {
   telemetry: TelemetryState;
   /** Operator-owned trace export; active exactly when endpoint is set. */
   otlp: OtlpConfig;
-  /** Null means off (unbounded); manifest preview.ttl overrides. */
-  previewTtlMs: number | null;
-  /** Null means off; measured from the last successful deploy. */
-  previewIdleMs: number | null;
-  /** Null means off (unbounded). */
-  maxPreviewsPerRepo: number | null;
-  /** Null means off (unbounded). */
-  maxPreviews: number | null;
-  /** Expected per-preview DB connections; null means no budget. */
-  previewMaxDbConnections: number | null;
-  /** Instance ceiling for the budget arithmetic; null means no budget. */
-  postgresMaxConnections: number | null;
-  /** Null/undefined means off (unbounded); manifest preview.ttl overrides. */
-  previewTtlMs?: number | null;
-  /** Null/undefined means off; measured from the last successful deploy. */
-  previewIdleMs?: number | null;
-  /** Null/undefined means off (unbounded). */
-  maxPreviewsPerRepo?: number | null;
-  /** Null/undefined means off (unbounded). */
-  maxPreviews?: number | null;
-  /** Expected per-preview DB connections; null/undefined means no budget. */
-  previewMaxDbConnections?: number | null;
-  /** Instance ceiling for the budget arithmetic; null/undefined means no budget. */
-  postgresMaxConnections?: number | null;
-  /** Null means off (unbounded); manifest preview.ttl overrides. */
-  previewTtlMs: number | null;
-  /** Null means off; measured from the last successful deploy. */
-  previewIdleMs: number | null;
-  /** Null means off (unbounded). */
-  maxPreviewsPerRepo: number | null;
-  /** Null means off (unbounded). */
-  maxPreviews: number | null;
-  /** Expected per-preview DB connections; null means no budget. */
-  previewMaxDbConnections: number | null;
-  /** Instance ceiling for the budget arithmetic; null means no budget. */
-  postgresMaxConnections: number | null;
-};
+} & GovernanceConfig;
 
 function parsePositiveInt(
   name: string,
@@ -505,8 +474,12 @@ function parseDashboardConfig(): DashboardConfig {
 }
 
 export function parseExtraGitlabHosts(raw: string): ReadonlySet<string> {
+  const trimmed = raw.trim();
+  if (trimmed === "") return new Set();
   const out = new Set<string>();
-  for (const entry of splitListEntries(raw)) {
+  for (const part of trimmed.split(",")) {
+    const entry = part.trim();
+    if (entry === "") continue;
     const sep = entry.includes("=") ? "=" : entry.includes(":") ? ":" : null;
     if (!sep) {
       throw new Error(
@@ -601,6 +574,12 @@ export function loadConfig(): Config {
     auth: telemetryDestination.auth,
   });
 
+  const ttlHours = parsePositiveInt(
+    "SPROUT_TTL_HOURS",
+    process.env.SPROUT_TTL_HOURS,
+    OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS,
+  );
+
   return {
     postgres: parsePostgresConfig(),
     mail: parseMailConfig(),
@@ -614,11 +593,8 @@ export function loadConfig(): Config {
       optionalEnv("SPROUT_FORGE_HOSTS"),
     ),
     adminToken: adminTokenRaw === "" ? undefined : adminTokenRaw,
-    ttlHours: parsePositiveInt(
-      "SPROUT_TTL_HOURS",
-      process.env.SPROUT_TTL_HOURS,
-      OPTIONAL_ENV_DEFAULTS.SPROUT_TTL_HOURS,
-    ),
+    ttlHours,
+    legacyTtlMs: hoursToMs(ttlHours),
     sweepCron: parseSweepCron(
       process.env.SPROUT_SWEEP_CRON,
       OPTIONAL_ENV_DEFAULTS.SPROUT_SWEEP_CRON,

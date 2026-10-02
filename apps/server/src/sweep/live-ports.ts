@@ -25,7 +25,7 @@ export type LiveSweepDeps = {
   app: Pick<PreviewAppOps, "list" | "remove">;
   dataVolumes: PreviewDataVolumes;
   forge: ForgeClient;
-  ttlHours: number;
+  legacyTtlMs: number | null;
   governance: SweepPorts["governance"];
   log?: SweepPorts["log"];
 };
@@ -61,7 +61,7 @@ async function removeControlPlane(
 
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
   return {
-    ttlHours: deps.ttlHours,
+    legacyTtlMs: deps.legacyTtlMs,
     governance: deps.governance,
     log: deps.log,
     listPreviews: async () => {

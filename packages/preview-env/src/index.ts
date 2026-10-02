@@ -112,21 +112,12 @@ export {
 } from "./volumes.ts";
 
 export {
-  computeExpiresAtMs,
-  connectionBudgetDetail,
-  connectionProjection,
   governanceIssueMessage,
-  governanceStatus,
-  parseGatewayCap,
-  parseGatewayDurationMs,
+  parseDurationMs,
   parsePreviewGovernanceField,
-  previewLimitDetail,
-  resolveEffectiveGovernanceMs,
-  resolvePreviewExpiry,
   type EffectiveGovernanceMs,
   type GovernanceConfig,
   type GovernanceManifest,
-  type GovernanceStatus,
 } from "./governance.ts";
 
 export {

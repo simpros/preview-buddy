@@ -43,6 +43,9 @@ export type RouteDeps = {
   telemetry: TelemetryDeployHook;
   tracesPlugin?: TracesHandle["plugin"];
   governance: GovernanceConfig;
+  /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms), computed once in
+   * loadConfig; routes never convert units themselves. */
+  legacyTtlMs: number | null;
 };
 
 function stubNotImplemented({
@@ -66,7 +69,9 @@ export function createRoutes(deps: RouteDeps) {
     materialization: deps.materialization,
     telemetry: deps.telemetry,
     governance: deps.governance,
+    legacyTtlMs: deps.legacyTtlMs,
   };
+  const legacyTtlMs = deployDeps.legacyTtlMs;
   const mailboxUrl = deps.materialization.mail?.uiUrl;
   const accessDeps = {
     db: deps.db,
@@ -107,7 +112,7 @@ export function createRoutes(deps: RouteDeps) {
           })
           .delete("/tokens/:id", revokeToken(deps.db)),
       )
-      .get("/previews", listPreviews(deps.db, mailboxUrl), {
+      .get("/previews", listPreviews(deps.db, mailboxUrl, legacyTtlMs), {
         beforeHandle: requireAdmin,
       })
       .get("/previews/access", getPreviewAccess(accessDeps), {
@@ -128,7 +133,9 @@ export function createRoutes(deps: RouteDeps) {
         body: dropBody,
       })
       .post("/deploy", deploy(deployDeps), { body: deployBody })
-      .get("/preview", getPreview(lifecycle, mailboxUrl), { query: previewQuery })
+      .get("/preview", getPreview(lifecycle, mailboxUrl, legacyTtlMs), {
+        query: previewQuery,
+      })
       .post("/teardown", teardown(lifecycle), { body: teardownBody })
       .all("/*", stubNotImplemented),
   );
