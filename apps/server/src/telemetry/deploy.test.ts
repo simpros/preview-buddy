@@ -10,7 +10,7 @@ import {
 import {
   DEPLOY_FAILED_EVENT_KEYS,
   DEPLOY_SUCCESS_EVENT_KEYS,
-  type TelemetryEvent,
+  type TelemetryDeployEvent,
 } from "./payload.ts";
 import {
   createTelemetryReporter,
@@ -96,8 +96,10 @@ async function setupDeployHarness(
   };
 }
 
-function deployEvents(receiver: TelemetryReceiver): TelemetryEvent[] {
-  return receiver.captured.map((req) => (req.body as TelemetryEvent[])[0]!);
+function deployEvents(receiver: TelemetryReceiver): TelemetryDeployEvent[] {
+  return receiver.captured.map(
+    (req) => (req.body as TelemetryDeployEvent[])[0]!,
+  );
 }
 
 describe("deploy telemetry", () => {

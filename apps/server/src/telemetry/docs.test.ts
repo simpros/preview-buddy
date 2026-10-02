@@ -15,7 +15,7 @@ import {
  * values, illustrative fields for shape only.
  */
 
-const KEY_SETS = [
+const KEY_SETS: string[][] = [
   [...INSTALL_EVENT_KEYS].sort(),
   [...DEPLOY_SUCCESS_EVENT_KEYS].sort(),
   [...DEPLOY_FAILED_EVENT_KEYS].sort(),
@@ -50,13 +50,13 @@ describe("telemetry docs samples", () => {
       }
       expect(Number.isNaN(Date.parse(String(event._timestamp)))).toBe(false);
       if (event.event === "deploy") {
-        expect(["running", "failed"]).toContain(event.outcome);
+        expect(["running", "failed"]).toContain(event.outcome as string);
         expect([
           "full_replace",
           "seed_resume",
           "sync_close",
           "close",
-        ]).toContain(event.plan);
+        ]).toContain(event.plan as string);
         if (event.outcome === "failed") {
           expect(typeof event.failure_class).toBe("string");
           expect("failure_family" in event).toBe(true);

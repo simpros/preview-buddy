@@ -124,7 +124,7 @@ describe("telemetry reporter", () => {
       expect(event?.deploys_total).toBe(2);
       expect(typeof event?.install_id).toBe("string");
       const idFile = await Bun.file(`${tmp.dir}/install-id`).text();
-      expect(idFile.trim()).toBe(event?.install_id);
+      expect(idFile.trim()).toBe(String(event?.install_id));
     } finally {
       receiver.stop();
       await cleanup();
@@ -136,7 +136,7 @@ describe("telemetry reporter", () => {
     for (const env of [
       { SPROUT_TELEMETRY: "off" },
       { DO_NOT_TRACK: "1" },
-    ]) {
+    ] as Record<string, string>[]) {
       const receiver = await startTelemetryReceiver();
       const { db, cleanup } = await createTestDb();
       const tmp = await tempTelemetryDir();
