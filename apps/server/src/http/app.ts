@@ -1,4 +1,3 @@
-import type { Elysia } from "elysia";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { Config } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
@@ -6,6 +5,7 @@ import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import { NO_TELEMETRY, type TelemetryDeployHook } from "../telemetry/contract.ts";
+import type { TracesHandle } from "../telemetry/traces.ts";
 import { createRoutes } from "./routes.ts";
 
 export type ServerDeps = {
@@ -16,7 +16,7 @@ export type ServerDeps = {
   dataVolumes: PreviewDataVolumes;
   materialization: PreviewMaterializationCtx;
   telemetry?: TelemetryDeployHook;
-  tracesPlugin?: Elysia<any, any, any, any, any, any, any>;
+  tracesPlugin?: TracesHandle["plugin"];
 };
 
 export function startServer(deps: ServerDeps) {

@@ -31,6 +31,7 @@ import type {
   PreviewAuthConfig,
 } from "../config.ts";
 import { NO_TELEMETRY, type TelemetryDeployHook } from "../telemetry/contract.ts";
+import type { TracesHandle } from "../telemetry/traces.ts";
 
 export type TestDb = {
   db: StateDb;
@@ -107,8 +108,7 @@ export async function createTestApp(
         dashboard?: DashboardConfig;
         extraGitlabHosts?: ReadonlySet<string>;
         telemetry?: TelemetryDeployHook;
-        tracer?: import("@opentelemetry/api").Tracer;
-        tracesPlugin?: import("elysia").Elysia<any, any, any, any, any, any, any>;
+        tracesPlugin?: TracesHandle["plugin"];
       }
     | string = {},
 ): Promise<TestApp> {
@@ -165,7 +165,6 @@ export async function createTestApp(
       extraGitlabHosts: opts.extraGitlabHosts,
       telemetry: opts.telemetry ?? NO_TELEMETRY,
       ...(opts.tracesPlugin ? { tracesPlugin: opts.tracesPlugin } : {}),
-      ...(opts.tracer ? { tracer: opts.tracer } : {}),
     }),
     db,
     adminToken,

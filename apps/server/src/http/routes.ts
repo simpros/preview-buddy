@@ -1,5 +1,4 @@
 import { Elysia } from "elysia";
-import { trace, type Tracer } from "@opentelemetry/api";
 import { authPlugin, requireAdmin, requireAuth } from "../auth/middleware.ts";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
@@ -9,6 +8,7 @@ import type { LifecycleDeps } from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import type { TelemetryDeployHook } from "../telemetry/contract.ts";
+import type { TracesHandle } from "../telemetry/traces.ts";
 import {
   createDeployToken,
   createDeployTokenBody,
@@ -40,8 +40,7 @@ export type RouteDeps = {
   dashboard?: DashboardConfig;
   extraGitlabHosts?: ReadonlySet<string>;
   telemetry: TelemetryDeployHook;
-  tracesPlugin?: Elysia<any, any, any, any, any, any, any>;
-  tracer?: Tracer;
+  tracesPlugin?: TracesHandle["plugin"];
 };
 
 function stubNotImplemented({
@@ -59,7 +58,6 @@ export function createRoutes(deps: RouteDeps) {
     previewDb: deps.previewDb,
     app: deps.app,
     dataVolumes: deps.dataVolumes,
-    ...(deps.tracer ? { tracer: deps.tracer } : {}),
   };
   const deployDeps = {
     ...lifecycle,
@@ -76,23 +74,6 @@ export function createRoutes(deps: RouteDeps) {
   const base = new Elysia();
   if (deps.tracesPlugin) {
     base.use(deps.tracesPlugin);
-    base.onAfterResponse(({ request, path, set }) => {
-      const span = trace.getActiveSpan();
-      if (!span) return;
-      let status = (set as { status?: number | string }).status ?? 200;
-      if (typeof status === "string") {
-        const parsed = Number(status);
-        status = Number.isFinite(parsed) ? parsed : 200;
-      }
-      span.setAttribute("http.response.status_code", status);
-      // The plugin names its root span Root; rename it to METHOD path.
-      // The active span here is usually an event child (AfterResponse, …),
-      // so only rename a span still carrying the default name.
-      const name = (span as unknown as { name?: unknown }).name;
-      if (name === "Root") {
-        span.updateName(`${request.method} ${path}`);
-      }
-    });
   }
   const app = base
     .get("/healthz", () => ({ ok: true }))

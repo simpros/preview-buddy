@@ -17,7 +17,7 @@ import {
 import { createPhaseCollector } from "./timing.ts";
 import type { BringUpPlan } from "./types.ts";
 import type { TelemetryDeployHook } from "../telemetry/contract.ts";
-import { TRACER_NAME } from "../telemetry/traces.ts";
+import { TRACER_NAME } from "../telemetry/tracer-name.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -80,10 +80,13 @@ export async function runAsyncDeploy(
   const key = previewKey(input.repo, input.prId);
   const startedAt = Date.now();
   const phases = createPhaseCollector();
-  const tracer = deps.tracer ?? trace.getTracer(TRACER_NAME);
+  const tracer = trace.getTracer(TRACER_NAME);
   await tracer.startActiveSpan(
     "preview.deploy",
     {
+      // Detached from the accepting request span: its own root trace,
+      // correlated by sprout.* attributes rather than the trace id.
+      root: true,
       attributes: {
         "sprout.repo": input.repo,
         "sprout.pr": input.prId,
@@ -92,11 +95,11 @@ export async function runAsyncDeploy(
       },
     },
     async (span) => {
-      const traceContext = trace.setSpan(context.active(), span);
+      const traceContext = context.active();
       let caught: unknown;
       try {
         await provisionPreview(
-          { ...deps, phaseTimer: phases.timer, tracer, traceContext },
+          { ...deps, phaseTimer: phases.timer, traceContext },
           input,
         );
       } catch (err) {

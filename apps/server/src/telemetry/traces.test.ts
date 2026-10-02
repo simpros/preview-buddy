@@ -12,7 +12,7 @@ import {
   type TestApp,
 } from "../http/test-helpers.ts";
 import { createTelemetryReporter } from "./reporter.ts";
-import { createTraces, shouldTraceRequest, RedactingSpanProcessor, TRACER_NAME } from "./traces.ts";
+import { createTraces, shouldTraceRequest, createRedactingSpanProcessor, TRACER_NAME } from "./traces.ts";
 import { startTelemetryReceiver, tempTelemetryDir, waitForTelemetry, type TelemetryReceiver } from "./test-receiver.ts";
 import type { TelemetryDeployHook } from "./contract.ts";
 
@@ -119,19 +119,27 @@ type SpanHarness = {
   cleanup: () => Promise<void>;
 };
 
-async function setupSpanHarness(): Promise<SpanHarness> {
+function installSpanProvider(): {
+  exporter: InMemorySpanExporter;
+  provider: BasicTracerProvider;
+} {
   const exporter = new InMemorySpanExporter();
-  const provider = new BasicTracerProvider({ spanProcessors: [new RedactingSpanProcessor(), new SimpleSpanProcessor(exporter)] });
+  const provider = new BasicTracerProvider({
+    spanProcessors: [createRedactingSpanProcessor(), new SimpleSpanProcessor(exporter)],
+  });
   context.setGlobalContextManager(new AsyncHooksContextManager());
   trace.setGlobalTracerProvider(provider);
-  const tracer = provider.getTracer(TRACER_NAME);
+  return { exporter, provider };
+}
+
+async function setupSpanHarness(): Promise<SpanHarness> {
+  const { exporter, provider } = installSpanProvider();
   setRequired();
   const testApp = await createTestApp({
     postgres: undefined,
     docker: createFakeDockerClient({
       exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
     }),
-    tracer,
   });
   const { body } = await postDeployToken(testApp, {
     canonical_repo_id: "https://github.com/org/repo",
@@ -368,21 +376,17 @@ describe("otlp export", () => {
   test("closed port and 500 never break a deploy", async () => {
     // Closed port.
     {
-      const exporter = new InMemorySpanExporter();
-      const provider = new BasicTracerProvider({ spanProcessors: [new RedactingSpanProcessor(), new SimpleSpanProcessor(exporter)] });
-      context.setGlobalContextManager(new AsyncHooksContextManager());
-  trace.setGlobalTracerProvider(provider);
-      const tracer = provider.getTracer(TRACER_NAME);
+      const { provider } = installSpanProvider();
       setRequired();
       process.env.SPROUT_OTLP_ENDPOINT = "http://127.0.0.1:1/v1/traces";
       const config = loadConfig();
-      // createTraces would try to export to closed port in background; use injected tracer for deploy.
+      // Deploy spans flow through the global provider; the dead endpoint is
+      // never wired in, so export cannot touch the request path.
       const testApp = await createTestApp({
         postgres: undefined,
         docker: createFakeDockerClient({
           exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
         }),
-        tracer,
       });
       try {
         const { body } = await postDeployToken(testApp, {
@@ -417,11 +421,7 @@ describe("otlp export", () => {
           return new Response("nope", { status: 500 });
         },
       });
-      const exporter = new InMemorySpanExporter();
-      const provider = new BasicTracerProvider({ spanProcessors: [new RedactingSpanProcessor(), new SimpleSpanProcessor(exporter)] });
-      context.setGlobalContextManager(new AsyncHooksContextManager());
-  trace.setGlobalTracerProvider(provider);
-      const tracer = provider.getTracer(TRACER_NAME);
+      const { provider } = installSpanProvider();
       try {
         setRequired();
         process.env.SPROUT_OTLP_ENDPOINT = `http://127.0.0.1:${server.port}/v1/traces`;
@@ -430,7 +430,6 @@ describe("otlp export", () => {
           docker: createFakeDockerClient({
             exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
           }),
-          tracer,
         });
         try {
           const { body } = await postDeployToken(testApp, {
@@ -500,11 +499,10 @@ describe("otlp export", () => {
   test("upstream channel still delivers with unreachable trace endpoint", async () => {
     const receiver = await startTelemetryReceiver();
     const tmp = await tempTelemetryDir();
-    const exporter = new InMemorySpanExporter();
-    const provider = new BasicTracerProvider({ spanProcessors: [new RedactingSpanProcessor(), new SimpleSpanProcessor(exporter)] });
-    context.setGlobalContextManager(new AsyncHooksContextManager());
-  trace.setGlobalTracerProvider(provider);
-    const tracer = provider.getTracer(TRACER_NAME);
+    const { provider } = installSpanProvider();
+    // Bound before the deploy runs, so the deploy's own report proves the
+    // upstream transport is unaffected by the dead trace endpoint.
+    const holder: { hook?: TelemetryDeployHook } = {};
     try {
       setRequired();
       process.env.SPROUT_TELEMETRY_ENDPOINT = receiver.url;
@@ -516,18 +514,15 @@ describe("otlp export", () => {
         docker: createFakeDockerClient({
           exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
         }),
-        tracer,
         telemetry: {
-          reportDeployOutcome: (outcome) => reporter?.reportDeployOutcome(outcome),
+          reportDeployOutcome: (outcome) => holder.hook?.reportDeployOutcome(outcome),
         },
       });
-      let reporter: ReturnType<typeof createTelemetryReporter> | undefined;
-      reporter = createTelemetryReporter({ config, db: testApp.db, stateDbPath: tmp.stateDbPath });
+      holder.hook = createTelemetryReporter({ config, db: testApp.db, stateDbPath: tmp.stateDbPath });
       const { body } = await postDeployToken(testApp, {
         canonical_repo_id: "https://github.com/org/repo",
         slug: "myapp",
       });
-      // Rebind telemetry to the live reporter by recreating app routes? Instead report directly:
       const res = await postDeployAndSettle(testApp, body.token as string, {
         canonical_repo_id: "https://github.com/org/repo",
         pr_id: 42,
@@ -537,16 +532,6 @@ describe("otlp export", () => {
         db: { provider: "sqlite" },
       });
       expect(res.outcome).toBe("ready");
-      // The harness telemetry delegate above was undefined at deploy time, so report manually
-      // to prove the upstream transport itself is unaffected by the dead trace endpoint.
-      const hook: TelemetryDeployHook = reporter;
-      hook.reportDeployOutcome({
-        outcome: "running",
-        plan: "full_replace",
-        seeded: false,
-        durationMs: 1,
-        phaseMs: {},
-      });
       await waitForTelemetry(() => receiver.captured.length > 0);
       expect(receiver.captured.length).toBeGreaterThan(0);
       await testApp.cleanup();
@@ -564,10 +549,7 @@ describe("otlp export", () => {
 
 describe("http spans", () => {
   test("/healthz exports no span; POST /v1/previews exports renamed span with status", async () => {
-    const exporter = new InMemorySpanExporter();
-    const provider = new BasicTracerProvider({ spanProcessors: [new RedactingSpanProcessor(), new SimpleSpanProcessor(exporter)] });
-    context.setGlobalContextManager(new AsyncHooksContextManager());
-    trace.setGlobalTracerProvider(provider);
+    const { exporter, provider } = installSpanProvider();
     try {
       const plugin = opentelemetry({
         serviceName: TRACER_NAME,
@@ -576,8 +558,7 @@ describe("http spans", () => {
       const testApp = await createTestApp({
         postgres: undefined,
         docker: createFakeDockerClient(),
-        tracesPlugin: plugin as never,
-        tracer: provider.getTracer(TRACER_NAME),
+        tracesPlugin: plugin,
       });
       try {
         exporter.reset();
@@ -617,10 +598,7 @@ describe("http spans", () => {
   });
 
   test("http spans never carry request headers or bodies", async () => {
-    const exporter = new InMemorySpanExporter();
-    const provider = new BasicTracerProvider({ spanProcessors: [new RedactingSpanProcessor(), new SimpleSpanProcessor(exporter)] });
-    context.setGlobalContextManager(new AsyncHooksContextManager());
-    trace.setGlobalTracerProvider(provider);
+    const { exporter, provider } = installSpanProvider();
     try {
       const plugin = opentelemetry({
         serviceName: TRACER_NAME,
@@ -631,8 +609,7 @@ describe("http spans", () => {
         docker: createFakeDockerClient({
           exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
         }),
-        tracesPlugin: plugin as never,
-        tracer: provider.getTracer(TRACER_NAME),
+        tracesPlugin: plugin,
       });
       try {
         const headerCanary = "http-header-canary-4b1e-secret";
@@ -676,6 +653,138 @@ describe("http spans", () => {
         );
         expect(serialized).not.toContain(headerCanary);
         expect(serialized).not.toContain("http-body-canary-4b1e-secret");
+      } finally {
+        await testApp.cleanup();
+      }
+    } finally {
+      await provider.shutdown().catch(() => {});
+      try {
+        trace.disable();
+      } catch {
+      }
+      try {
+        context.disable();
+      } catch {
+      }
+    }
+  });
+
+  test("response bodies, headers and cookies are redacted at set time", async () => {
+    const { exporter, provider } = installSpanProvider();
+    try {
+      const tracer = trace.getTracer(TRACER_NAME);
+      const bodyCanary = "response-body-canary-9c2d-secret";
+      const headerCanary = "response-header-canary-9c2d-secret";
+      const cookieCanary = "response-cookie-canary-9c2d-secret";
+      await tracer.startActiveSpan("redaction.probe", async (span) => {
+        span.setAttribute("http.response.body", `{"token":"${bodyCanary}"}`);
+        span.setAttributes({
+          "http.response.header.set-cookie": cookieCanary,
+          "http.request.header.authorization": headerCanary,
+          "http.request.body": "should-not-appear",
+          "sprout.slug": "myapp",
+        });
+        span.end();
+      });
+      const serialized = JSON.stringify(
+        exporter.getFinishedSpans().map((s) => ({ name: s.name, attributes: s.attributes })),
+      );
+      expect(serialized).not.toContain(bodyCanary);
+      expect(serialized).not.toContain(headerCanary);
+      expect(serialized).not.toContain(cookieCanary);
+      expect(serialized).not.toContain("should-not-appear");
+      // Names stay so backends keep the shape; the safe attribute survives.
+      expect(serialized).toContain("http.response.body");
+      expect(serialized).toContain("myapp");
+    } finally {
+      await provider.shutdown().catch(() => {});
+      try {
+        trace.disable();
+      } catch {
+      }
+    }
+  });
+
+  test("admin token issuance never exports the raw token", async () => {
+    const { exporter, provider } = installSpanProvider();
+    try {
+      const plugin = opentelemetry({
+        serviceName: TRACER_NAME,
+        checkIfShouldTrace: shouldTraceRequest,
+      });
+      const testApp = await createTestApp({
+        postgres: undefined,
+        docker: createFakeDockerClient(),
+        tracesPlugin: plugin,
+      });
+      try {
+        const { body } = await postDeployToken(testApp, {
+          canonical_repo_id: "https://github.com/org/repo",
+          slug: "myapp",
+        });
+        const raw = body.token as string;
+        expect(typeof raw).toBe("string");
+        expect(raw.length).toBeGreaterThan(0);
+        await new Promise<void>((r) => setTimeout(r, 200));
+        const serialized = JSON.stringify(
+          exporter.getFinishedSpans().map((s) => ({ name: s.name, attributes: s.attributes })),
+        );
+        expect(serialized).not.toContain(raw);
+      } finally {
+        await testApp.cleanup();
+      }
+    } finally {
+      await provider.shutdown().catch(() => {});
+      try {
+        trace.disable();
+      } catch {
+      }
+      try {
+        context.disable();
+      } catch {
+      }
+    }
+  });
+
+  test("preview.deploy is a root trace detached from the accepting request", async () => {
+    const { exporter, provider } = installSpanProvider();
+    try {
+      const plugin = opentelemetry({
+        serviceName: TRACER_NAME,
+        checkIfShouldTrace: shouldTraceRequest,
+      });
+      const testApp = await createTestApp({
+        postgres: undefined,
+        docker: createFakeDockerClient({
+          exposedPorts: { ["ghcr.io/org/myapp:sha-abc"]: 3000 },
+        }),
+        tracesPlugin: plugin,
+      });
+      try {
+        const { body } = await postDeployToken(testApp, {
+          canonical_repo_id: "https://github.com/org/repo",
+          slug: "myapp",
+        });
+        const res = await postDeployAndSettle(testApp, body.token as string, {
+          canonical_repo_id: "https://github.com/org/repo",
+          pr_id: 42,
+          slug: "myapp",
+          hostname: "pr-42.myapp.preview.example.com",
+          app_image: "ghcr.io/org/myapp:sha-abc",
+          db: { provider: "sqlite" },
+        });
+        expect(res.outcome).toBe("ready");
+        for (let i = 0; i < 200 && !exporter.getFinishedSpans().some((s) => s.name === "preview.deploy"); i++) {
+          await new Promise<void>((r) => setTimeout(r, 25));
+        }
+        const spans = exporter.getFinishedSpans();
+        const deploy = spans.find((s) => s.name === "preview.deploy");
+        expect(deploy).toBeDefined();
+        // A root span has no parent; the HTTP accept span lives in its own trace.
+        expect(deploy!.parentSpanContext).toBeUndefined();
+        const http = spans.find((s) => s.name === "POST /v1/deploy");
+        expect(http).toBeDefined();
+        expect(http!.spanContext().traceId).not.toBe(deploy!.spanContext().traceId);
       } finally {
         await testApp.cleanup();
       }

@@ -1,3 +1,3 @@
-export type Result<T> =
+export type Result<T, E extends string = string> =
   | { ok: true; value: T }
-  | { ok: false; status: number; error: string; detail?: string };
+  | { ok: false; status: number; error: E; detail?: string };

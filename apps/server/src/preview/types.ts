@@ -44,7 +44,7 @@ export type TeardownDeps = {
   dataVolumes: PreviewDataVolumes;
 };
 
-import type { Context, Tracer } from "@opentelemetry/api";
+import type { Context } from "@opentelemetry/api";
 
 export type LifecycleDeps = {
   db: StateDb;
@@ -57,9 +57,11 @@ export type LifecycleDeps = {
    * the preview up.
    */
   phaseTimer?: PhaseTimer;
-  /** Deploy trace provider; defaults to the global tracer (no-op when off). */
-  tracer?: Tracer;
-  /** Explicit parent context for phase spans; survives lock hops. */
+  /**
+   * Explicit parent context for phase spans. The lock queue runs waiters
+   * off a chained promise, so AsyncLocalStorage no longer carries the
+   * deploy span there — without this the phase spans would orphan.
+   */
   traceContext?: Context;
 };
 

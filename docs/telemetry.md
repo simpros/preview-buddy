@@ -170,5 +170,5 @@ processor, never the request path, with no signal handling — a slow or dead
 backend cannot block or crash the gateway.
 
 Privacy: the operator's own values go to the operator's own backend — and
-still never `appEnv`, DSNs, tokens, request bodies or headers, because a
-trace backend is a second copy of whatever ends up in it.
+still never `appEnv`, DSNs, tokens, request or response bodies, headers, or
+cookies, because a trace backend is a second copy of whatever ends up in it.
