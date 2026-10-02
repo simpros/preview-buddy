@@ -22,5 +22,7 @@ export function startServer(deps: ServerDeps) {
     app: deps.app,
     dataVolumes: deps.dataVolumes,
     materialization: deps.materialization,
+    dashboard: deps.config.dashboard,
+    extraGitlabHosts: deps.config.extraGitlabHosts,
   }).listen(deps.config.port);
 }

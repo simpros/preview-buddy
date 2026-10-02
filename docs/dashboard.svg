@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="375" height="640" viewBox="0 0 375 640" font-family="system-ui, -apple-system, sans-serif">
+  <rect width="375" height="640" fill="#ffffff"/>
+  <rect x="0" y="0" width="375" height="640" fill="none" stroke="#cccccc"/>
+  <text x="16" y="34" font-size="20" font-weight="700" fill="#111111">Sprout previews</text>
+  <text x="16" y="54" font-size="12" fill="#666666">2 live previews. Operator only: hostnames listed here are internal.</text>
+
+  <g font-size="12">
+    <rect x="16" y="68" width="343" height="248" rx="6" fill="#ffffff" stroke="#bbbbbb"/>
+    <text x="28" y="92" font-size="10" font-weight="700" fill="#888888">PREVIEW</text>
+    <text x="28" y="108" fill="#111111">myapp <tspan fill="#1a56db">#42</tspan></text>
+    <text x="28" y="130" font-size="10" font-weight="700" fill="#888888">STATUS</text>
+    <text x="28" y="146" fill="#111111">running</text>
+    <text x="28" y="168" font-size="10" font-weight="700" fill="#888888">URL</text>
+    <text x="28" y="184" fill="#1a56db">pr-42.myapp.preview.example.com</text>
+    <text x="28" y="206" font-size="10" font-weight="700" fill="#888888">DATABASE</text>
+    <text x="28" y="222" fill="#111111">sprout_myapp_pr42 <tspan fill="#888888">postgres</tspan></text>
+    <text x="28" y="244" font-size="10" font-weight="700" fill="#888888">CREATED</text>
+    <text x="28" y="260" fill="#111111">2026-10-01T08:12:44Z</text>
+    <text x="28" y="282" font-size="10" font-weight="700" fill="#888888">OUTCOME</text>
+    <text x="28" y="298" fill="#111111">healthy</text>
+  </g>
+
+  <g font-size="12">
+    <rect x="16" y="328" width="343" height="248" rx="6" fill="#ffffff" stroke="#bbbbbb"/>
+    <text x="28" y="352" font-size="10" font-weight="700" fill="#888888">PREVIEW</text>
+    <text x="28" y="368" fill="#111111">glapp <tspan fill="#1a56db">#7</tspan></text>
+    <text x="28" y="390" font-size="10" font-weight="700" fill="#888888">STATUS</text>
+    <text x="28" y="406" fill="#111111">failed</text>
+    <text x="28" y="428" font-size="10" font-weight="700" fill="#888888">URL</text>
+    <text x="28" y="444" fill="#1a56db">pr-7.glapp.preview.example.com</text>
+    <text x="28" y="466" font-size="10" font-weight="700" fill="#888888">DATABASE</text>
+    <text x="28" y="482" fill="#111111">sprout_glapp_pr7 <tspan fill="#888888">postgres</tspan></text>
+    <text x="28" y="504" font-size="10" font-weight="700" fill="#888888">CREATED</text>
+    <text x="28" y="520" fill="#111111">2026-10-01T09:03:10Z</text>
+    <text x="28" y="542" font-size="10" font-weight="700" fill="#888888">OUTCOME</text>
+    <text x="28" y="558" fill="#111111">preview_image_pull_failed</text>
+  </g>
+
+  <text x="16" y="610" font-size="11" fill="#888888">Representative rendering at 375 px width.</text>
+</svg>

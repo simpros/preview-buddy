@@ -470,6 +470,40 @@ host ports for local smoke. In production, treat the mailbox as internal:
   never deliver for real — keep it unless the fleet has a dedicated,
   clearly test-only domain.
 
+## Dashboard (read-only, opt-in)
+
+The gateway can serve a single human-readable page of live previews at
+`GET /dashboard` — one row per preview with repository slug, PR id linked to
+the forge PR, status, clickable preview URL, database name and provider,
+created and last-deploy timestamps, mail identity when mail is configured,
+and the last deploy outcome or error code. It renders from the same state the
+`GET /v1/previews` read surface reads, costs one state query per request
+regardless of preview count (no per-preview container inspection), and ships
+as server-rendered HTML with inline styles only: no frontend toolchain, no
+JavaScript, no external asset fetch.
+
+Operator-only: the page lists every preview hostname on the gateway, so it
+is off by default and protected by its own HTTP basic credentials — never
+shared links, never unauthenticated. Enabling it without credentials fails
+gateway boot instead of serving a public page.
+
+```bash
+SPROUT_DASHBOARD_ENABLED=true
+SPROUT_DASHBOARD_AUTH=basic
+SPROUT_DASHBOARD_USER=operator
+SPROUT_DASHBOARD_PASSWORD=change-me-dashboard
+# Optional: serve only behind your own proxy hostname + certificate.
+# Requests to any other Host get 404, as if the flag were off.
+# SPROUT_DASHBOARD_HOST=previews-status.example.com
+```
+
+With the flag unset or `false`, `/dashboard` is `404` and the response
+surface is unchanged. The page is read-only by construction: only `GET` is
+reachable, and it carries no write controls and no token, password, or
+credential material.
+
+![Dashboard at phone width](dashboard.svg)
+
 ## Env var reference
 
 Canonical compose keys live in [`compose.env.example`](../compose.env.example).
@@ -512,6 +546,10 @@ DSN from the raw password in YAML.
 | `SPROUT_FORWARDAUTH_ADDRESS` | no | Traefik-reachable forwardAuth URL (required with middleware name) |
 | `SPROUT_PREVIEW_AUTH_SECRET` | no | HMAC root for `preview.auth: link` tokens (required with address) |
 | `SPROUT_PREVIEW_AUTH_ADDRESS` | no | Gateway in-network forwardAuth URL, e.g. `http://gateway:7331/v1/internal/preview-auth` (required with secret) |
+| `SPROUT_DASHBOARD_ENABLED` | no | `true` serves read-only `GET /dashboard`; default `false` (route absent, requests `404`) |
+| `SPROUT_DASHBOARD_HOST` | no | Optional hostname that alone may serve the page (own proxy host + certificate); other hosts `404` |
+| `SPROUT_DASHBOARD_AUTH` | no | Protection model; empty or `basic` (anything else fails boot) |
+| `SPROUT_DASHBOARD_USER` / `SPROUT_DASHBOARD_PASSWORD` | dashboard | HTTP basic credentials; enabling without both fails boot |
 | `SPROUT_GITHUB_TOKEN` / `SPROUT_GITLAB_TOKEN` | no | Sweep forge PATs (may be blank at boot) |
 | `SPROUT_FORGE_HOSTS` | no | Optional `host=gitlab` pairs for self-managed GitLab |
 
