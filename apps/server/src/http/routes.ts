@@ -38,7 +38,7 @@ export type RouteDeps = {
   materialization: PreviewMaterializationCtx;
   dashboard?: DashboardConfig;
   extraGitlabHosts?: ReadonlySet<string>;
-  telemetry?: TelemetryDeployHook;
+  telemetry: TelemetryDeployHook;
 };
 
 function stubNotImplemented({

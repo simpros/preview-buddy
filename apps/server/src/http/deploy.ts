@@ -55,6 +55,8 @@ import {
   acceptAsyncDeploy,
   runAsyncDeploy,
 } from "../preview/async-deploy.ts";
+import { parseBringUpPlan } from "../preview/bring-up.ts";
+import type { TelemetryDeployHook } from "../telemetry/contract.ts";
 import {
   validatePreviewIdentity,
   validateServiceName,
@@ -499,6 +501,7 @@ function unprocessable(
 export function deploy(
   deps: LifecycleDeps & {
     materialization: PreviewMaterializationCtx;
+    telemetry: TelemetryDeployHook;
   },
 ) {
   return async ({
@@ -637,7 +640,10 @@ export function deploy(
 
     set.status = 202;
     if (accepted.value.launch) {
-      void runAsyncDeploy(deps, input);
+      // The claimed row carries the stored plan, so the background deploy
+      // reports it without a second row read.
+      const plan = parseBringUpPlan(accepted.value.row.bringUpPlan);
+      void runAsyncDeploy(deps, input, plan);
     }
     return presentPreviewSnapshot(
       accepted.value.row,

@@ -2,14 +2,18 @@ import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { and, eq } from "drizzle-orm";
 import { utcIsoNow } from "./row.ts";
-import type { BringUpPlan } from "./types.ts";
+import type {
+  BringUpPlan,
+  PreviewFailureCode,
+  PreviewFailureFamily,
+} from "./types.ts";
 
 /** Must run under withPreviewLock; skips removing/removed rows. */
 export async function markPreviewFailed(
   db: StateDb,
   repo: string,
   prId: number,
-  error: string,
+  error: PreviewFailureCode,
   detail?: string,
 ): Promise<void> {
   await db
@@ -28,16 +32,14 @@ export async function markPreviewFailed(
     );
 }
 
-export type StickyFailureFamily = "seed_incomplete" | "post_healthy";
-
 export type StickyPreviewFailure = {
-  error: string;
-  family: StickyFailureFamily;
+  error: PreviewFailureCode;
+  family: PreviewFailureFamily;
   detail?: string | null;
   seedLog?: string | null;
 };
 
-function recoveryPlanFor(family: StickyFailureFamily): BringUpPlan {
+function recoveryPlanFor(family: PreviewFailureFamily): BringUpPlan {
   switch (family) {
     case "seed_incomplete":
       return "seed_resume";

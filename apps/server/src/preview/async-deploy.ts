@@ -1,5 +1,4 @@
 import type { Result } from "./result.ts";
-import { parseBringUpPlan } from "./bring-up.ts";
 import { captureDeployOutcome } from "./deploy-outcome.ts";
 import {
   claimDeployIntent,
@@ -68,25 +67,17 @@ export async function acceptAsyncDeploy(
 }
 
 export type AsyncDeployDeps = LifecycleDeps & {
-  telemetry?: TelemetryDeployHook;
+  telemetry: TelemetryDeployHook;
 };
 
 export async function runAsyncDeploy(
   deps: AsyncDeployDeps,
   input: ProvisionInput,
+  plan: BringUpPlan,
 ): Promise<void> {
   const key = previewKey(input.repo, input.prId);
   const startedAt = Date.now();
   const phases = createPhaseCollector();
-  // The stored bring-up plan and the telemetry plan share one vocabulary,
-  // so the preview parser feeds the deploy report with no telemetry import.
-  let plan: BringUpPlan = "full_replace";
-  try {
-    const intent = await getPreviewRow(deps.db, input.repo, input.prId);
-    plan = parseBringUpPlan(intent?.bringUpPlan ?? null);
-  } catch {
-    // The stored plan is advisory; a lost row read keeps the default.
-  }
   try {
     await provisionPreview({ ...deps, phaseTimer: phases.timer }, input);
   } catch (err) {
@@ -107,19 +98,16 @@ export async function runAsyncDeploy(
     } catch {
     }
   } finally {
-    const telemetry = deps.telemetry;
-    const outcome = telemetry
-      ? await captureDeployOutcome(deps.db, {
-        repo: input.repo,
-        prId: input.prId,
-        plan,
-        startedAt,
-        phaseMs: phases.phaseMs,
-      })
-      : null;
+    const outcome = await captureDeployOutcome(deps.db, {
+      repo: input.repo,
+      prId: input.prId,
+      plan,
+      startedAt,
+      phaseMs: phases.phaseMs,
+    });
     inFlightDeploys.delete(key);
     // exportEvent never rejects, so there is nothing to catch here.
-    if (telemetry && outcome) telemetry.reportDeployOutcome(outcome);
+    if (outcome) deps.telemetry.reportDeployOutcome(outcome);
   }
 }
 

@@ -20,6 +20,7 @@ import {
 import type {
   BringUpPlan,
   LifecycleDeps,
+  PreviewFailureCode,
   PreviewSnapshot,
   ProvisionInput,
 } from "./types.ts";
@@ -64,7 +65,10 @@ async function ensureDatabase(
   deps: LifecycleDeps,
   row: PreviewRow,
   input: ProvisionInput,
-): Promise<Result<true>> {
+): Promise<
+  | { ok: true; value: true }
+  | { ok: false; status: 500; error: PreviewFailureCode }
+> {
   const provider = input.plan.provider;
   const desiredDbName = input.plan.dbName;
   const remint = needsBackendRemint(row, provider);
@@ -113,7 +117,7 @@ async function ensureDatabase(
 async function failUnhealthyAttach(
   deps: LifecycleDeps,
   row: Pick<PreviewRow, "slug" | "prId" | "canonicalRepoId">,
-  error: string,
+  error: PreviewFailureCode,
 ): Promise<Result<never>> {
   try {
     await deps.app.remove(row.slug, row.prId);
@@ -347,7 +351,7 @@ async function ensureThenAttach(
 async function pullImageOrFail(
   app: PreviewAppOps,
   image: string,
-  error: string,
+  error: PreviewFailureCode,
 ): Promise<Result<true>> {
   try {
     await app.pullImage(image);

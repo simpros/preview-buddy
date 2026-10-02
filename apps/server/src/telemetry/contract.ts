@@ -8,12 +8,6 @@ import type { BringUpPlan, PreviewPhaseMs } from "../preview/types.ts";
  * can never become a real cycle.
  */
 
-/** Shared with the preview domain: the stored plan feeds the report unchanged. */
-export type TelemetryPlan = BringUpPlan;
-
-/** Shared with the preview domain: the phase stopwatch feeds the report unchanged. */
-export type TelemetryPhaseMs = PreviewPhaseMs;
-
 /**
  * Deploy-report contract: a success never carries failure fields, a failure
  * always carries both. Callers build one variant; the builder maps it onto
@@ -22,17 +16,17 @@ export type TelemetryPhaseMs = PreviewPhaseMs;
 export type TelemetryDeployOutcome =
   | {
     outcome: "running";
-    plan: TelemetryPlan;
+    plan: BringUpPlan;
     seeded: boolean;
     durationMs: number;
-    phaseMs: TelemetryPhaseMs;
+    phaseMs: PreviewPhaseMs;
   }
   | {
     outcome: "failed";
-    plan: TelemetryPlan;
+    plan: BringUpPlan;
     seeded: boolean;
     durationMs: number;
-    phaseMs: TelemetryPhaseMs;
+    phaseMs: PreviewPhaseMs;
     failureClass: string | null;
     failureFamily: string | null;
   };
@@ -40,4 +34,13 @@ export type TelemetryDeployOutcome =
 /** Deploy-path hook: runAsyncDeploy reports through this, never the reporter. */
 export type TelemetryDeployHook = {
   reportDeployOutcome: (outcome: TelemetryDeployOutcome) => void;
+};
+
+/**
+ * Explicit no-op for deploy paths constructed without telemetry. The hook is
+ * required on the deploy-side deps so the dependency is visible in the type;
+ * this is the single default both edges (prod server, test helper) use.
+ */
+export const NO_TELEMETRY: TelemetryDeployHook = {
+  reportDeployOutcome() {},
 };

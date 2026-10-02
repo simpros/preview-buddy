@@ -5,11 +5,11 @@ import {
   PREVIEW_FAILURE_CODES,
   PREVIEW_FAILURE_FAMILIES,
   PREVIEW_PHASES,
+  type BringUpPlan,
+  type PreviewPhaseMs,
 } from "../preview/types.ts";
 import type {
   TelemetryDeployOutcome,
-  TelemetryPhaseMs,
-  TelemetryPlan,
 } from "./contract.ts";
 
 export type { TelemetryDeployOutcome } from "./contract.ts";
@@ -57,18 +57,18 @@ export type TelemetryDeployEvent = TelemetryEnvelope & (
   | {
     event: "deploy";
     outcome: "running";
-    plan: TelemetryPlan;
+    plan: BringUpPlan;
     seeded: boolean;
     duration_ms: number;
-    phase_ms: TelemetryPhaseMs;
+    phase_ms: PreviewPhaseMs;
   }
   | {
     event: "deploy";
     outcome: "failed";
-    plan: TelemetryPlan;
+    plan: BringUpPlan;
     seeded: boolean;
     duration_ms: number;
-    phase_ms: TelemetryPhaseMs;
+    phase_ms: PreviewPhaseMs;
     failure_class: string;
     failure_family: string | null;
   }
@@ -253,8 +253,8 @@ function sanitizeFailureFamily(family: string | null): string | null {
 }
 
 /** Only the closed-vocabulary phase keys travel; everything else is dropped. */
-function phaseMsOnly(phaseMs: TelemetryPhaseMs): TelemetryPhaseMs {
-  const out: TelemetryPhaseMs = {};
+function phaseMsOnly(phaseMs: PreviewPhaseMs): PreviewPhaseMs {
+  const out: PreviewPhaseMs = {};
   for (const phase of PREVIEW_PHASES) {
     const value = phaseMs[phase];
     if (typeof value === "number" && Number.isFinite(value)) {
