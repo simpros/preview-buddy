@@ -162,6 +162,8 @@ describe("deploy artifacts agree", () => {
       { file: "docs/operator-deploy.md", version: "1.4.0", marker: "Bun" },
       // Illustrative older tag in the inputs table.
       { file: "templates/README.md", version: "0.6.0", marker: "e.g." },
+      // Gateway runtime in the telemetry payload samples.
+      { file: "docs/telemetry.md", version: "1.4.0", marker: "bun" },
     ];
     async function unexcusedPins(rel: string): Promise<string[]> {
       const text = await Bun.file(join(repoRoot, rel)).text();

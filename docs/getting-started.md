@@ -103,6 +103,8 @@ Full wiring, variables, reset, and notes in [CI integration](ci-integration.md).
 - Close / merge: `sprout ci teardown` (idempotent).
 - Manual wipe + redeploy: `sprout ci reset` (data wiped).
 - Sweep recovers if teardown is missed.
+- The gateway reports anonymous [install telemetry](telemetry.md) by default
+  (`SPROUT_TELEMETRY=off` stops it) — operator concern, nothing to do here.
 
 ## Next step
 
@@ -119,3 +121,4 @@ then `sprout doctor` and a first `sprout ci preview` run from CI.
 - [Operator deploy](operator-deploy.md) — gateway stack
 - [CLI reference](cli-reference.md) — every command
 - [Troubleshooting](troubleshooting.md) — error catalogue
+- [Telemetry](telemetry.md) — anonymous install reporting, off switch
