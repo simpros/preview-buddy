@@ -18,8 +18,8 @@ export {
   isWorktreeInputError,
 } from "./errors.ts";
 export {
-  parseResetMarkerToken,
-} from "./reset-marker.ts";
+  assertWorktreeObjectName,
+} from "./worktree-names.ts";
 export {
   dropWorktreeDb,
   provisionWorktreeDb,
