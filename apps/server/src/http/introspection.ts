@@ -53,7 +53,7 @@ export type DropBody = {
 export function listPreviews(
   db: StateDb,
   mailboxUrl: string | undefined,
-  legacyTtlMs: number | null,
+  legacyTtlMs: number,
 ) {
   return async ({ set }: { set: { status?: number | string } }) => {
     const rows = await db

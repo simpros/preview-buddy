@@ -178,7 +178,7 @@ describe("server governance policy", () => {
         createdAtMs: base,
         ttlMs: 7 * 86400_000,
         idleMs: null,
-        legacyTtlMs: null,
+        legacyTtlMs: 72 * 3600_000,
       }),
     ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
     expect(
@@ -187,7 +187,7 @@ describe("server governance policy", () => {
         createdAtMs: base,
         ttlMs: 7 * 86400_000,
         idleMs: 2 * 3600_000,
-        legacyTtlMs: null,
+        legacyTtlMs: 72 * 3600_000,
       }),
     ).toEqual({ expiresAtMs: base + 2 * 3600_000, bound: "idle" });
     expect(
@@ -196,7 +196,7 @@ describe("server governance policy", () => {
         createdAtMs: base,
         ttlMs: 7 * 86400_000,
         idleMs: null,
-        legacyTtlMs: null,
+        legacyTtlMs: 72 * 3600_000,
       }),
     ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
     expect(
@@ -205,7 +205,7 @@ describe("server governance policy", () => {
         createdAtMs: null,
         ttlMs: 7 * 86400_000,
         idleMs: null,
-        legacyTtlMs: null,
+        legacyTtlMs: 72 * 3600_000,
       }),
     ).toEqual({ expiresAtMs: null, bound: null });
     expect(
@@ -214,7 +214,7 @@ describe("server governance policy", () => {
         createdAtMs: base,
         ttlMs: null,
         idleMs: null,
-        legacyTtlMs: null,
+        legacyTtlMs: 72 * 3600_000,
       }),
     ).toEqual({ expiresAtMs: null, bound: null });
   });

@@ -14,6 +14,7 @@ import {
   previewAuthNotConfiguredDetail,
   REQUIRED_ENV,
 } from "./config.ts";
+import { testConfig } from "./config.fixtures.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
 
 const TEST_POSTGRES_VALUES: Record<(typeof POSTGRES_REQUIRED_ENV)[number], string> = {
@@ -376,86 +377,55 @@ describe("loadConfig", () => {
   });
 
   test("configSummary marks unset forge tokens", () => {
-    const summary = configSummary({
-      postgres: {
-        url: "postgres://admin@localhost:5432/postgres",
-        host: "postgres",
-        port: 5432,
-        user: "sprout_preview",
-        password: "x",
-        network: "postgres",
-      },
-      traefikNetwork: "traefik",
-      registryPullAuth: { byHost: new Map() },
-      githubToken: "",
-      gitlabToken: "",
-      extraGitlabHosts: new Set(),
-      ttlHours: 72,
-      legacyTtlMs: 72 * 3600_000,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      dashboard: { enabled: false, user: "", password: "" },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-      previewTtlMs: null,
-      previewIdleMs: null,
-      maxPreviewsPerRepo: null,
-      maxPreviews: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const summary = configSummary(
+      testConfig({
+        postgres: {
+          url: "postgres://admin@localhost:5432/postgres",
+          host: "postgres",
+          port: 5432,
+          user: "sprout_preview",
+          password: "x",
+          network: "postgres",
+        },
+      }),
+    );
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
   });
 
   test("configSummary redacts secrets", () => {
-    const summary = configSummary({
-      postgres: {
-        url: "postgres://admin:sekrit@localhost:5432/postgres",
-        host: "postgres",
-        port: 5432,
-        user: "sprout_preview",
-        password: "preview-secret",
-        network: "postgres",
-      },
-      traefikNetwork: "traefik",
-      registryPullAuth: {
-        byHost: new Map([
-          ["ghcr.io", { username: "gh", password: "secret" }],
-        ]),
-        fallback: { username: "puller", password: "registry-secret" },
-      },
-      githubToken: "gh",
-      gitlabToken: "gl",
-      extraGitlabHosts: new Set(["git.example.com"]),
-      ttlHours: 72,
-      legacyTtlMs: 72 * 3600_000,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      traefikTls: { entrypoints: "https", certResolver: "letsencrypt" },
-      traefikForwardAuth: {
-        middleware: "voidauth",
-        address: "https://auth.example.com/forward",
-      },
-      dashboard: {
-        enabled: true,
-        host: "dashboard.internal",
-        user: "op",
-        password: "pw",
-      },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-      previewTtlMs: null,
-      previewIdleMs: null,
-      maxPreviewsPerRepo: null,
-      maxPreviews: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const summary = configSummary(
+      testConfig({
+        postgres: {
+          url: "postgres://admin:sekrit@localhost:5432/postgres",
+          host: "postgres",
+          port: 5432,
+          user: "sprout_preview",
+          password: "preview-secret",
+          network: "postgres",
+        },
+        registryPullAuth: {
+          byHost: new Map([
+            ["ghcr.io", { username: "gh", password: "secret" }],
+          ]),
+          fallback: { username: "puller", password: "registry-secret" },
+        },
+        githubToken: "gh",
+        gitlabToken: "gl",
+        extraGitlabHosts: new Set(["git.example.com"]),
+        traefikTls: { entrypoints: "https", certResolver: "letsencrypt" },
+        traefikForwardAuth: {
+          middleware: "voidauth",
+          address: "https://auth.example.com/forward",
+        },
+        dashboard: {
+          enabled: true,
+          host: "dashboard.internal",
+          user: "op",
+          password: "pw",
+        },
+      }),
+    );
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
     expect(summary.previewPgPassword).toBe("[set]");
@@ -474,36 +444,18 @@ describe("loadConfig", () => {
   });
 
   test("configSummary marks anonymous registry auth", () => {
-    const summary = configSummary({
-      postgres: {
-        url: "postgres://admin@localhost:5432/postgres",
-        host: "postgres",
-        port: 5432,
-        user: "sprout_preview",
-        password: "x",
-        network: "postgres",
-      },
-      traefikNetwork: "traefik",
-      registryPullAuth: { byHost: new Map() },
-      githubToken: "",
-      gitlabToken: "",
-      extraGitlabHosts: new Set(),
-      ttlHours: 72,
-      legacyTtlMs: 72 * 3600_000,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      dashboard: { enabled: false, user: "", password: "" },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-      previewTtlMs: null,
-      previewIdleMs: null,
-      maxPreviewsPerRepo: null,
-      maxPreviews: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const summary = configSummary(
+      testConfig({
+        postgres: {
+          url: "postgres://admin@localhost:5432/postgres",
+          host: "postgres",
+          port: 5432,
+          user: "sprout_preview",
+          password: "x",
+          network: "postgres",
+        },
+      }),
+    );
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");
     expect(summary.traefikTls).toBe("[unset]");

@@ -36,7 +36,9 @@ describe("governance expiry", () => {
     });
     // now is past 7d
     setSystemTime(new Date(base + 8 * 86400_000));
-    expect(planGovernanceExpiry(p, Date.now(), null)).toBe("sweep:ttl-expired");
+    expect(
+      planGovernanceExpiry(p, Date.now(), 72 * 3600_000),
+    ).toBe("sweep:ttl-expired");
   });
 
   test("expires by idle with idle reason", () => {
@@ -47,9 +49,9 @@ describe("governance expiry", () => {
       idleMs: 2 * 3600_000,
     });
     expect(
-      planGovernanceExpiry(p, base + 3 * 3600_000, null),
+      planGovernanceExpiry(p, base + 3 * 3600_000, 72 * 3600_000),
     ).toBe("sweep:idle-expired");
-    expect(planGovernanceExpiry(p, base + 3600_000, null)).toBeNull();
+    expect(planGovernanceExpiry(p, base + 3600_000, 72 * 3600_000)).toBeNull();
   });
 
   test("off at either level disables (null means keep)", () => {
@@ -62,7 +64,7 @@ describe("governance expiry", () => {
     // Governed-off rows carry activity with null bounds, so even a live
     // legacy default must not collect them.
     expect(planGovernanceExpiry(p, base + 30 * 86400_000, 72 * 3600_000)).toBeNull();
-    expect(planGovernanceExpiry(p, base + 30 * 86400_000, null)).toBeNull();
+    expect(planGovernanceExpiry(p, base + 30 * 86400_000, 72 * 3600_000)).toBeNull();
   });
 
   test("legacy bound collects boundless rows by creation age", () => {
@@ -85,9 +87,11 @@ describe("governance expiry", () => {
       ttlMs: 7 * 86400_000,
       idleMs: null,
     });
-    expect(planGovernanceExpiry(stale, base + 8 * 86400_000, null)).toBeNull();
     expect(
-      planGovernanceExpiry(stale, refreshed + 7 * 86400_000, null),
+      planGovernanceExpiry(stale, base + 8 * 86400_000, 72 * 3600_000),
+    ).toBeNull();
+    expect(
+      planGovernanceExpiry(stale, refreshed + 7 * 86400_000, 72 * 3600_000),
     ).toBe("sweep:ttl-expired");
   });
 

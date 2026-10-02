@@ -170,7 +170,10 @@ export type Config = {
   telemetry: TelemetryState;
   /** Operator-owned trace export; active exactly when endpoint is set. */
   otlp: OtlpConfig;
-} & GovernanceConfig;
+  /** Preview TTL/idle/cap/budget policy: null means off. Nested so passing
+   * the whole Config never silently satisfies a GovernanceConfig. */
+  governance: GovernanceConfig;
+};
 
 function parsePositiveInt(
   name: string,
@@ -618,40 +621,42 @@ export function loadConfig(): Config {
     traefikForwardAuth: parseTraefikForwardAuth(),
     telemetry,
     otlp: parseOtlpConfig(),
-    previewTtlMs: parseGatewayDurationMs(
-      "SPROUT_PREVIEW_TTL",
-      process.env.SPROUT_PREVIEW_TTL,
-    ),
-    previewIdleMs: parseGatewayDurationMs(
-      "SPROUT_PREVIEW_IDLE_TEARDOWN",
-      process.env.SPROUT_PREVIEW_IDLE_TEARDOWN,
-    ),
-    maxPreviewsPerRepo: parseGatewayCap(
-      "SPROUT_MAX_PREVIEWS_PER_REPO",
-      process.env.SPROUT_MAX_PREVIEWS_PER_REPO,
-    ),
-    maxPreviews: parseGatewayCap(
-      "SPROUT_MAX_PREVIEWS",
-      process.env.SPROUT_MAX_PREVIEWS,
-    ),
-    previewMaxDbConnections: parseGatewayCap(
-      "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
-      process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS,
-    ),
-    postgresMaxConnections: parseGatewayCap(
-      "SPROUT_POSTGRES_MAX_CONNECTIONS",
-      process.env.SPROUT_POSTGRES_MAX_CONNECTIONS,
-    ),
+    governance: {
+      previewTtlMs: parseGatewayDurationMs(
+        "SPROUT_PREVIEW_TTL",
+        process.env.SPROUT_PREVIEW_TTL,
+      ),
+      previewIdleMs: parseGatewayDurationMs(
+        "SPROUT_PREVIEW_IDLE_TEARDOWN",
+        process.env.SPROUT_PREVIEW_IDLE_TEARDOWN,
+      ),
+      maxPreviewsPerRepo: parseGatewayCap(
+        "SPROUT_MAX_PREVIEWS_PER_REPO",
+        process.env.SPROUT_MAX_PREVIEWS_PER_REPO,
+      ),
+      maxPreviews: parseGatewayCap(
+        "SPROUT_MAX_PREVIEWS",
+        process.env.SPROUT_MAX_PREVIEWS,
+      ),
+      previewMaxDbConnections: parseGatewayCap(
+        "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+        process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS,
+      ),
+      postgresMaxConnections: parseGatewayCap(
+        "SPROUT_POSTGRES_MAX_CONNECTIONS",
+        process.env.SPROUT_POSTGRES_MAX_CONNECTIONS,
+      ),
+    },
   };
 }
 
 /** Loud boot warning when the gateway runs unbounded. */
 export function governanceUnboundedWarning(config: Config): string | null {
   if (
-    config.previewTtlMs === null &&
-    config.previewIdleMs === null &&
-    config.maxPreviewsPerRepo === null &&
-    config.maxPreviews === null
+    config.governance.previewTtlMs === null &&
+    config.governance.previewIdleMs === null &&
+    config.governance.maxPreviewsPerRepo === null &&
+    config.governance.maxPreviews === null
   ) {
     return (
       "preview governance is unbounded (SPROUT_PREVIEW_TTL, " +
@@ -731,12 +736,12 @@ export function configSummary(config: Config): Record<string, string | number> {
     gitlabToken: config.gitlabToken === "" ? "[unset]" : "[set]",
     extraGitlabHosts: config.extraGitlabHosts.size,
     ttlHours: config.ttlHours,
-    previewTtlMs: config.previewTtlMs ?? "[off]",
-    previewIdleMs: config.previewIdleMs ?? "[off]",
-    maxPreviewsPerRepo: config.maxPreviewsPerRepo ?? "[off]",
-    maxPreviews: config.maxPreviews ?? "[off]",
-    previewMaxDbConnections: config.previewMaxDbConnections ?? "[off]",
-    postgresMaxConnections: config.postgresMaxConnections ?? "[off]",
+    previewTtlMs: config.governance.previewTtlMs ?? "[off]",
+    previewIdleMs: config.governance.previewIdleMs ?? "[off]",
+    maxPreviewsPerRepo: config.governance.maxPreviewsPerRepo ?? "[off]",
+    maxPreviews: config.governance.maxPreviews ?? "[off]",
+    previewMaxDbConnections: config.governance.previewMaxDbConnections ?? "[off]",
+    postgresMaxConnections: config.governance.postgresMaxConnections ?? "[off]",
     sweepCron: config.sweepCron,
     previewPortDefault: config.previewPortDefault,
     seedTimeout: config.seedTimeout,

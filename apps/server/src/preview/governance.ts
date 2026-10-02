@@ -69,7 +69,7 @@ export function resolvePreviewExpiry(input: {
   createdAtMs: number | null;
   ttlMs: number | null;
   idleMs: number | null;
-  legacyTtlMs: number | null;
+  legacyTtlMs: number;
 }): { expiresAtMs: number | null; bound: "ttl" | "idle" | null } {
   const base = input.lastActivityMs ?? input.createdAtMs;
   if (base === null) return { expiresAtMs: null, bound: null };
@@ -84,11 +84,7 @@ export function resolvePreviewExpiry(input: {
     }
     return { expiresAtMs: idleDeadline, bound: "idle" };
   }
-  if (
-    input.lastActivityMs === null &&
-    input.legacyTtlMs !== null &&
-    input.createdAtMs !== null
-  ) {
+  if (input.lastActivityMs === null && input.createdAtMs !== null) {
     return {
       expiresAtMs: input.createdAtMs + input.legacyTtlMs,
       bound: "ttl",
@@ -203,28 +199,19 @@ export function evaluateGovernance(
 
   const perRepo = gov.maxPreviewsPerRepo;
   if (perRepo !== null) {
-    if (pending !== null) {
-      const count = status.byRepo.get(pending.repo) ?? 0;
+    const candidates: [string, number][] =
+      pending !== null
+        ? [[pending.repo, status.byRepo.get(pending.repo) ?? 0]]
+        : [...status.byRepo];
+    for (const [repo, count] of candidates) {
       if (count + incoming > perRepo) {
         violations.push({
           kind: "per-repo-cap",
           code: "preview_limit_reached",
-          repo: pending.repo,
+          repo,
           cap: perRepo,
           count,
         });
-      }
-    } else {
-      for (const [repo, count] of status.byRepo) {
-        if (count > perRepo) {
-          violations.push({
-            kind: "per-repo-cap",
-            code: "preview_limit_reached",
-            repo,
-            cap: perRepo,
-            count,
-          });
-        }
       }
     }
   }
@@ -242,12 +229,14 @@ export function evaluateGovernance(
   const perPreview = gov.previewMaxDbConnections;
   const ceiling = gov.postgresMaxConnections;
   if (perPreview !== null && ceiling !== null) {
+    // Narrowed here so the violation carries numbers; connectionProjection
+    // re-checks the same condition internally and yields null without one.
     const budget = connectionProjection({
       previews: status.total + incoming,
       perPreview,
       ceiling,
     });
-    if (budget !== null && budget.over) {
+    if (budget?.over) {
       violations.push({
         kind: "connection-budget",
         code: "preview_connection_budget_exceeded",

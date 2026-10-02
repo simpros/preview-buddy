@@ -53,7 +53,7 @@ export type SweepPorts = {
   drop: (deletion: SweepDeletion) => Promise<boolean>;
   /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms), computed once in
    * loadConfig; the sweep never converts units itself. */
-  legacyTtlMs: number | null;
+  legacyTtlMs: number;
   governance: GovernanceConfig;
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
@@ -277,7 +277,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
 export function planGovernanceExpiry(
   preview: SweepPreview,
   nowMs: number,
-  legacyTtlMs: number | null,
+  legacyTtlMs: number,
 ): "sweep:ttl-expired" | "sweep:idle-expired" | null {
   const { expiresAtMs, bound } = resolvePreviewExpiry({
     lastActivityMs: preview.lastActivityMs,

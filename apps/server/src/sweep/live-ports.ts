@@ -1,3 +1,4 @@
+import type { GovernanceConfig } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { ForgeClient } from "../forge/client.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
@@ -25,8 +26,8 @@ export type LiveSweepDeps = {
   app: Pick<PreviewAppOps, "list" | "remove">;
   dataVolumes: PreviewDataVolumes;
   forge: ForgeClient;
-  legacyTtlMs: number | null;
-  governance: SweepPorts["governance"];
+  legacyTtlMs: number;
+  governance: GovernanceConfig;
   log?: SweepPorts["log"];
 };
 

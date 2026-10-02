@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { defaultDbSpec, type DbSpec } from "@sprout/preview-env";
+import { testConfig } from "../config.fixtures.ts";
 import {
   buildMaterializationCtx,
   resolvePreviewPlan,
@@ -232,58 +233,22 @@ describe("resolvePreviewPlan mail", () => {
 
 describe("buildMaterializationCtx", () => {
   test("carries the preview-auth capability into deploys", () => {
-    const ctx = buildMaterializationCtx({
-      traefikNetwork: "sprout-traefik",
-      registryPullAuth: { byHost: new Map(), fallback: undefined },
-      githubToken: "",
-      gitlabToken: "",
-      extraGitlabHosts: new Set(),
-      ttlHours: 72,
-      legacyTtlMs: 72 * 3600_000,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      previewTtlMs: null,
-      previewIdleMs: null,
-      maxPreviewsPerRepo: null,
-      maxPreviews: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-      previewAuth: {
-        secret: "sekrit",
-        address: "http://gateway:7331/v1/internal/preview-auth",
-      },
-      dashboard: { enabled: false, user: "", password: "" },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-    });
+    const ctx = buildMaterializationCtx(
+      testConfig({
+        traefikNetwork: "sprout-traefik",
+        previewAuth: {
+          secret: "sekrit",
+          address: "http://gateway:7331/v1/internal/preview-auth",
+        },
+      }),
+    );
     expect(ctx.previewAuth).toEqual({
       secret: "sekrit",
       address: "http://gateway:7331/v1/internal/preview-auth",
     });
-    const bare = buildMaterializationCtx({
-      traefikNetwork: "sprout-traefik",
-      registryPullAuth: { byHost: new Map(), fallback: undefined },
-      githubToken: "",
-      gitlabToken: "",
-      extraGitlabHosts: new Set(),
-      ttlHours: 72,
-      legacyTtlMs: 72 * 3600_000,
-      sweepCron: "*/30 * * * *",
-      previewPortDefault: 8080,
-      seedTimeout: 180,
-      port: 7331,
-      dashboard: { enabled: false, user: "", password: "" },
-      telemetry: { enabled: true, endpoint: "", auth: "" },
-      otlp: { endpoint: "", headers: {} },
-      previewTtlMs: null,
-      previewIdleMs: null,
-      maxPreviewsPerRepo: null,
-      maxPreviews: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const bare = buildMaterializationCtx(
+      testConfig({ traefikNetwork: "sprout-traefik" }),
+    );
     expect(bare.previewAuth).toBeUndefined();
   });
 });

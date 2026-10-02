@@ -112,7 +112,7 @@ export async function createTestApp(
         telemetry?: TelemetryDeployHook;
         tracesPlugin?: TracesHandle["plugin"];
         governance?: GovernanceConfig;
-        legacyTtlMs?: number | null;
+        legacyTtlMs?: number;
       }
     | string = {},
 ): Promise<TestApp> {

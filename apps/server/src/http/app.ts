@@ -30,7 +30,7 @@ export function startServer(deps: ServerDeps) {
     extraGitlabHosts: deps.config.extraGitlabHosts,
     telemetry: deps.telemetry ?? NO_TELEMETRY,
     ...(deps.tracesPlugin ? { tracesPlugin: deps.tracesPlugin } : {}),
-    governance: deps.config,
+    governance: deps.config.governance,
     legacyTtlMs: deps.config.legacyTtlMs,
   }).listen(deps.config.port);
 }

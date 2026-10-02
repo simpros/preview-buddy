@@ -41,7 +41,7 @@ export function expiresAtForRow(
     PreviewRow,
     "status" | "lastActivityAt" | "createdAt" | "ttlMs" | "idleMs"
   >,
-  legacyTtlMs: number | null,
+  legacyTtlMs: number,
 ): string | null {
   if (row.status === "removed") return null;
   const { expiresAtMs } = resolvePreviewExpiry({
@@ -56,7 +56,7 @@ export function expiresAtForRow(
 
 export function previewSnapshotFromRow(
   row: PreviewRow,
-  legacyTtlMs: number | null,
+  legacyTtlMs: number,
 ): PreviewSnapshot {
   const status = parsePreviewStatus(row.status);
   const parsed = status.ok ? status.value : "failed";
@@ -96,7 +96,7 @@ export function previewSnapshotFromRow(
 export function presentPreviewSnapshot(
   row: PreviewRow,
   mailboxUrl: string | undefined,
-  legacyTtlMs: number | null,
+  legacyTtlMs: number,
 ): PreviewSnapshot {
   const snapshot = previewSnapshotFromRow(row, legacyTtlMs);
   if (snapshot.mail_from === undefined || mailboxUrl === undefined) {
@@ -130,7 +130,7 @@ export function presentListedPreview(
   row: PreviewRow,
   mailboxUrl: string | undefined,
   status: DisplayPreviewStatus,
-  legacyTtlMs: number | null,
+  legacyTtlMs: number,
 ): ListedPreview {
   const snap = presentPreviewSnapshot(row, mailboxUrl, legacyTtlMs);
   return {
@@ -141,9 +141,9 @@ export function presentListedPreview(
     hostname: snap.hostname,
     status,
     created_at: row.createdAt,
-    last_activity_at: row.lastActivityAt ?? null,
-    expires_at: expiresAtForRow(row, legacyTtlMs),
-    expiry_reason: row.expiryReason ?? null,
+    last_activity_at: snap.last_activity_at,
+    expires_at: snap.expires_at,
+    expiry_reason: snap.expiry_reason,
     ...(snap.mail_from !== undefined ? { mail_from: snap.mail_from } : {}),
     ...(snap.mail_from_name !== undefined
       ? { mail_from_name: snap.mail_from_name }

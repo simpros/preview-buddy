@@ -45,7 +45,7 @@ export type RouteDeps = {
   governance: GovernanceConfig;
   /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms), computed once in
    * loadConfig; routes never convert units themselves. */
-  legacyTtlMs: number | null;
+  legacyTtlMs: number;
 };
 
 function stubNotImplemented({

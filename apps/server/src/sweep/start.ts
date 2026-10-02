@@ -27,7 +27,7 @@ export function startGatewaySweep(deps: {
     dataVolumes: deps.dataVolumes,
     forge,
     legacyTtlMs: deps.config.legacyTtlMs,
-    governance: deps.config,
+    governance: deps.config.governance,
     log: (message, deletion) => {
       if (deletion) console.log(message, deletion);
       else console.log(message);

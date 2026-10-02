@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Config } from "../config.ts";
+import { testConfig } from "../config.fixtures.ts";
 import {
   buildDeployEvent,
   buildInstallEvent,
@@ -15,32 +15,6 @@ import {
   telemetryPlatform,
   telemetryRuntime,
 } from "./payload.ts";
-
-function testConfig(overrides: Partial<Config> = {}): Config {
-  return {
-    traefikNetwork: "traefik",
-    registryPullAuth: { byHost: new Map() },
-    githubToken: "",
-    gitlabToken: "",
-    extraGitlabHosts: new Set(),
-    ttlHours: 72,
-    legacyTtlMs: 72 * 3600_000,
-    sweepCron: "*/30 * * * *",
-    previewPortDefault: 8080,
-    seedTimeout: 180,
-    port: 7331,
-    dashboard: { enabled: false, user: "", password: "" },
-    telemetry: { enabled: true, endpoint: "", auth: "" },
-    otlp: { endpoint: "", headers: {} },
-    previewTtlMs: null,
-    previewIdleMs: null,
-    maxPreviewsPerRepo: null,
-    maxPreviews: null,
-    previewMaxDbConnections: null,
-    postgresMaxConnections: null,
-    ...overrides,
-  };
-}
 
 const INSTALL_ID = "3f9d7a1e-8b2c-4d5e-9f01-23456789abcd";
 const NOW = Date.parse("2026-09-30T12:00:00.000Z");

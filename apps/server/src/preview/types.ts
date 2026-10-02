@@ -61,7 +61,7 @@ export type LifecycleDeps = {
   phaseTimer?: PhaseTimer;
   /** Legacy creation-age bound (SPROUT_TTL_HOURS as ms) for the read surface,
    * so responses show the same deadline the sweep enforces. */
-  legacyTtlMs: number | null;
+  legacyTtlMs: number;
 };
 
 /** Bring-up phases with a telemetry interest, nothing more. */
