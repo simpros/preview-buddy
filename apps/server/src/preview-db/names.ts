@@ -1,7 +1,6 @@
 import { COMPANION_ROLE_SUFFIX, PG_IDENT_MAX } from "@sprout/preview-db";
-import type { DbRolesMode } from "@sprout/preview-env";
+import { SERVICE_NAME_RE, type DbRolesMode } from "@sprout/preview-env";
 
-const SLUG_RE = /^[a-z][a-z0-9]*$/;
 const PREVIEW_DB_NAME_RE = /^sprout_([a-z][a-z0-9]*)_pr([1-9][0-9]*)$/;
 
 /** Max dbName length so <dbName>_app fits Postgres NAMEDATALEN (dual mode). */
@@ -16,12 +15,12 @@ export type IdentifierError =
   | "invalid_service_name";
 
 export function validateSlug(slug: string): IdentifierError | null {
-  if (!SLUG_RE.test(slug)) return "invalid_slug";
+  if (!SERVICE_NAME_RE.test(slug)) return "invalid_slug";
   return null;
 }
 
 export function validateServiceName(name: string): IdentifierError | null {
-  if (!SLUG_RE.test(name)) return "invalid_service_name";
+  if (!SERVICE_NAME_RE.test(name)) return "invalid_service_name";
   return null;
 }
 

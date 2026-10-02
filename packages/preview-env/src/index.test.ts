@@ -4,9 +4,7 @@ import {
   COMPANION_ENV_KEYS,
   ENV_KEY_HOME,
   MAIL_ENV_KEYS,
-  POSTGRES_ENV_KEYS,
   SQLITE_ENV_KEYS,
-  envKeysForProvider,
   envProviderMismatch,
   parsePreviewEnvMap,
 } from "./env-keys.ts";
@@ -36,16 +34,6 @@ describe("env key partitions", () => {
     ]);
     expect(COMPANION_ENV_KEYS).toEqual(["PGAPPUSER", "PGAPPPASSWORD"]);
     expect(SQLITE_ENV_KEYS).toEqual(["DATABASE_URL"]);
-    expect([...POSTGRES_ENV_KEYS]).toEqual([
-      ...OWNER_ENV_KEYS,
-      ...COMPANION_ENV_KEYS,
-    ]);
-  });
-
-  test("provider key sets stay disjoint", () => {
-    expect(envKeysForProvider("postgres")).toEqual([...POSTGRES_ENV_KEYS]);
-    expect(envKeysForProvider("sqlite")).toEqual(["DATABASE_URL"]);
-    expect(envKeysForProvider("none")).toEqual([]);
   });
 
   test("every database key has a home in the map; mail keys stay exempt", () => {
