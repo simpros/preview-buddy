@@ -115,6 +115,7 @@ export {
   governanceIssueMessage,
   parseDurationMs,
   parsePreviewGovernanceField,
+  type ConnectionBudget,
   type EffectiveGovernanceMs,
   type GovernanceConfig,
   type GovernanceManifest,

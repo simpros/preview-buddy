@@ -1,8 +1,10 @@
 import {
+  type ConnectionBudget,
   type EffectiveGovernanceMs,
   type GovernanceConfig,
   type GovernanceManifest,
 } from "@sprout/preview-env";
+import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
 
 /** Manifest override wins; "off" at the effective level disables. Pure lookup:
  * the manifest already carries the parsed bound, so there is nothing to
@@ -57,6 +59,30 @@ export function resolvePreviewExpiry(input: {
   return { expiresAtMs: null, bound: null };
 }
 
+/**
+ * Row-shaped entry to the shared expiry derivation: parses the stored
+ * instants once, so the read surface and the sweep plan from one mapping
+ * instead of each parsing the same columns. Unparseable instants yield no
+ * deadline rather than a guessed one.
+ */
+export function resolveRowExpiry(
+  row: {
+    lastActivityAt: string | null;
+    createdAt: string;
+    ttlMs: number | null;
+    idleMs: number | null;
+  },
+  legacyTtlMs: number,
+): { expiresAtMs: number | null; bound: "ttl" | "idle" | null } {
+  return resolvePreviewExpiry({
+    lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
+    createdAtMs: parseUnambiguousUtcMs(row.createdAt),
+    ttlMs: row.ttlMs ?? null,
+    idleMs: row.idleMs ?? null,
+    legacyTtlMs,
+  });
+}
+
 export type GovernanceStatus = {
   total: number;
   byRepo: Map<string, number>;
@@ -82,17 +108,18 @@ export function governanceStatus(
 
 /**
  * Projected connections for exactly `previews` live previews, or null when
- * no budget is configured. The evaluator passes the candidate explicitly:
- * admission includes the newcomer, the sweep passes the current total as-is.
+ * no budget is configured. The budget arrives as one pair object, so a
+ * half-configured budget is unrepresentable past the config boundary and
+ * the evaluator passes the candidate count explicitly: admission includes
+ * the newcomer, the sweep passes the current total as-is.
  */
 export function connectionProjection(input: {
   previews: number;
-  perPreview: number | null;
-  ceiling: number | null;
+  budget: ConnectionBudget | null;
 }): { projected: number; over: boolean } | null {
-  if (input.perPreview === null || input.ceiling === null) return null;
-  const projected = input.previews * input.perPreview;
-  return { projected, over: projected > input.ceiling };
+  if (input.budget === null) return null;
+  const projected = input.previews * input.budget.perPreview;
+  return { projected, over: projected > input.budget.ceiling };
 }
 
 export type GovernanceViolation =
@@ -190,22 +217,18 @@ export function evaluateGovernance(
     });
   }
 
-  const perPreview = gov.previewMaxDbConnections;
-  const ceiling = gov.postgresMaxConnections;
-  // connectionProjection returns null without a budget, so one call covers
-  // both cases; the narrows are only so the violation carries numbers.
-  const budget = connectionProjection({
+  const budget = gov.connectionBudget;
+  const projection = connectionProjection({
     previews: status.total + incoming,
-    perPreview,
-    ceiling,
+    budget,
   });
-  if (budget?.over && perPreview !== null && ceiling !== null) {
+  if (budget !== null && projection?.over) {
     violations.push({
       kind: "connection-budget",
       code: "preview_connection_budget_exceeded",
-      projected: budget.projected,
-      ceiling,
-      perPreview,
+      projected: projection.projected,
+      ceiling: budget.ceiling,
+      perPreview: budget.perPreview,
       previews: status.total + incoming,
     });
   }

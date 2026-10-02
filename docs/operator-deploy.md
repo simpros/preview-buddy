@@ -610,7 +610,9 @@ Connection arithmetic the gateway enforces instead of discovering afterwards:
 
 `projected = (active previews + 1) × SPROUT_PREVIEW_MAX_DB_CONNECTIONS`
 against `SPROUT_POSTGRES_MAX_CONNECTIONS`. A deploy beyond the projection
-fails with `preview_connection_budget_exceeded`.
+fails with `preview_connection_budget_exceeded`. The two vars are a pair —
+set both or neither; setting exactly one fails gateway boot instead of
+silently enforcing nothing.
 
 Measured case: each preview app holds two long-lived pools at default size,
 so ~12 idle connections per preview; ~8 previews fill a 100-slot Postgres

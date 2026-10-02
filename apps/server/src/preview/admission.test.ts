@@ -7,8 +7,7 @@ import { governanceConfig } from "./governance-fixtures.ts";
 const REPO = "https://github.com/acme/widgets";
 
 const overBudget = governanceConfig({
-  previewMaxDbConnections: 12,
-  postgresMaxConnections: 20,
+  connectionBudget: { perPreview: 12, ceiling: 20 },
 });
 
 describe("checkDeployAdmission connection budget", () => {

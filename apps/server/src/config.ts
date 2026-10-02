@@ -4,7 +4,7 @@ import type {
 } from "./app-deployment/labels.ts";
 import type { TelemetryState } from "./telemetry/destination.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
-import type { GovernanceConfig } from "@sprout/preview-env";
+import type { ConnectionBudget, GovernanceConfig } from "@sprout/preview-env";
 import { DEFAULT_MAIL_FROM_DOMAIN, parseDurationMs } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -215,6 +215,30 @@ export function parseGatewayCap(
   // Empty/off returned above, so trimmed is always a value here and the
   // default never fires; the positive-int check stays in one place.
   return parsePositiveInt(envName, trimmed, 0);
+}
+
+/** Connection budget is a pair or absent: one half without the other
+ * fails boot instead of silently enforcing nothing. */
+function parseConnectionBudget(): ConnectionBudget | null {
+  const perPreview = parseGatewayCap(
+    "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+    process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS,
+  );
+  const ceiling = parseGatewayCap(
+    "SPROUT_POSTGRES_MAX_CONNECTIONS",
+    process.env.SPROUT_POSTGRES_MAX_CONNECTIONS,
+  );
+  if (perPreview === null && ceiling === null) return null;
+  if (perPreview === null || ceiling === null) {
+    const missing =
+      perPreview === null
+        ? "SPROUT_PREVIEW_MAX_DB_CONNECTIONS"
+        : "SPROUT_POSTGRES_MAX_CONNECTIONS";
+    throw new Error(
+      `Incomplete preview connection budget: missing ${missing} (set both or neither)`,
+    );
+  }
+  return { perPreview, ceiling };
 }
 
 function parseSweepCron(
@@ -663,14 +687,7 @@ export function loadConfig(): Config {
         "SPROUT_MAX_PREVIEWS",
         process.env.SPROUT_MAX_PREVIEWS,
       ),
-      previewMaxDbConnections: parseGatewayCap(
-        "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
-        process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS,
-      ),
-      postgresMaxConnections: parseGatewayCap(
-        "SPROUT_POSTGRES_MAX_CONNECTIONS",
-        process.env.SPROUT_POSTGRES_MAX_CONNECTIONS,
-      ),
+      connectionBudget: parseConnectionBudget(),
     },
   };
 }
@@ -765,8 +782,7 @@ export function configSummary(config: Config): Record<string, string | number> {
     previewIdleMs: config.governance.previewIdleMs ?? "[off]",
     maxPreviewsPerRepo: config.governance.maxPreviewsPerRepo ?? "[off]",
     maxPreviews: config.governance.maxPreviews ?? "[off]",
-    previewMaxDbConnections: config.governance.previewMaxDbConnections ?? "[off]",
-    postgresMaxConnections: config.governance.postgresMaxConnections ?? "[off]",
+    connectionBudget: connectionBudgetSummary(config.governance.connectionBudget),
     sweepCron: config.sweepCron,
     previewPortDefault: config.previewPortDefault,
     seedTimeout: config.seedTimeout,
@@ -783,6 +799,11 @@ export function configSummary(config: Config): Record<string, string | number> {
 
 function otlpHeadersSummary(otlp: OtlpConfig): string {
   return Object.keys(otlp.headers).length > 0 ? "[set]" : "[empty]";
+}
+
+function connectionBudgetSummary(budget: ConnectionBudget | null): string {
+  if (budget === null) return "[off]";
+  return `${budget.perPreview}x/ceiling-${budget.ceiling}`;
 }
 
 function telemetryAuthSummary(telemetry: TelemetryState): string {

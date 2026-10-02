@@ -27,14 +27,18 @@ describe("server governance policy", () => {
   });
 
   test("projection is null without a budget, arithmetic with one", () => {
+    expect(connectionProjection({ previews: 9, budget: null })).toBeNull();
     expect(
-      connectionProjection({ previews: 9, perPreview: null, ceiling: 100 }),
-    ).toBeNull();
-    expect(
-      connectionProjection({ previews: 8, perPreview: 12, ceiling: 100 }),
+      connectionProjection({
+        previews: 8,
+        budget: { perPreview: 12, ceiling: 100 },
+      }),
     ).toEqual({ projected: 96, over: false });
     expect(
-      connectionProjection({ previews: 9, perPreview: 12, ceiling: 100 }),
+      connectionProjection({
+        previews: 9,
+        budget: { perPreview: 12, ceiling: 100 },
+      }),
     ).toEqual({ projected: 108, over: true });
   });
 
@@ -57,8 +61,7 @@ describe("server governance policy", () => {
       ...off,
       maxPreviewsPerRepo: 1,
       maxPreviews: 1,
-      previewMaxDbConnections: 12,
-      postgresMaxConnections: 20,
+      connectionBudget: { perPreview: 12, ceiling: 20 },
     };
     const status = governanceStatus([{ canonicalRepoId: REPO_A }]);
     const violations = evaluateGovernance(gov, status, { repo: REPO_A });
@@ -72,8 +75,7 @@ describe("server governance policy", () => {
   test("budget violation counts the previews the projection counts", () => {
     const gov: GovernanceConfig = {
       ...off,
-      previewMaxDbConnections: 12,
-      postgresMaxConnections: 20,
+      connectionBudget: { perPreview: 12, ceiling: 20 },
     };
     const status = governanceStatus([{ canonicalRepoId: REPO_A }]);
     expect(evaluateGovernance(gov, status, { repo: REPO_B })).toEqual([

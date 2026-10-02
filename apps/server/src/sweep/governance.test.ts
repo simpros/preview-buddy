@@ -13,14 +13,16 @@ function preview(over: Partial<SweepPreview> = {}): SweepPreview {
     slug: "widgets",
     dbName: "sprout_widgets_pr5",
     createdAt: "2026-09-02T12:00:00.000Z",
-    createdAtMs: Date.parse("2026-09-02T12:00:00.000Z"),
     lastActivityAt: null,
     status: "running",
-    lastActivityMs: null,
     ttlMs: null,
     idleMs: null,
     ...over,
   };
+}
+
+function activityAt(ms: number): string {
+  return new Date(ms).toISOString();
 }
 
 describe("governance expiry", () => {
@@ -30,7 +32,7 @@ describe("governance expiry", () => {
     setSystemTime(new Date("2026-09-10T12:00:00.000Z"));
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const p = preview({
-      lastActivityMs: base,
+      lastActivityAt: activityAt(base),
       ttlMs: 7 * 86400_000,
       idleMs: null,
     });
@@ -44,7 +46,7 @@ describe("governance expiry", () => {
   test("expires by idle with idle reason", () => {
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const p = preview({
-      lastActivityMs: base,
+      lastActivityAt: activityAt(base),
       ttlMs: null,
       idleMs: 2 * 3600_000,
     });
@@ -57,7 +59,7 @@ describe("governance expiry", () => {
   test("off at either level disables (null means keep)", () => {
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const p = preview({
-      lastActivityMs: base,
+      lastActivityAt: activityAt(base),
       ttlMs: null,
       idleMs: null,
     });
@@ -70,7 +72,7 @@ describe("governance expiry", () => {
   test("legacy bound collects boundless rows by creation age", () => {
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const legacyTtlMs = 72 * 3600_000;
-    const p = preview({ createdAtMs: base });
+    const p = preview();
     expect(planGovernanceExpiry(p, base + legacyTtlMs, legacyTtlMs)).toBe(
       "sweep:ttl-expired",
     );
@@ -83,7 +85,7 @@ describe("governance expiry", () => {
     const base = Date.parse("2026-09-02T12:00:00.000Z");
     const refreshed = base + 8 * 86400_000;
     const stale = preview({
-      lastActivityMs: refreshed,
+      lastActivityAt: activityAt(refreshed),
       ttlMs: 7 * 86400_000,
       idleMs: null,
     });
@@ -103,7 +105,7 @@ describe("governance expiry", () => {
     const result = await runSweepPass({
       listPreviews: async () => [
         preview({
-          lastActivityMs: base,
+          lastActivityAt: activityAt(base),
           ttlMs: 7 * 86400_000,
           idleMs: null,
         }),

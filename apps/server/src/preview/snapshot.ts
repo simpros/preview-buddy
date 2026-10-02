@@ -1,6 +1,5 @@
 import { deriveMailFromName } from "@sprout/preview-env";
-import { parseUnambiguousUtcMs } from "../infrastructure/db/instant.ts";
-import { resolvePreviewExpiry } from "./governance.ts";
+import { resolveRowExpiry } from "./governance.ts";
 import type { Result } from "./result.ts";
 import type { PreviewRow } from "./row.ts";
 import type {
@@ -30,13 +29,12 @@ export function parsePreviewStatus(status: string): Result<PreviewStatus> {
 }
 
 /**
- * Read-surface expiry: derived from the same inputs the sweep plans from —
- * the canonical UTC-instant parse, the governance bounds, and the legacy
- * creation-age bound — so the displayed deadline and the deletion decision
- * come from one derivation. Tombstones report null, matching the
- * pre-derivation display.
+ * Read-surface expiry: the displayed deadline and the sweep's deletion
+ * decision come from one derivation (`resolveRowExpiry`), over the same
+ * parsed instants, governance bounds, and legacy creation-age bound.
+ * Tombstones report null, matching the pre-derivation display.
  */
-export function expiresAtForRow(
+function expiresAtForRow(
   row: Pick<
     PreviewRow,
     "status" | "lastActivityAt" | "createdAt" | "ttlMs" | "idleMs"
@@ -44,13 +42,7 @@ export function expiresAtForRow(
   legacyTtlMs: number,
 ): string | null {
   if (row.status === "removed") return null;
-  const { expiresAtMs } = resolvePreviewExpiry({
-    lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
-    createdAtMs: parseUnambiguousUtcMs(row.createdAt),
-    ttlMs: row.ttlMs ?? null,
-    idleMs: row.idleMs ?? null,
-    legacyTtlMs,
-  });
+  const { expiresAtMs } = resolveRowExpiry(row, legacyTtlMs);
   return expiresAtMs === null ? null : new Date(expiresAtMs).toISOString();
 }
 

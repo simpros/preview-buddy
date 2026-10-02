@@ -87,8 +87,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
       const rows = await deps.db.select().from(previews);
       const out: SweepPreview[] = [];
       for (const row of rows) {
-        const createdAtMs = parseUnambiguousUtcMs(row.createdAt);
-        if (createdAtMs === null) {
+        if (parseUnambiguousUtcMs(row.createdAt) === null) {
           deps.log?.(
             `sweep preview invalid createdAt ${row.createdAt} (${row.slug}:${row.prId})`,
           );
@@ -99,10 +98,8 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           slug: row.slug,
           dbName: row.dbName,
           createdAt: row.createdAt,
-          createdAtMs,
           lastActivityAt: row.lastActivityAt ?? null,
           status: row.status,
-          lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
           ttlMs: row.ttlMs ?? null,
           idleMs: row.idleMs ?? null,
         });

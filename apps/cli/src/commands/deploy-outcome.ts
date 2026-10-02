@@ -8,7 +8,6 @@ export type DeploySnapshotFields = {
   last_error?: string | null;
   last_error_detail?: string | null;
   expires_at?: string | null;
-  last_activity_at?: string | null;
 };
 
 /** Settled deploy presentation shared by core, poll, and forge-note. */

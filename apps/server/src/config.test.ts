@@ -592,8 +592,7 @@ describe("preview governance env", () => {
       previewIdleMs: null,
       maxPreviewsPerRepo: null,
       maxPreviews: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
+      connectionBudget: null,
     });
   });
 
@@ -611,9 +610,21 @@ describe("preview governance env", () => {
       previewIdleMs: 2 * 3600_000,
       maxPreviewsPerRepo: 3,
       maxPreviews: 10,
-      previewMaxDbConnections: 12,
-      postgresMaxConnections: 100,
+      connectionBudget: { perPreview: 12, ceiling: 100 },
     });
+  });
+
+  test("half-configured connection budget fails boot naming the missing key", () => {
+    setRequiredEnv();
+    process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS = "12";
+    expect(() => loadConfig()).toThrow(
+      "Incomplete preview connection budget: missing SPROUT_POSTGRES_MAX_CONNECTIONS",
+    );
+    delete process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS;
+    process.env.SPROUT_POSTGRES_MAX_CONNECTIONS = "100";
+    expect(() => loadConfig()).toThrow(
+      "Incomplete preview connection budget: missing SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+    );
   });
 });
 

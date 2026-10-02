@@ -100,7 +100,7 @@ describe("createLiveSweepPorts", () => {
     expect(rows[0]?.containerId).toBeNull();
   });
 
-  test("parses ISO-Z createdAt into createdAtMs", async () => {
+  test("parses ISO-Z createdAt with no invalid-instant log", async () => {
     const testDb = await createTestDb();
     cleanup = testDb.cleanup;
 
@@ -121,6 +121,8 @@ describe("createLiveSweepPorts", () => {
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
+    const droppedDbs: string[] = [];
+    const logs: string[] = [];
     const docker = createFakeDockerClient();
     const ports = createLiveSweepPorts({
       db: testDb.db,
@@ -132,13 +134,14 @@ describe("createLiveSweepPorts", () => {
       forge: { listOpenPrIds: async () => [1] },
       governance: offGovernance,
       legacyTtlMs: 72 * 3600_000,
+      log: (message) => {
+        logs.push(message);
+      },
     });
 
     const listed = await ports.listPreviews();
     expect(listed[0]?.createdAt).toBe("2026-09-02T12:00:00.000Z");
-    expect(listed[0]?.createdAtMs).toBe(
-      Date.parse("2026-09-02T12:00:00.000Z"),
-    );
+    expect(logs.some((m) => m.includes("invalid createdAt"))).toBe(false);
   });
 
   test("invalid createdAt skips TTL but protects catalog from orphan GC", async () => {
@@ -186,7 +189,6 @@ describe("createLiveSweepPorts", () => {
 
     const listed = await ports.listPreviews();
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.createdAtMs).toBeNull();
     expect(logs.some((m) => m.includes("invalid createdAt"))).toBe(true);
 
     const result = await runSweepPass(ports);
@@ -242,7 +244,6 @@ describe("createLiveSweepPorts", () => {
 
     const listed = await ports.listPreviews();
     expect(listed).toHaveLength(1);
-    expect(listed[0]?.createdAtMs).toBeNull();
     expect(logs.some((m) => m.includes("invalid createdAt"))).toBe(true);
 
     const result = await runSweepPass(ports);

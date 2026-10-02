@@ -7,8 +7,7 @@ export function offGovernanceConfig(): GovernanceConfig {
     previewIdleMs: null,
     maxPreviews: null,
     maxPreviewsPerRepo: null,
-    previewMaxDbConnections: null,
-    postgresMaxConnections: null,
+    connectionBudget: null,
   };
 }
 

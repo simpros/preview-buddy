@@ -24,6 +24,13 @@ export function parseDurationMs(raw: string): number | null {
   return ms;
 }
 
+/** Connection budget arithmetic: expected per-preview connections against
+ * the instance ceiling. Null means no budget. */
+export type ConnectionBudget = {
+  perPreview: number;
+  ceiling: number;
+};
+
 /** Gateway-level governance: every field resolved, null means off. */
 export type GovernanceConfig = {
   /** Null means unbounded; manifest preview.ttl overrides. */
@@ -34,10 +41,11 @@ export type GovernanceConfig = {
   maxPreviewsPerRepo: number | null;
   /** Null means unbounded. */
   maxPreviews: number | null;
-  /** Expected per-preview DB connections; null means no budget. */
-  previewMaxDbConnections: number | null;
-  /** Instance ceiling for the budget arithmetic; null means no budget. */
-  postgresMaxConnections: number | null;
+  /** Null means no budget. Parsed together at the config boundary: a
+   * half-configured pair fails boot instead of silently enforcing
+   * nothing, so the evaluator never re-narrows two independent
+   * nullables. */
+  connectionBudget: ConnectionBudget | null;
 };
 
 /** Per-preview deadlines in ms; null means off. Single home for the shape
