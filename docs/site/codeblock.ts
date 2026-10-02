@@ -13,23 +13,46 @@ import { escapeHtml } from "./html.ts";
 // distinctive copy label.
 export const PROMPT_FENCE_META = "prompt";
 export const PROMPT_COPY_LABEL = "Copy onboarding prompt";
+// Display label for the prompt block: prose in a `text` fence renders
+// unhighlighted, so the header says what it is instead of just `text`.
+export const PROMPT_LANG_LABEL = "text · prompt";
+// Source file shown in the prompt header, matching the hand-written
+// marketing snippet that names its file the same way.
+export const PROMPT_SOURCE_FILE = "onboarding-prompt.md";
 
 export function isPromptFence(node: { meta?: string }): boolean {
   return node.meta?.split(/\s+/).includes(PROMPT_FENCE_META) ?? false;
 }
 
-// One markup shape, used everywhere: language label plus a copy button over
-// the escaped block text. Untagged fences read as `text`.
+// A filename token in the fence meta (` ```yaml .sprout.yaml `) names the
+// source file shown in the header. Tokens without a file shape (the `prompt`
+// tag, bare words) are ignored, so untagged fences render lang-only.
+export function fileFromMeta(meta: string | undefined): string | undefined {
+  if (!meta) return undefined;
+  const file = meta
+    .split(/\s+/)
+    .filter((token) => token.length > 0 && token !== PROMPT_FENCE_META)
+    .find((token) => token.includes(".") || token.includes("/"));
+  return file;
+}
+
+// One markup shape, used everywhere: language label plus the source file
+// where known plus a copy button over the escaped block text. Untagged
+// fences read as `text`.
 export function codeBlockFigure(
   lang: string | undefined,
   code: string,
   copyLabel = "Copy code block",
+  file?: string,
 ): string {
   const shown = lang && lang.length > 0 ? lang : "text";
+  const langLabel = copyLabel === PROMPT_COPY_LABEL ? PROMPT_LANG_LABEL : shown;
+  const fileLabel = file ?? (copyLabel === PROMPT_COPY_LABEL ? PROMPT_SOURCE_FILE : undefined);
   return [
     `<figure class="codeblock" data-lang="${escapeHtml(shown)}">`,
     `  <div class="codeblock-bar">`,
-    `    <span class="codeblock-lang">${escapeHtml(shown)}</span>`,
+    `    <span class="codeblock-lang">${escapeHtml(langLabel)}</span>`,
+    ...(fileLabel ? [`    <span class="codeblock-file">${escapeHtml(fileLabel)}</span>`] : []),
     `    <button class="codeblock-copy" type="button" aria-label="${escapeHtml(copyLabel)}">Copy</button>`,
     `  </div>`,
     `  <pre><code>${escapeHtml(code)}</code></pre>`,
@@ -42,7 +65,7 @@ export const codeBlockExtension: MarkdownExtension = {
   renderHtml(node) {
     if (node.type === "code") {
       const copyLabel = isPromptFence(node) ? PROMPT_COPY_LABEL : undefined;
-      return codeBlockFigure(node.lang, node.value, copyLabel);
+      return codeBlockFigure(node.lang, node.value, copyLabel, fileFromMeta(node.meta));
     }
     return undefined;
   },
@@ -55,20 +78,32 @@ export function promptFigure(prompt: string): string {
 }
 
 // Wired once per page by the shell: click copies the sibling `<code>` text,
-// the label flips transiently, and the polite live region announces the
-// outcome. Without a clipboard API the text is selected instead, and the
-// label says so rather than failing silently.
+// the button confirms inline and reverts, and the polite live region
+// announces the outcome. Command blocks (`$ sprout …` on every line) copy
+// without the leading `$`, so pasting runs. Without a clipboard API the
+// text is selected instead, and the label says so rather than failing
+// silently.
 export const codeBlockScript = `(() => {
   const status = document.querySelector(".codeblock-status");
   function announce(message) {
     if (status) status.textContent = message;
   }
-  function settle(button, label, message) {
+  function copyValue(value) {
+    const lines = value.split("\\n");
+    const commands = lines.filter((line) => line.trim().length > 0);
+    if (commands.length > 0 && commands.every((line) => line.trimStart().startsWith("$ "))) {
+      return lines.map((line) => line.replace(/^\\s*\\$\\s?/, "")).join("\\n");
+    }
+    return value;
+  }
+  function settle(button, fallback, label, message) {
     button.textContent = label;
+    button.classList.add("done");
     announce(message);
     window.setTimeout(() => {
-      button.textContent = "Copy";
-    }, 1500);
+      button.textContent = fallback;
+      button.classList.remove("done");
+    }, 1600);
   }
   function select(code) {
     const range = document.createRange();
@@ -83,18 +118,20 @@ export const codeBlockScript = `(() => {
     const figure = button.closest("figure.codeblock");
     const code = figure ? figure.querySelector("pre > code") : null;
     if (!code) return;
+    const fallback = button.textContent || "Copy";
     button.addEventListener("blur", () => {
-      button.textContent = "Copy";
+      button.textContent = fallback;
+      button.classList.remove("done");
     });
     button.addEventListener("click", async () => {
-      const value = code.textContent || "";
+      const value = copyValue(code.textContent || "");
       try {
         if (!navigator.clipboard) throw new Error("no clipboard");
         await navigator.clipboard.writeText(value);
-        settle(button, "Copied", "Code block copied");
+        settle(button, fallback, "copied", "Code block copied");
       } catch {
         select(code);
-        settle(button, "Selected", "Clipboard unavailable; code block selected, copy it manually");
+        settle(button, fallback, "selected", "Clipboard unavailable; code block selected, copy it manually");
       }
     });
   });

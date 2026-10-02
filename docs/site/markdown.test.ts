@@ -7,6 +7,7 @@ import {
   markdownToHtmlBody,
   slugHeading,
   splitHref,
+  wrapTables,
 } from "./markdown.ts";
 import { repoRootDir } from "./assemble.ts";
 
@@ -63,6 +64,24 @@ describe("markdownToHtmlBody heading ids", () => {
     const html = markdownToHtmlBody("## See also\n\n## See also\n");
     expect(html).toContain('id="see-also"');
     expect(html).toContain('id="see-also-1"');
+  });
+
+  test("prints no literal # next to headings", () => {
+    const html = markdownToHtmlBody("# Hi\n\n## Sub head\n");
+    expect(html).toContain('id="hi"');
+    expect(html).toContain('id="sub-head"');
+    expect(html).not.toContain("anchor-heading");
+    expect(html).not.toContain(">#</a>");
+  });
+});
+
+describe("wrapTables", () => {
+  test("wraps bare tables in their scroll container exactly once", () => {
+    const body = markdownToHtmlBody("| A | B |\n|---|---|\n| 1 | 2 |\n");
+    expect(body).toContain('<div class="tablewrap overflow-auto"><table>');
+    expect(body.match(/<div class="tablewrap overflow-auto">/g)).toHaveLength(1);
+    expect(wrapTables(body)).toBe(body);
+    expect(wrapTables("<p>no table</p>")).toBe("<p>no table</p>");
   });
 });
 

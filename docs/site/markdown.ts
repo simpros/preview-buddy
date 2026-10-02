@@ -61,11 +61,31 @@ function parseMarkdownDocument(markdown: string): MarkdownDocument {
 }
 
 function renderDocumentBody(document: MarkdownDocument): string {
-  return renderHtml(document, {
-    allowHtml: true,
-    headingAnchors: true,
-    extensions: markdownExtensions,
-  });
+  return wrapTables(
+    renderHtml(document, {
+      allowHtml: true,
+      // No printed `#` beside headings: ids still ship (the TOC and every
+      // `#fragment` link resolve against them) but the anchor affordance
+      // lives in CSS hover/focus, not as a literal character in the markup.
+      headingAnchors: false,
+      extensions: markdownExtensions,
+    }),
+  );
+}
+
+// Rendered tables own their scroll container: the wrapper carries the
+// overflow and the sticky header, so a wide table scrolls inside its box
+// instead of pushing the page sideways. The offset check keeps the wrap
+// idempotent: a table already inside a wrapper is left alone.
+const TABLEWRAP_OPEN = '<div class="tablewrap overflow-auto">';
+export function wrapTables(html: string): string {
+  return html.replace(
+    /<table[\s\S]*?<\/table>/g,
+    (table: string, offset: number, full: string) =>
+      full.slice(Math.max(0, offset - TABLEWRAP_OPEN.length), offset) === TABLEWRAP_OPEN
+        ? table
+        : `${TABLEWRAP_OPEN}${table}</div>`,
+  );
 }
 
 // One parse+render pairing, owned here: every consumer parses and renders

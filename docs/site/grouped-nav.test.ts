@@ -117,24 +117,35 @@ describe("grouped docs navigation", () => {
     expect(() => docsSidebar("docs/x.html", "docs/does-not-exist.md")).toThrow(
       "not in manifest",
     );
-    // One assembled smoke check that the model reaches the markup.
+    // One assembled smoke check that the model reaches the markup: groups
+    // render expanded as labelled sections and the current page carries
+    // `aria-current` with no disclosure hiding it.
     const sidebar = sidebarBlock(await readOut("docs/previews.html"));
     expect(sidebar.match(/aria-current="page"/g)).toHaveLength(1);
     expect(sidebar).toContain('aria-current="page">Previews</a>');
-    const openBlocks = [...sidebar.matchAll(/<details open>([\s\S]*?)<\/details>/g)].map(
-      (m) => m[1]!,
-    );
-    expect(openBlocks.filter((b) => b.includes('aria-current="page"'))).toHaveLength(1);
+    expect(sidebar).not.toContain("<details");
+    for (const group of docsGroups) {
+      expect(sidebar).toContain(`<p class="gname">${group.name}</p>`);
+    }
   });
 
-  test("no published page renders a top navigation bar", async () => {
+  test("top bar stays slim: brand, drawer trigger, GitHub — page movement lives in the sidebar", async () => {
     const shelled = [
       siteEntryPath,
       "docs/index.html",
       ...docsPages.map((p) => pageHtmlFile(p.file)),
     ];
     for (const rel of shelled) {
-      expect(await readOut(rel)).not.toContain("docs-nav");
+      const html = await readOut(rel);
+      const header = /<header class="topbar">[\s\S]*?<\/header>/.exec(html)?.[0];
+      expect(header).toBeDefined();
+      expect(header).toContain('href="https://github.com/simpros/sprout">GitHub</a>');
+      // The sidebar carries every docs page; the header carries none of them.
+      const sidebar = sidebarBlock(html);
+      for (const { title } of docsPages) {
+        expect(sidebar).toContain(`>${title}</a>`);
+        expect(header).not.toContain(`>${title}</a>`);
+      }
     }
   });
 
@@ -165,9 +176,11 @@ describe("grouped docs navigation", () => {
 
   test("the marketing page exposes Docs and the onboarding prompt only", async () => {
     const html = await readOut(siteEntryPath);
-    // Hero keeps both entry points: docs first, agent path second.
-    expect(html).toContain('<a class="primary" href="../index.html">Read the docs</a>');
-    expect(html).toContain('<a href="../onboarding-prompt.html">Let your agent do it</a>');
+    // Hero keeps both entry points: docs first, agent path second, with
+    // exactly one filled primary action.
+    expect(html).toContain('<a class="btn primary" href="../index.html">Read the docs</a>');
+    expect(html.match(/class="[^"]*\bprimary\b/g)).toHaveLength(1);
+    expect(html).toContain('<a class="btn ghost" href="../onboarding-prompt.html">Let your agent do it</a>');
     // In-page TOC stays on-page: no Docs entry pointing at the footer.
     const toc = /<nav class="toc"[\s\S]*?<\/nav>/.exec(html)?.[0];
     expect(toc).toBeDefined();
@@ -184,9 +197,14 @@ describe("grouped docs navigation", () => {
     expect(footerHrefs.sort()).toEqual(
       ["../index.html", "../onboarding-prompt.html"].sort(),
     );
-    const headerHtml = /<header class="site">[\s\S]*?<\/header>/.exec(html)?.[0];
+    // The slim top bar carries GitHub only; docs movement lives in the
+    // sidebar, so no page title may leak into the header.
+    const headerHtml = /<header class="topbar">[\s\S]*?<\/header>/.exec(html)?.[0];
     expect(headerHtml).toBeDefined();
-    expect(headerHtml).not.toContain("<nav");
+    expect(headerHtml).toContain("https://github.com/simpros/sprout");
+    for (const { title } of docsPages) {
+      expect(headerHtml).not.toContain(`>${title}</a>`);
+    }
     for (const surface of [toc!, footerBlock(html), headerHtml!]) {
       expect(surface).not.toContain("llms.txt");
       expect(surface).not.toContain("adopting-repo");
@@ -237,21 +255,25 @@ describe("grouped docs navigation", () => {
     }
   });
 
-  test("the sidebar collapses behind a toggle on narrow screens", async () => {
+  test("the sidebar collapses behind a drawer toggle on narrow screens", async () => {
     const theme = await readFile(join(repoRootDir, "docs/site/theme.css"), "utf8");
-    expect(theme).toContain("@media (max-width:");
-    expect(theme).toContain(".sidebar-state:not(:checked) ~ nav.docs-sidebar");
+    expect(theme).toContain("@media (max-width: 859px)");
+    expect(theme).toContain("@media (min-width: 860px)");
+    expect(theme).toContain(".sidebar-state:checked ~ .shell .docs-sidebar");
     const html = await readOut("docs/previews.html");
-    expect(html).toContain('type="checkbox" id="docs-sidebar-toggle"');
-    expect(html).toContain('<label class="sidebar-toggle" for="docs-sidebar-toggle"');
-    // The CSS-only toggle only works when input, label, and nav are siblings
-    // in that order; pin the order so a shell reorder cannot strand the menu.
+    expect(html).toContain('<input class="sidebar-state" type="checkbox" id="docs-sidebar-toggle" />');
+    expect(html).toContain('<label class="drawer-toggle" for="docs-sidebar-toggle">');
+    // The CSS-only drawer only works when the checkbox precedes the header
+    // (which holds the label) and the shell (which holds the nav) as
+    // siblings in that order; pin the order so a shell reorder cannot
+    // strand the menu.
     const inputAt = html.indexOf('id="docs-sidebar-toggle"');
-    const labelAt = html.indexOf('for="docs-sidebar-toggle"');
+    const headerAt = html.indexOf('<header class="topbar">');
     const navAt = html.indexOf('<nav class="docs-sidebar"');
     expect(inputAt).toBeGreaterThan(-1);
-    expect(inputAt).toBeLessThan(labelAt);
-    expect(labelAt).toBeLessThan(navAt);
+    expect(inputAt).toBeLessThan(headerAt);
+    expect(headerAt).toBeLessThan(navAt);
+    expect(html.indexOf('for="docs-sidebar-toggle"')).toBeGreaterThan(headerAt);
   });
 
   test("no published surface points at the legacy stubs", async () => {
