@@ -52,6 +52,9 @@ export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {
     ...(row.lastErrorDetail != null
       ? { last_error_detail: row.lastErrorDetail }
       : {}),
+    last_activity_at: row.lastActivityAt ?? null,
+    expires_at: row.expiresAt ?? null,
+    expiry_reason: row.expiryReason ?? null,
   };
 }
 
@@ -82,6 +85,9 @@ export type ListedPreview = {
   mailbox_url?: string;
   mail_from?: string;
   mail_from_name?: string;
+  last_activity_at: string | null;
+  expires_at: string | null;
+  expiry_reason: string | null;
 };
 
 /**
@@ -103,6 +109,9 @@ export function presentListedPreview(
     hostname: snap.hostname,
     status,
     created_at: row.createdAt,
+    last_activity_at: row.lastActivityAt ?? null,
+    expires_at: row.expiresAt ?? null,
+    expiry_reason: row.expiryReason ?? null,
     ...(snap.mail_from !== undefined ? { mail_from: snap.mail_from } : {}),
     ...(snap.mail_from_name !== undefined
       ? { mail_from_name: snap.mail_from_name }

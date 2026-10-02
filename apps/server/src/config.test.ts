@@ -78,6 +78,12 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_OTLP_ENDPOINT;
   delete process.env.SPROUT_OTLP_HEADERS;
   delete process.env.DO_NOT_TRACK;
+  delete process.env.SPROUT_PREVIEW_TTL;
+  delete process.env.SPROUT_PREVIEW_IDLE_TEARDOWN;
+  delete process.env.SPROUT_MAX_PREVIEWS_PER_REPO;
+  delete process.env.SPROUT_MAX_PREVIEWS;
+  delete process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS;
+  delete process.env.SPROUT_POSTGRES_MAX_CONNECTIONS;
 }
 
 afterEach(() => {

@@ -1,4 +1,5 @@
 import type { DbProvider } from "@sprout/preview-env";
+import { computeExpiresAtMs } from "@sprout/preview-env";
 import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import { resolvePreviewAccessLabels } from "../app-deployment/preview-auth.ts";
 import { extractPullDetail } from "../docker/pull-failure.ts";
@@ -174,9 +175,25 @@ async function syncPreviewServices(
   }
 }
 
+function expiryForActivity(
+  activityIso: string,
+  governanceMs?: { ttlMs: number | null; idleMs: number | null },
+): string | null {
+  if (!governanceMs) return null;
+  const baseMs = Date.parse(activityIso);
+  if (!Number.isFinite(baseMs)) return null;
+  const expiresMs = computeExpiresAtMs(
+    baseMs,
+    governanceMs.ttlMs,
+    governanceMs.idleMs,
+  );
+  return expiresMs === null ? null : new Date(expiresMs).toISOString();
+}
+
 async function closeRunning(
   deps: LifecycleDeps,
   row: PreviewRow,
+  input?: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
   const now = utcIsoNow();
   const updated = await updatePreviewRow(
@@ -186,6 +203,11 @@ async function closeRunning(
       status: "running",
       bringUpPlan: null,
       ...clearLastError,
+      lastActivityAt: now,
+      expiresAt: expiryForActivity(now, input?.governanceMs),
+      ttlMs: input?.governanceMs?.ttlMs ?? null,
+      idleMs: input?.governanceMs?.idleMs ?? null,
+      expiryReason: null,
       updatedAt: now,
     },
     "preview_row_missing_on_running",
@@ -217,7 +239,7 @@ async function syncThenCloseRunning(
     services: input.services,
   });
   if (!synced.ok) return synced;
-  return closeRunning(deps, row);
+  return closeRunning(deps, row, input);
 }
 
 async function finishAfterPromote(
@@ -226,7 +248,7 @@ async function finishAfterPromote(
   input: ProvisionInput,
 ): Promise<Result<PreviewSnapshot>> {
   if (input.services === undefined) {
-    return closeRunning(deps, row);
+    return closeRunning(deps, row, input);
   }
   return syncThenCloseRunning(deps, row, input);
 }

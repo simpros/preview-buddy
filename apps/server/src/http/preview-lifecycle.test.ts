@@ -146,7 +146,7 @@ describe("POST /v1/deploy", () => {
     const { deployToken } = await setup();
     const res = await postDeploy(deployToken, deployBody());
     expect(res.settleStatus).toBe(200);
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       ok: true,
       canonical_repo_id: REPO,
       pr_id: 42,
@@ -155,7 +155,12 @@ describe("POST /v1/deploy", () => {
       hostname: "pr-42.myapp.preview.example.com",
       status: "running",
       preview_url: "https://pr-42.myapp.preview.example.com",
+      expiry_reason: null,
     });
+    expect((res.body as { expires_at?: unknown }).expires_at ?? null).toBeNull();
+    expect(
+      typeof (res.body as { last_activity_at?: unknown }).last_activity_at,
+    ).toBe("string");
     expect(fakePreviewDb!.created).toEqual(["sprout_myapp_pr42"]);
 
     const [row] = await testApp!.db

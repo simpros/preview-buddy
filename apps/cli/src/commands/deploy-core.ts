@@ -57,6 +57,8 @@ export type DeployRequest = {
   mail?: MailSpec;
   auth?: PreviewAuthSpec;
   reseed?: boolean;
+  ttl?: string;
+  idle_teardown?: string;
 };
 
 /** A type that cannot carry `services` makes "leave" the default instead of a forgotten field. */
@@ -323,6 +325,9 @@ export function buildDeployRequest(
   if (yaml.preview.labels) body.labels = { ...yaml.preview.labels };
   if (yaml.preview.volumes && yaml.preview.volumes.length > 0)
     body.volumes = [...yaml.preview.volumes];
+  if (yaml.preview.ttl !== undefined) body.ttl = yaml.preview.ttl;
+  if (yaml.preview.idle_teardown !== undefined)
+    body.idle_teardown = yaml.preview.idle_teardown;
   if (yaml.db) body.db = yaml.db;
   if (yaml.mail) body.mail = { ...yaml.mail };
   if (yaml.preview.auth) body.auth = { ...yaml.preview.auth };

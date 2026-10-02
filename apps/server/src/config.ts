@@ -4,6 +4,10 @@ import type {
 } from "./app-deployment/labels.ts";
 import type { TelemetryState } from "./telemetry/destination.ts";
 import { formatOtlpDestination } from "./telemetry/destination.ts";
+import {
+  parseGatewayCap,
+  parseGatewayDurationMs,
+} from "@sprout/preview-env";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -73,6 +77,15 @@ export const DASHBOARD_ENV_KEYS = [
   "SPROUT_DASHBOARD_PASSWORD",
 ] as const;
 
+export const GOVERNANCE_ENV_KEYS = [
+  "SPROUT_PREVIEW_TTL",
+  "SPROUT_PREVIEW_IDLE_TEARDOWN",
+  "SPROUT_MAX_PREVIEWS_PER_REPO",
+  "SPROUT_MAX_PREVIEWS",
+  "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+  "SPROUT_POSTGRES_MAX_CONNECTIONS",
+] as const;
+
 export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...REQUIRED_ENV,
   ...POSTGRES_REQUIRED_ENV,
@@ -81,6 +94,7 @@ export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...Object.keys(OPTIONAL_ENV_DEFAULTS),
   ...OPTIONAL_STRING_ENV,
   ...DASHBOARD_ENV_KEYS,
+  ...GOVERNANCE_ENV_KEYS,
   "SPROUT_ADMIN_TOKEN",
   "SPROUT_STATE_DB_PATH",
   "SPROUT_ADMIN_TOKEN_PATH",
@@ -151,6 +165,18 @@ export type Config = {
   telemetry: TelemetryState;
   /** Operator-owned trace export; active exactly when endpoint is set. */
   otlp: OtlpConfig;
+  /** Null/undefined means off (unbounded); manifest preview.ttl overrides. */
+  previewTtlMs?: number | null;
+  /** Null/undefined means off; measured from the last successful deploy. */
+  previewIdleMs?: number | null;
+  /** Null/undefined means off (unbounded). */
+  maxPreviewsPerRepo?: number | null;
+  /** Null/undefined means off (unbounded). */
+  maxPreviews?: number | null;
+  /** Expected per-preview DB connections; null/undefined means no budget. */
+  previewMaxDbConnections?: number | null;
+  /** Instance ceiling for the budget arithmetic; null/undefined means no budget. */
+  postgresMaxConnections?: number | null;
 };
 
 function parsePositiveInt(
@@ -592,7 +618,48 @@ export function loadConfig(): Config {
     traefikForwardAuth: parseTraefikForwardAuth(),
     telemetry,
     otlp: parseOtlpConfig(),
+    previewTtlMs: parseGatewayDurationMs(
+      "SPROUT_PREVIEW_TTL",
+      process.env.SPROUT_PREVIEW_TTL,
+    ),
+    previewIdleMs: parseGatewayDurationMs(
+      "SPROUT_PREVIEW_IDLE_TEARDOWN",
+      process.env.SPROUT_PREVIEW_IDLE_TEARDOWN,
+    ),
+    maxPreviewsPerRepo: parseGatewayCap(
+      "SPROUT_MAX_PREVIEWS_PER_REPO",
+      process.env.SPROUT_MAX_PREVIEWS_PER_REPO,
+    ),
+    maxPreviews: parseGatewayCap(
+      "SPROUT_MAX_PREVIEWS",
+      process.env.SPROUT_MAX_PREVIEWS,
+    ),
+    previewMaxDbConnections: parseGatewayCap(
+      "SPROUT_PREVIEW_MAX_DB_CONNECTIONS",
+      process.env.SPROUT_PREVIEW_MAX_DB_CONNECTIONS,
+    ),
+    postgresMaxConnections: parseGatewayCap(
+      "SPROUT_POSTGRES_MAX_CONNECTIONS",
+      process.env.SPROUT_POSTGRES_MAX_CONNECTIONS,
+    ),
   };
+}
+
+/** Loud boot warning when the gateway runs unbounded. */
+export function governanceUnboundedWarning(config: Config): string | null {
+  if (
+    (config.previewTtlMs ?? null) === null &&
+    (config.previewIdleMs ?? null) === null &&
+    (config.maxPreviewsPerRepo ?? null) === null &&
+    (config.maxPreviews ?? null) === null
+  ) {
+    return (
+      "preview governance is unbounded (SPROUT_PREVIEW_TTL, " +
+      "SPROUT_PREVIEW_IDLE_TEARDOWN, SPROUT_MAX_PREVIEWS_PER_REPO and " +
+      "SPROUT_MAX_PREVIEWS are all off): previews live until PR close"
+    );
+  }
+  return null;
 }
 
 export function missingPostgresEnv(
@@ -664,6 +731,12 @@ export function configSummary(config: Config): Record<string, string | number> {
     gitlabToken: config.gitlabToken === "" ? "[unset]" : "[set]",
     extraGitlabHosts: config.extraGitlabHosts.size,
     ttlHours: config.ttlHours,
+    previewTtlMs: config.previewTtlMs ?? "[off]",
+    previewIdleMs: config.previewIdleMs ?? "[off]",
+    maxPreviewsPerRepo: config.maxPreviewsPerRepo ?? "[off]",
+    maxPreviews: config.maxPreviews ?? "[off]",
+    previewMaxDbConnections: config.previewMaxDbConnections ?? "[off]",
+    postgresMaxConnections: config.postgresMaxConnections ?? "[off]",
     sweepCron: config.sweepCron,
     previewPortDefault: config.previewPortDefault,
     seedTimeout: config.seedTimeout,

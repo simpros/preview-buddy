@@ -112,6 +112,17 @@ export {
 } from "./volumes.ts";
 
 export {
+  computeExpiresAtMs,
+  connectionBudgetDetail,
+  governanceIssueMessage,
+  parseGatewayCap,
+  parseGatewayDurationMs,
+  parsePreviewGovernanceField,
+  previewLimitDetail,
+  resolveGovernanceMs,
+} from "./governance.ts";
+
+export {
   DEFAULT_MAIL_FROM_DOMAIN,
   deriveMailFromName,
   mailIntent,

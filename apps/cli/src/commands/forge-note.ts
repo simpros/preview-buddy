@@ -24,6 +24,7 @@ export function buildPreviewNote(input: {
   previewUrl: string;
   mailboxUrl?: string;
   mailFrom?: string;
+  expiresAt?: string;
   sha?: string;
   prId: number;
   reset?: { actor: string; at: string };
@@ -49,6 +50,7 @@ export function buildPreviewNote(input: {
       `- Access: gated — reviewers need a link: \`sprout access ${input.prId}\``,
     );
   }
+  if (input.expiresAt) lines.push(`- Expires: ${input.expiresAt}`);
   const short = shortSha(input.sha);
   if (short) lines.push(`- Commit: \`${short}\``);
   lines.push("- Health: healthy");
@@ -396,6 +398,7 @@ export async function publishPreviewNote(
       previewUrl: note.previewUrl,
       ...(note.mailboxUrl ? { mailboxUrl: note.mailboxUrl } : {}),
       ...(note.mailFrom ? { mailFrom: note.mailFrom } : {}),
+      ...(note.expiresAt ? { expiresAt: note.expiresAt } : {}),
       sha: identity.commitSha,
       prId: identity.prId,
       ...(reset ? { reset } : {}),

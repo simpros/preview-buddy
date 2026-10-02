@@ -4,6 +4,7 @@ import { isForgeApiError } from "../forge/types.ts";
 export type SweepReason =
   | "sweep:pr-not-open"
   | "sweep:ttl-expired"
+  | "sweep:idle-expired"
   | "sweep:orphan-db"
   | "sweep:orphan-container"
   | "sweep:orphan-data-volume";
@@ -20,11 +21,15 @@ export type SweepPreview = {
   createdAt: string;
   createdAtMs: number | null;
   status: string;
+  lastActivityMs?: number | null;
+  expiresAtMs?: number | null;
+  ttlMs?: number | null;
+  idleMs?: number | null;
 };
 
 export type SweepDeletion =
   | {
-      reason: "sweep:pr-not-open" | "sweep:ttl-expired";
+      reason: "sweep:pr-not-open" | "sweep:ttl-expired" | "sweep:idle-expired";
       canonicalRepoId: string;
       prId: number;
       slug: string;
@@ -47,6 +52,12 @@ export type SweepPorts = {
   /** True if resources were removed; false if the plan was stale. */
   drop: (deletion: SweepDeletion) => Promise<boolean>;
   ttlHours: number;
+  governance?: {
+    maxPreviewsPerRepo?: number | null;
+    maxPreviews?: number | null;
+    previewMaxDbConnections?: number | null;
+    postgresMaxConnections?: number | null;
+  };
   log?: (message: string, deletion?: SweepDeletion) => void;
 };
 
@@ -171,17 +182,28 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
     );
   }
 
-  const cutoff = Date.now() - ports.ttlHours * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const cutoff = nowMs - ports.ttlHours * 60 * 60 * 1000;
   const previewKeys = new Set<string>();
   const remainingPreviews: SweepPreview[] = [];
-  const ttlDeletions: SweepDeletion[] = [];
+  const expiryDeletions: SweepDeletion[] = [];
 
   for (const preview of previews) {
     if (preview.status === "removed") continue;
 
     previewKeys.add(`${preview.slug}:${preview.prId}`);
-    if (preview.createdAtMs !== null && preview.createdAtMs < cutoff) {
-      ttlDeletions.push({
+    const governanceExpiry = planGovernanceExpiry(preview, nowMs);
+    if (governanceExpiry) {
+      expiryDeletions.push({
+        reason: governanceExpiry,
+        canonicalRepoId: preview.canonicalRepoId,
+        prId: preview.prId,
+        slug: preview.slug,
+        dbName: preview.dbName,
+        createdAt: preview.createdAt,
+      });
+    } else if (preview.createdAtMs !== null && preview.createdAtMs < cutoff) {
+      expiryDeletions.push({
         reason: "sweep:ttl-expired",
         canonicalRepoId: preview.canonicalRepoId,
         prId: preview.prId,
@@ -193,6 +215,8 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
       remainingPreviews.push(preview);
     }
   }
+
+  logOverCap(ports, previews);
 
   const orphanDeletions = planOrphans({
     previewKeys,
@@ -246,9 +270,97 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
 
   const deletions = await dropSettled(
     ports,
-    [...ttlDeletions, ...orphanDeletions, ...prNotOpenDeletions],
+    [...expiryDeletions, ...orphanDeletions, ...prNotOpenDeletions],
     (d) => `deleted (${d.reason})`,
   );
 
   return { forgeRepoFailures, deletions };
+}
+
+function activityBaseMs(preview: SweepPreview): number | null {
+  if ((preview.lastActivityMs ?? null) !== null)
+    return preview.lastActivityMs ?? null;
+  return preview.createdAtMs;
+}
+
+/**
+ * Governance expiry from the stored per-preview deadlines. The cheap activity
+ * signal is the last successful deploy (including reseed/reset); see
+ * docs/previews.md. Returns the reason to expire with, or null to keep.
+ */
+export function planGovernanceExpiry(
+  preview: SweepPreview,
+  nowMs: number,
+): "sweep:ttl-expired" | "sweep:idle-expired" | null {
+  const expiresAtMs = preview.expiresAtMs ?? null;
+  const ttlMs = preview.ttlMs ?? null;
+  const idleMs = preview.idleMs ?? null;
+  if (expiresAtMs !== null) {
+    if (nowMs < expiresAtMs) return null;
+    const base = activityBaseMs(preview);
+    if (base === null) return "sweep:ttl-expired";
+    const ttlDeadline = ttlMs !== null ? base + ttlMs : null;
+    const idleDeadline = idleMs !== null ? base + idleMs : null;
+    const ttlExpired = ttlDeadline !== null && nowMs >= ttlDeadline;
+    const idleExpired = idleDeadline !== null && nowMs >= idleDeadline;
+    if (ttlExpired && idleExpired) {
+      return ttlDeadline! <= idleDeadline!
+        ? "sweep:ttl-expired"
+        : "sweep:idle-expired";
+    }
+    if (ttlExpired) return "sweep:ttl-expired";
+    if (idleExpired) return "sweep:idle-expired";
+    return "sweep:ttl-expired";
+  }
+  // Back-compat for rows written before governance columns existed: derive
+  // from last activity (or createdAt) plus stored per-preview durations.
+  const base = activityBaseMs(preview);
+  if (base === null) return null;
+  if (ttlMs !== null && nowMs >= base + ttlMs) {
+    return "sweep:ttl-expired";
+  }
+  if (idleMs !== null && nowMs >= base + idleMs) {
+    return "sweep:idle-expired";
+  }
+  return null;
+}
+
+function logOverCap(
+  ports: SweepPorts,
+  previews: SweepPreview[],
+): void {
+  const gov = ports.governance;
+  if (!gov) return;
+  const live = previews.filter((p) => p.status !== "removed");
+  const maxTotal = gov.maxPreviews ?? null;
+  if (maxTotal !== null && live.length > maxTotal) {
+    ports.log?.(
+      `sweep over cap SPROUT_MAX_PREVIEWS (${live.length} > ${maxTotal})`,
+    );
+  }
+  const perRepo = gov.maxPreviewsPerRepo ?? null;
+  if (perRepo !== null) {
+    const byRepo = new Map<string, number>();
+    for (const p of live) {
+      byRepo.set(p.canonicalRepoId, (byRepo.get(p.canonicalRepoId) ?? 0) + 1);
+    }
+    for (const [repo, count] of byRepo) {
+      if (count > perRepo) {
+        ports.log?.(
+          `sweep over cap SPROUT_MAX_PREVIEWS_PER_REPO ${repo} (${count} > ${perRepo})`,
+        );
+      }
+    }
+  }
+  const perPreview = gov.previewMaxDbConnections ?? null;
+  const ceiling = gov.postgresMaxConnections ?? null;
+  if (perPreview !== null && ceiling !== null) {
+    const projected = live.length * perPreview;
+    if (projected > ceiling) {
+      ports.log?.(
+        `sweep over connection budget (projected ${projected} > ceiling ${ceiling}; ` +
+          `${live.length} previews x ${perPreview} per preview)`,
+      );
+    }
+  }
 }

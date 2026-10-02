@@ -30,5 +30,13 @@ export function startServer(deps: ServerDeps) {
     extraGitlabHosts: deps.config.extraGitlabHosts,
     telemetry: deps.telemetry ?? NO_TELEMETRY,
     ...(deps.tracesPlugin ? { tracesPlugin: deps.tracesPlugin } : {}),
+    governance: {
+      previewTtlMs: deps.config.previewTtlMs,
+      previewIdleMs: deps.config.previewIdleMs,
+      maxPreviewsPerRepo: deps.config.maxPreviewsPerRepo,
+      maxPreviews: deps.config.maxPreviews,
+      previewMaxDbConnections: deps.config.previewMaxDbConnections,
+      postgresMaxConnections: deps.config.postgresMaxConnections,
+    },
   }).listen(deps.config.port);
 }

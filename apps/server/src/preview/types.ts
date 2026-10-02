@@ -97,6 +97,20 @@ export type PhaseTimer = {
   record(phase: PreviewPhase, ms: number): void;
 };
 
+export type GovernanceInput = {
+  ttl?: string;
+  idle_teardown?: string;
+};
+
+export type GovernanceConfig = {
+  previewTtlMs?: number | null;
+  previewIdleMs?: number | null;
+  maxPreviewsPerRepo?: number | null;
+  maxPreviews?: number | null;
+  previewMaxDbConnections?: number | null;
+  postgresMaxConnections?: number | null;
+};
+
 export type ProvisionInput = {
   repo: string;
   prId: number;
@@ -114,6 +128,8 @@ export type ProvisionInput = {
   traefikForwardAuth?: TraefikForwardAuth;
   auth?: PreviewAuthSpec;
   previewAuth?: PreviewAuthConfig;
+  governance?: GovernanceInput;
+  governanceMs?: { ttlMs: number | null; idleMs: number | null };
 };
 
 export type TeardownInput = {
@@ -126,6 +142,7 @@ export type RemovePreviewInput = {
   prId: number;
   expectedDbName: string | null;
   expectedCreatedAt: string;
+  expiryReason?: string;
 };
 
 export type PreviewSnapshot = {
@@ -142,6 +159,9 @@ export type PreviewSnapshot = {
   mail_from_name?: string;
   last_error?: string;
   last_error_detail?: string;
+  last_activity_at?: string | null;
+  expires_at?: string | null;
+  expiry_reason?: string | null;
 };
 
 export type TeardownSnapshot = {

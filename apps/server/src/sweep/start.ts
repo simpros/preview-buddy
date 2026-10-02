@@ -27,6 +27,12 @@ export function startGatewaySweep(deps: {
     dataVolumes: deps.dataVolumes,
     forge,
     ttlHours: deps.config.ttlHours,
+    governance: {
+      maxPreviewsPerRepo: deps.config.maxPreviewsPerRepo,
+      maxPreviews: deps.config.maxPreviews,
+      previewMaxDbConnections: deps.config.previewMaxDbConnections,
+      postgresMaxConnections: deps.config.postgresMaxConnections,
+    },
     log: (message, deletion) => {
       if (deletion) console.log(message, deletion);
       else console.log(message);

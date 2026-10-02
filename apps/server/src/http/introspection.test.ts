@@ -103,6 +103,9 @@ describe("GET /v1/previews", () => {
         hostname: "pr-42.myapp.preview.example.com",
         status: "running",
         created_at: expect.any(String),
+        last_activity_at: expect.any(String),
+        expires_at: null,
+        expiry_reason: null,
       },
     ]);
   });

@@ -2,6 +2,7 @@ import {
   authSpecIssueMessage,
   dbRolesIssueMessage,
   dbSpecIssueMessage,
+  governanceIssueMessage,
   isServicePort,
   labelIssueMessage,
   mailSpecIssueMessage,
@@ -11,6 +12,7 @@ import {
   parseMailSpec,
   parsePreviewAuthSpec,
   parsePreviewEnvForProvider,
+  parsePreviewGovernanceField,
   parsePreviewVolumes,
   parseServiceEnvMap,
   previewVolumeIssueMessage,
@@ -79,6 +81,8 @@ export type SproutYaml = {
     labels?: PreviewLabels;
     volumes?: string[];
     auth?: PreviewAuthSpec;
+    ttl?: string;
+    idle_teardown?: string;
   };
   db?: DbSpec;
   mail?: MailSpec;
@@ -88,7 +92,7 @@ export type SproutYaml = {
 };
 
 const TOP_KEYS = new Set(["slug", "preview", "health", "build", "seed", "db", "mail"]);
-const PREVIEW_KEYS = new Set(["hostname", "env", "app_env", "services", "labels", "volumes", "auth"]);
+const PREVIEW_KEYS = new Set(["hostname", "env", "app_env", "services", "labels", "volumes", "auth", "ttl", "idle_teardown"]);
 const HEALTH_KEYS = new Set(["path", "interval", "timeout", "expect"]);
 const SERVICE_KEYS = new Set(["name", "image", "hostname", "path", "port", "env", "labels"]);
 const DOCKERFILE_KEYS = new Set(["dockerfile"]);
@@ -404,6 +408,18 @@ function parsePreviewVolumesField(
   };
 }
 
+function parseGovernanceField(
+  raw: unknown,
+  path: "preview.ttl" | "preview.idle_teardown",
+): Result<string | undefined> {
+  const kind = path === "preview.ttl" ? "ttl" : "idle_teardown";
+  const parsed = parsePreviewGovernanceField(raw, kind);
+  if (!parsed.ok) {
+    return { ok: false, error: governanceIssueMessage(path, parsed.issue) };
+  }
+  return { ok: true, value: parsed.value };
+}
+
 function parseServices(
   raw: unknown,
 ): Result<SproutYamlService[] | undefined> {
@@ -552,6 +568,14 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
   );
   if (!volumes.ok) return volumes;
 
+  const ttl = parseGovernanceField(parsed.preview.ttl, "preview.ttl");
+  if (!ttl.ok) return ttl;
+  const idleTeardown = parseGovernanceField(
+    parsed.preview.idle_teardown,
+    "preview.idle_teardown",
+  );
+  if (!idleTeardown.ok) return idleTeardown;
+
   const build = parseDockerfileBlock(parsed.build, "build", "Dockerfile");
   if (!build.ok) return build;
 
@@ -576,6 +600,9 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
   if (labels.value) value.preview.labels = labels.value;
   if (auth.value) value.preview.auth = auth.value;
   if (volumes.value.length > 0) value.preview.volumes = volumes.value;
+  if (ttl.value !== undefined) value.preview.ttl = ttl.value;
+  if (idleTeardown.value !== undefined)
+    value.preview.idle_teardown = idleTeardown.value;
   if (db.value) value.db = db.value;
   if (mail.value) value.mail = mail.value;
   if (build.value) value.build = build.value;

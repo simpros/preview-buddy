@@ -4,7 +4,10 @@ import type { PreviewAppOps } from "../app-deployment/ops.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { DashboardConfig } from "../config.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
-import type { LifecycleDeps } from "../preview/lifecycle.ts";
+import type {
+  GovernanceConfig,
+  LifecycleDeps,
+} from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import type { TelemetryDeployHook } from "../telemetry/contract.ts";
@@ -41,6 +44,7 @@ export type RouteDeps = {
   extraGitlabHosts?: ReadonlySet<string>;
   telemetry: TelemetryDeployHook;
   tracesPlugin?: TracesHandle["plugin"];
+  governance?: GovernanceConfig;
 };
 
 function stubNotImplemented({
@@ -63,6 +67,7 @@ export function createRoutes(deps: RouteDeps) {
     ...lifecycle,
     materialization: deps.materialization,
     telemetry: deps.telemetry,
+    ...(deps.governance !== undefined ? { governance: deps.governance } : {}),
   };
   const mailboxUrl = deps.materialization.mail?.uiUrl;
   const accessDeps = {

@@ -8,6 +8,7 @@ import {
   dropOrphanDatabase,
   dropOrphanDataVolume,
   removePreview,
+  tryRemovePreview,
   type TeardownDeps,
 } from "../preview/lifecycle.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
@@ -24,6 +25,7 @@ export type LiveSweepDeps = {
   dataVolumes: PreviewDataVolumes;
   forge: ForgeClient;
   ttlHours: number;
+  governance?: SweepPorts["governance"];
   log?: SweepPorts["log"];
 };
 
@@ -40,15 +42,20 @@ async function removeControlPlane(
   deps: LiveSweepDeps,
   deletion: Extract<
     SweepDeletion,
-    { reason: "sweep:ttl-expired" | "sweep:pr-not-open" }
+    { reason: "sweep:ttl-expired" | "sweep:idle-expired" | "sweep:pr-not-open" }
   >,
+  useTryLock = false,
 ): Promise<boolean> {
-  const result = await removePreview(teardownDeps(deps), {
+  const input = {
     repo: deletion.canonicalRepoId,
     prId: deletion.prId,
     expectedDbName: deletion.dbName,
     expectedCreatedAt: deletion.createdAt,
-  });
+    expiryReason: deletion.reason,
+  };
+  const result = useTryLock
+    ? await tryRemovePreview(teardownDeps(deps), input)
+    : await removePreview(teardownDeps(deps), input);
   if (!result.ok) throw new Error(result.error);
   return result.value;
 }
@@ -56,6 +63,7 @@ async function removeControlPlane(
 export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
   return {
     ttlHours: deps.ttlHours,
+    ...(deps.governance !== undefined ? { governance: deps.governance } : {}),
     log: deps.log,
     listPreviews: async () => {
       const rows = await deps.db.select().from(previews);
@@ -75,6 +83,10 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           createdAt: row.createdAt,
           createdAtMs,
           status: row.status,
+          lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
+          expiresAtMs: parseUnambiguousUtcMs(row.expiresAt ?? ""),
+          ttlMs: row.ttlMs ?? null,
+          idleMs: row.idleMs ?? null,
         });
       }
       return out;
@@ -109,7 +121,8 @@ async function dropDeletion(
 ): Promise<boolean> {
   switch (deletion.reason) {
     case "sweep:ttl-expired":
-      return removeControlPlane(deps, deletion);
+    case "sweep:idle-expired":
+      return removeControlPlane(deps, deletion, true);
     case "sweep:pr-not-open": {
       const open = await deps.forge.listOpenPrIds(deletion.canonicalRepoId);
       if (open.includes(deletion.prId)) return false;

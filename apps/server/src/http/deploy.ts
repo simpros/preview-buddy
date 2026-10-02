@@ -2,6 +2,7 @@ import {
   authSpecIssueMessage,
   dbRolesIssueMessage,
   dbSpecIssueMessage,
+  governanceIssueMessage,
   isServicePort,
   labelIssueMessage,
   mailIntent,
@@ -13,12 +14,14 @@ import {
   parseMailSpec,
   parsePreviewAuthSpec,
   parsePreviewEnvForProvider,
+  parsePreviewGovernanceField,
   parsePreviewVolumes,
   parseServiceEnvMap,
   previewAuthMode,
   previewVolumeIssueMessage,
   requiresDatabase,
   resolveDbRoles,
+  resolveGovernanceMs,
   resolveHealthSpec,
   seedRequiresDatabaseMessage,
   validateHostname,
@@ -42,7 +45,11 @@ import {
   previewAuthNotConfiguredDetail,
 } from "../config.ts";
 import {
+  checkConnectionBudget,
+  checkPreviewCaps,
+  resolveEffectiveGovernanceMs,
   teardownPreview,
+  type GovernanceConfig,
   type LifecycleDeps,
   type PreviewSnapshot,
 } from "../preview/lifecycle.ts";
@@ -125,6 +132,8 @@ export const deployBody = t.Object({
   labels: t.Optional(t.Record(t.String(), t.String())),
   volumes: t.Optional(t.Array(t.String())),
   reseed: t.Optional(t.Boolean()),
+  ttl: t.Optional(t.String({ minLength: 1 })),
+  idle_teardown: t.Optional(t.String({ minLength: 1 })),
 });
 
 export const teardownBody = t.Object({
@@ -156,6 +165,8 @@ export type DeployBody = {
   labels?: PreviewLabels;
   volumes?: string[];
   reseed?: boolean;
+  ttl?: string;
+  idle_teardown?: string;
 };
 
 export type DeploySpecs = {
@@ -477,6 +488,36 @@ export function resolvePreviewVolumesRequest(
   };
 }
 
+export function resolveGovernanceRequest(
+  body: Pick<DeployBody, "ttl" | "idle_teardown">,
+):
+  | { ok: true; value: { ttl?: string; idle_teardown?: string } }
+  | { ok: false; error: string; detail?: string } {
+  const ttl = parsePreviewGovernanceField(body.ttl, "ttl");
+  if (!ttl.ok) {
+    return {
+      ok: false,
+      error: "invalid_ttl",
+      detail: governanceIssueMessage("preview.ttl", ttl.issue),
+    };
+  }
+  const idle = parsePreviewGovernanceField(body.idle_teardown, "idle_teardown");
+  if (!idle.ok) {
+    return {
+      ok: false,
+      error: "invalid_idle_teardown",
+      detail: governanceIssueMessage("preview.idle_teardown", idle.issue),
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      ...(ttl.value !== undefined ? { ttl: ttl.value } : {}),
+      ...(idle.value !== undefined ? { idle_teardown: idle.value } : {}),
+    },
+  };
+}
+
 export type TeardownBody = {
   canonical_repo_id: string;
   pr_id: number;
@@ -502,6 +543,7 @@ export function deploy(
   deps: LifecycleDeps & {
     materialization: PreviewMaterializationCtx;
     telemetry: TelemetryDeployHook;
+    governance?: GovernanceConfig;
   },
 ) {
   return async ({
@@ -572,6 +614,45 @@ export function deploy(
     if (!volumes.ok) {
       return unprocessable(set, volumes);
     }
+    const governance = resolveGovernanceRequest(body);
+    if (!governance.ok) {
+      return unprocessable(set, governance);
+    }
+    const gatewayGov: GovernanceConfig = {
+      previewTtlMs: deps.governance?.previewTtlMs ?? null,
+      previewIdleMs: deps.governance?.previewIdleMs ?? null,
+      maxPreviewsPerRepo: deps.governance?.maxPreviewsPerRepo ?? null,
+      maxPreviews: deps.governance?.maxPreviews ?? null,
+      previewMaxDbConnections:
+        deps.governance?.previewMaxDbConnections ?? null,
+      postgresMaxConnections: deps.governance?.postgresMaxConnections ?? null,
+    };
+    const caps = await checkPreviewCaps(
+      deps.db,
+      { repo: target.value.repo, prId: target.value.prId },
+      gatewayGov,
+    );
+    if (!caps.ok) {
+      set.status = caps.status;
+      return caps.detail
+        ? { error: caps.error, detail: caps.detail }
+        : { error: caps.error };
+    }
+    const budget = await checkConnectionBudget(
+      deps.db,
+      { repo: target.value.repo, prId: target.value.prId },
+      gatewayGov,
+    );
+    if (!budget.ok) {
+      set.status = budget.status;
+      return budget.detail
+        ? { error: budget.error, detail: budget.detail }
+        : { error: budget.error };
+    }
+    const governanceMs = resolveEffectiveGovernanceMs(
+      governance.value,
+      gatewayGov,
+    );
     const plan = resolvePreviewPlan(deps.materialization, {
       spec: deploySpecs.value.spec,
       slug: body.slug,
@@ -624,6 +705,8 @@ export function deploy(
         : {}),
       plan,
       reseed: body.reseed === true,
+      governance: governance.value,
+      governanceMs,
       ...(deps.materialization.traefikTls !== undefined
         ? { traefikTls: deps.materialization.traefikTls }
         : {}),
