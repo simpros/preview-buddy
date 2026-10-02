@@ -386,10 +386,7 @@ describe("loadConfig", () => {
       seedTimeout: 180,
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
-      telemetryEnabled: true,
-      telemetryOffReason: null,
-      telemetryEndpoint: "",
-      telemetryAuth: "",
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
@@ -431,10 +428,7 @@ describe("loadConfig", () => {
         user: "op",
         password: "pw",
       },
-      telemetryEnabled: true,
-      telemetryOffReason: null,
-      telemetryEndpoint: "",
-      telemetryAuth: "",
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
@@ -474,10 +468,7 @@ describe("loadConfig", () => {
       seedTimeout: 180,
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
-      telemetryEnabled: true,
-      telemetryOffReason: null,
-      telemetryEndpoint: "",
-      telemetryAuth: "",
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");
@@ -637,16 +628,24 @@ describe("telemetry config", () => {
     if (raw === "") delete process.env.SPROUT_TELEMETRY;
     else process.env.SPROUT_TELEMETRY = raw;
     const config = loadConfig();
-    expect(config.telemetryEnabled).toBe(enabled);
-    expect(config.telemetryEndpoint).toBe("");
-    expect(config.telemetryAuth).toBe("");
+    if (enabled) {
+      expect(config.telemetry).toEqual({
+        enabled: true,
+        endpoint: "",
+        auth: "",
+      });
+    } else {
+      expect(config.telemetry).toEqual({
+        enabled: false,
+        reason: "SPROUT_TELEMETRY",
+      });
+    }
   });
 
   test("defaults to on with no destination", () => {
     setRequiredEnv();
     const config = loadConfig();
-    expect(config.telemetryEnabled).toBe(true);
-    expect(config.telemetryOffReason).toBeNull();
+    expect(config.telemetry).toEqual({ enabled: true, endpoint: "", auth: "" });
     expect(configSummary(config).telemetryAuth).toBe("[empty]");
   });
 
@@ -654,23 +653,30 @@ describe("telemetry config", () => {
     setRequiredEnv();
     process.env.DO_NOT_TRACK = "1";
     const config = loadConfig();
-    expect(config.telemetryEnabled).toBe(false);
-    expect(config.telemetryOffReason).toBe("DO_NOT_TRACK");
+    expect(config.telemetry).toEqual({
+      enabled: false,
+      reason: "DO_NOT_TRACK",
+    });
   });
 
   test("SPROUT_TELEMETRY=off names its own switch", () => {
     setRequiredEnv();
     process.env.SPROUT_TELEMETRY = "off";
     const config = loadConfig();
-    expect(config.telemetryEnabled).toBe(false);
-    expect(config.telemetryOffReason).toBe("SPROUT_TELEMETRY");
+    expect(config.telemetry).toEqual({
+      enabled: false,
+      reason: "SPROUT_TELEMETRY",
+    });
   });
 
   test("both switches together report SPROUT_TELEMETRY", () => {
     setRequiredEnv();
     process.env.SPROUT_TELEMETRY = "off";
     process.env.DO_NOT_TRACK = "1";
-    expect(loadConfig().telemetryOffReason).toBe("SPROUT_TELEMETRY");
+    expect(loadConfig().telemetry).toEqual({
+      enabled: false,
+      reason: "SPROUT_TELEMETRY",
+    });
   });
 
   test("invalid token fails boot with the exact error", () => {
@@ -705,10 +711,11 @@ describe("telemetry config", () => {
       "https://telemetry.example.com/api/o/s/_json";
     process.env.SPROUT_TELEMETRY_AUTH = "Basic secret";
     const config = loadConfig();
-    expect(config.telemetryEnabled).toBe(true);
-    expect(config.telemetryEndpoint).toBe(
-      "https://telemetry.example.com/api/o/s/_json",
-    );
+    expect(config.telemetry).toEqual({
+      enabled: true,
+      endpoint: "https://telemetry.example.com/api/o/s/_json",
+      auth: "Basic secret",
+    });
     const summary = configSummary(config);
     expect(summary.telemetryAuth).toBe("[set]");
     expect(JSON.stringify(summary)).not.toContain("secret");

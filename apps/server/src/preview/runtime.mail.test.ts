@@ -248,10 +248,7 @@ describe("buildMaterializationCtx", () => {
         address: "http://gateway:7331/v1/internal/preview-auth",
       },
       dashboard: { enabled: false, user: "", password: "" },
-      telemetryEnabled: true,
-      telemetryOffReason: null,
-      telemetryEndpoint: "",
-      telemetryAuth: "",
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
     expect(ctx.previewAuth).toEqual({
       secret: "sekrit",
@@ -269,10 +266,7 @@ describe("buildMaterializationCtx", () => {
       seedTimeout: 180,
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
-      telemetryEnabled: true,
-      telemetryOffReason: null,
-      telemetryEndpoint: "",
-      telemetryAuth: "",
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
     expect(bare.previewAuth).toBeUndefined();
   });

@@ -1,27 +1,28 @@
 import type { Config } from "../config.ts";
-import { telemetryStateFromConfig } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import { resolveStateDbPath } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
+import type {
+  TelemetryDeployHook,
+  TelemetryDeployOutcome,
+} from "./contract.ts";
 import { describeTelemetryState } from "./destination.ts";
 import {
   startTelemetryHeartbeat,
   type TelemetryHeartbeatHandle,
 } from "./heartbeat.ts";
-import { loadOrCreateInstallId, stateDbPathFromEnv } from "./install-id.ts";
+import { loadOrCreateInstallId } from "./install-id.ts";
 import {
   buildDeployEvent,
   buildInstallEvent,
-  type TelemetryDeployOutcome,
   type TelemetryEvent,
 } from "./payload.ts";
 import { sendTelemetryEvent } from "./transport.ts";
 
-export type { TelemetryDeployOutcome } from "./payload.ts";
-
-/** Deploy-path hook: runAsyncDeploy reports through this, never the reporter. */
-export type TelemetryDeployHook = {
-  reportDeployOutcome: (outcome: TelemetryDeployOutcome) => void;
-};
+export type {
+  TelemetryDeployHook,
+  TelemetryDeployOutcome,
+} from "./contract.ts";
 
 export type TelemetryReporter = TelemetryDeployHook & {
   readonly active: boolean;
@@ -39,18 +40,19 @@ export function createTelemetryReporter(deps: {
 }): TelemetryReporter {
   const config = deps.config;
   const db = deps.db;
-  const stateDbPath = deps.stateDbPath ?? stateDbPathFromEnv();
+  const stateDbPath = deps.stateDbPath ?? resolveStateDbPath();
   const now = deps.now ?? Date.now;
   const send = deps.send ?? sendTelemetryEvent;
-  const active = config.telemetryEnabled && config.telemetryEndpoint !== "";
+  const state = config.telemetry;
+  const active = state.enabled && state.endpoint !== "";
 
   async function exportEvent(
     build: (installId: string) => TelemetryEvent | Promise<TelemetryEvent>,
   ): Promise<void> {
-    if (!active) return;
+    if (!active || !state.enabled) return;
     try {
       const installId = await loadOrCreateInstallId(stateDbPath);
-      send(config.telemetryEndpoint, config.telemetryAuth, await build(installId));
+      send(state.endpoint, state.auth, await build(installId));
     } catch (error) {
       console.warn(
         `telemetry export failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -95,8 +97,7 @@ export function createTelemetryReporter(deps: {
 
   return {
     active,
-    describe: () =>
-      describeTelemetryState(telemetryStateFromConfig(config)),
+    describe: () => describeTelemetryState(state),
     reportInstall,
     reportDeployOutcome,
     startHeartbeat: (schedule?: string) => {

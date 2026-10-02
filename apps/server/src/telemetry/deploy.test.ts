@@ -12,10 +12,8 @@ import {
   DEPLOY_SUCCESS_EVENT_KEYS,
   type TelemetryDeployEvent,
 } from "./payload.ts";
-import {
-  createTelemetryReporter,
-  type TelemetryDeployHook,
-} from "./reporter.ts";
+import type { TelemetryDeployHook } from "./contract.ts";
+import { createTelemetryReporter } from "./reporter.ts";
 import {
   captureConsoleWarn,
   startTelemetryReceiver,

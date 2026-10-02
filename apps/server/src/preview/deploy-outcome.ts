@@ -1,5 +1,5 @@
 import type { StateDb } from "../infrastructure/db/client.ts";
-import type { TelemetryDeployOutcome } from "../telemetry/payload.ts";
+import type { TelemetryDeployOutcome } from "../telemetry/contract.ts";
 import { getPreviewRow } from "./lifecycle.ts";
 import type { BringUpPlan, PreviewPhaseMs } from "./types.ts";
 

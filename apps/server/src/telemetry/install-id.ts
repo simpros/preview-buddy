@@ -1,20 +1,12 @@
 import { chmod, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
-const DEFAULT_STATE_DB_PATH = "sprout.db";
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export function stateDbPathFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
-): string {
-  return env.SPROUT_STATE_DB_PATH?.trim() || DEFAULT_STATE_DB_PATH;
-}
-
 /** The install identity lives next to the state database, never in it. */
 export function installIdPathFor(stateDbPath: string): string {
-  const raw = stateDbPath.trim() || DEFAULT_STATE_DB_PATH;
-  return join(dirname(raw), "install-id");
+  return join(dirname(stateDbPath.trim()), "install-id");
 }
 
 /**

@@ -7,7 +7,7 @@ import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { LifecycleDeps } from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
-import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
+import type { TelemetryDeployHook } from "../telemetry/contract.ts";
 import {
   createDeployToken,
   createDeployTokenBody,

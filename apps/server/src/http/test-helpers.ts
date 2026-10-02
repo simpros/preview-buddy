@@ -30,7 +30,7 @@ import type {
   PostgresConfig,
   PreviewAuthConfig,
 } from "../config.ts";
-import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
+import type { TelemetryDeployHook } from "../telemetry/contract.ts";
 
 export type TestDb = {
   db: StateDb;

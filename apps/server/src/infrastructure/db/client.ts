@@ -5,8 +5,10 @@ import * as schema from "./schema.ts";
 
 const DEFAULT_SQLITE_PATH = "sprout.db";
 
-function resolveStateDbPath(): string {
-  return process.env.SPROUT_STATE_DB_PATH?.trim() || DEFAULT_SQLITE_PATH;
+export function resolveStateDbPath(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  return env.SPROUT_STATE_DB_PATH?.trim() || DEFAULT_SQLITE_PATH;
 }
 
 const relations = defineRelations(schema, () => ({}));

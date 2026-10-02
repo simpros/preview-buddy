@@ -4,7 +4,7 @@ export type TelemetryOffReason = "SPROUT_TELEMETRY" | "DO_NOT_TRACK";
 
 /** One decision, one value: off always names its reason. */
 export type TelemetryState =
-  | { enabled: true; endpoint: string }
+  | { enabled: true; endpoint: string; auth: string }
   | { enabled: false; reason: TelemetryOffReason };
 
 export function formatTelemetryDestination(endpoint: string): string {

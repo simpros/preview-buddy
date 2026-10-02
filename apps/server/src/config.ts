@@ -2,7 +2,7 @@ import type {
   TraefikForwardAuth,
   TraefikTls,
 } from "./app-deployment/labels.ts";
-import type { TelemetryOffReason, TelemetryState } from "./telemetry/destination.ts";
+import type { TelemetryState } from "./telemetry/destination.ts";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -137,10 +137,8 @@ export type Config = {
   port: number;
   traefikTls?: TraefikTls;
   traefikForwardAuth?: TraefikForwardAuth;
-  telemetryEnabled: boolean;
-  telemetryOffReason: TelemetryOffReason | null;
-  telemetryEndpoint: string;
-  telemetryAuth: string;
+  /** The enablement decision, resolved once at load; off always names its reason. */
+  telemetry: TelemetryState;
 };
 
 function parsePositiveInt(
@@ -258,30 +256,11 @@ export function resolveTelemetryState(options: {
   flag: boolean;
   doNotTrack: boolean;
   endpoint: string;
+  auth: string;
 }): TelemetryState {
   if (!options.flag) return { enabled: false, reason: "SPROUT_TELEMETRY" };
   if (options.doNotTrack) return { enabled: false, reason: "DO_NOT_TRACK" };
-  return { enabled: true, endpoint: options.endpoint };
-}
-
-/**
- * Bridge from the flat Config fields to the resolved state. Real configs are
- * derived from resolveTelemetryState at load, so the defensive default only
- * serves hand-built configs that pair enabled:false with a null reason.
- */
-export function telemetryStateFromConfig(
-  config: Pick<
-    Config,
-    "telemetryEnabled" | "telemetryOffReason" | "telemetryEndpoint"
-  >,
-): TelemetryState {
-  if (config.telemetryEnabled) {
-    return { enabled: true, endpoint: config.telemetryEndpoint };
-  }
-  return {
-    enabled: false,
-    reason: config.telemetryOffReason ?? "SPROUT_TELEMETRY",
-  };
+  return { enabled: true, endpoint: options.endpoint, auth: options.auth };
 }
 
 /** Mail is host-enabled: any SPROUT_MAIL_* without a host fails boot naming the host. */
@@ -501,6 +480,7 @@ export function loadConfig(): Config {
     flag: telemetryFlag,
     doNotTrack,
     endpoint: telemetryDestination.endpoint,
+    auth: telemetryDestination.auth,
   });
 
   return {
@@ -542,10 +522,7 @@ export function loadConfig(): Config {
     ),
     traefikTls: parseTraefikTls(),
     traefikForwardAuth: parseTraefikForwardAuth(),
-    telemetryEnabled: telemetry.enabled,
-    telemetryOffReason: telemetry.enabled ? null : telemetry.reason,
-    telemetryEndpoint: telemetryDestination.endpoint,
-    telemetryAuth: telemetryDestination.auth,
+    telemetry,
   };
 }
 
@@ -626,8 +603,13 @@ export function configSummary(config: Config): Record<string, string | number> {
     traefikForwardAuth: formatTraefikForwardAuthSummary(
       config.traefikForwardAuth,
     ),
-    telemetryAuth: config.telemetryAuth === "" ? "[empty]" : "[set]",
+    telemetryAuth: telemetryAuthSummary(config.telemetry),
   };
+}
+
+function telemetryAuthSummary(telemetry: TelemetryState): string {
+  if (!telemetry.enabled || telemetry.auth === "") return "[empty]";
+  return "[set]";
 }
 
 function formatTraefikTlsSummary(tls: TraefikTls | undefined): string {

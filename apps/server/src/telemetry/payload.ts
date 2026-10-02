@@ -5,9 +5,14 @@ import {
   PREVIEW_FAILURE_CODES,
   PREVIEW_FAILURE_FAMILIES,
   PREVIEW_PHASES,
-  type BringUpPlan,
-  type PreviewPhaseMs,
 } from "../preview/types.ts";
+import type {
+  TelemetryDeployOutcome,
+  TelemetryPhaseMs,
+  TelemetryPlan,
+} from "./contract.ts";
+
+export type { TelemetryDeployOutcome } from "./contract.ts";
 
 /**
  * Anonymous install-telemetry payload. The payload is assembled from a fixed
@@ -15,12 +20,6 @@ import {
  * validated against the preview vocabularies below, so anything outside the
  * closed sets leaves the box as "unknown" instead of free text.
  */
-
-/** Shared with the preview domain: the stored plan feeds the report unchanged. */
-export type TelemetryPlan = BringUpPlan;
-
-/** Shared with the preview domain: the phase stopwatch feeds the report unchanged. */
-export type TelemetryPhaseMs = PreviewPhaseMs;
 
 export const TELEMETRY_CAPABILITY_VOCABULARY = [
   "mail",
@@ -150,29 +149,6 @@ export function capabilitiesFromConfig(
   if (config.extraGitlabHosts.size > 0) out.push("custom_forge_hosts");
   return out;
 }
-
-/**
- * Deploy-report contract: a success never carries failure fields, a failure
- * always carries both. Callers build one variant; the builder maps it onto
- * the matching event shape with no conditional spreads.
- */
-export type TelemetryDeployOutcome =
-  | {
-    outcome: "running";
-    plan: TelemetryPlan;
-    seeded: boolean;
-    durationMs: number;
-    phaseMs: TelemetryPhaseMs;
-  }
-  | {
-    outcome: "failed";
-    plan: TelemetryPlan;
-    seeded: boolean;
-    durationMs: number;
-    phaseMs: TelemetryPhaseMs;
-    failureClass: string | null;
-    failureFamily: string | null;
-  };
 
 function baseEnvelope(options: {
   installId: string;

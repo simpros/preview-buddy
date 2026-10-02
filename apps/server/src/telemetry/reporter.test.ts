@@ -39,7 +39,11 @@ describe("telemetry reporter", () => {
     const tmp = await tempTelemetryDir();
     try {
       const config = loadConfig();
-      expect(config.telemetryEnabled).toBe(true);
+      expect(config.telemetry).toEqual({
+        enabled: true,
+        endpoint: "",
+        auth: "",
+      });
       const seen: TelemetryEvent[] = [];
       const reporter = createTelemetryReporter({
         config,
@@ -204,7 +208,10 @@ describe("telemetry reporter", () => {
         SPROUT_TELEMETRY_AUTH: "Basic runtime-value",
       });
       const config = loadConfig();
-      expect(config.telemetryEndpoint).toBe(runtimeReceiver.url);
+      expect(config.telemetry).toMatchObject({
+        enabled: true,
+        endpoint: runtimeReceiver.url,
+      });
       const reporter = createTelemetryReporter({
         config,
         db,

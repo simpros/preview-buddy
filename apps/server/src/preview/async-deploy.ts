@@ -16,7 +16,7 @@ import {
 } from "./snapshot.ts";
 import { createPhaseCollector } from "./timing.ts";
 import type { BringUpPlan } from "./types.ts";
-import type { TelemetryDeployHook } from "../telemetry/reporter.ts";
+import type { TelemetryDeployHook } from "../telemetry/contract.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
