@@ -67,7 +67,11 @@ services:
       - mailpit-data:/data
 
   gateway:
-    build: .
+    build:
+      context: .
+      args:
+        SPROUT_TELEMETRY_ENDPOINT: "${SPROUT_TELEMETRY_ENDPOINT:-}"
+        SPROUT_TELEMETRY_AUTH: "${SPROUT_TELEMETRY_AUTH:-}"
     restart: unless-stopped
     networks:
       - traefik

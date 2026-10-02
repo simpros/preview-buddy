@@ -56,10 +56,12 @@ export const docsGroups: PageGroup[] = [
     { file: "docs/operator-deploy.md", title: "Operator deploy", description: "gateway compose stack, Traefik, env reference, admin token." },
     { file: "docs/cli-reference.md", title: "CLI reference", description: "every sprout command, debugging, tokens." },
     { file: "docs/troubleshooting.md", title: "Troubleshooting", description: "adopter and operator error catalogue." },
+    { file: "docs/telemetry.md", title: "Telemetry", description: "anonymous install reporting and how to stop it." },
     { file: "docs/herdr-integration.md", title: "Herdr integration", description: "operator-side review automation." },
   ] },
 ];
-
+// The only description of the page set: the publish list, the rendered HTML,
+// docs/index.html, and llms.txt are all derived from this.
 export const docsPages: DocsPage[] = docsGroups.flatMap((g) => g.pages);
 
 // The marketing page carries the same page shape as every docs page: the

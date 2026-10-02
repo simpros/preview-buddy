@@ -30,6 +30,7 @@ import type {
   PostgresConfig,
   PreviewAuthConfig,
 } from "../config.ts";
+import { NO_TELEMETRY, type TelemetryDeployHook } from "../telemetry/contract.ts";
 
 export type TestDb = {
   db: StateDb;
@@ -105,6 +106,7 @@ export async function createTestApp(
         previewAuth?: PreviewAuthConfig;
         dashboard?: DashboardConfig;
         extraGitlabHosts?: ReadonlySet<string>;
+        telemetry?: TelemetryDeployHook;
       }
     | string = {},
 ): Promise<TestApp> {
@@ -159,6 +161,7 @@ export async function createTestApp(
       materialization,
       dashboard: opts.dashboard,
       extraGitlabHosts: opts.extraGitlabHosts,
+      telemetry: opts.telemetry ?? NO_TELEMETRY,
     }),
     db,
     adminToken,

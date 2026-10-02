@@ -2,6 +2,7 @@ import type {
   TraefikForwardAuth,
   TraefikTls,
 } from "./app-deployment/labels.ts";
+import type { TelemetryState } from "./telemetry/destination.ts";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -40,6 +41,7 @@ export const OPTIONAL_ENV_DEFAULTS = {
   SPROUT_MAIL_PORT: 1025,
   SPROUT_TTL_HOURS: 72,
   SPROUT_SWEEP_CRON: "*/30 * * * *",
+  SPROUT_TELEMETRY: "on",
   SPROUT_PREVIEW_PORT_DEFAULT: 8080,
   SPROUT_SEED_TIMEOUT: 180,
   SPROUT_PORT: 7331,
@@ -56,6 +58,8 @@ export const OPTIONAL_STRING_ENV = [
   "SPROUT_TRAEFIK_CERTRESOLVER",
   "SPROUT_TRAEFIK_MIDDLEWARES",
   "SPROUT_FORWARDAUTH_ADDRESS",
+  "SPROUT_TELEMETRY_ENDPOINT",
+  "SPROUT_TELEMETRY_AUTH",
 ] as const;
 
 export const DASHBOARD_ENV_KEYS = [
@@ -133,6 +137,8 @@ export type Config = {
   port: number;
   traefikTls?: TraefikTls;
   traefikForwardAuth?: TraefikForwardAuth;
+  /** The enablement decision, resolved once at load; off always names its reason. */
+  telemetry: TelemetryState;
 };
 
 function parsePositiveInt(
@@ -164,6 +170,52 @@ function parseSweepCron(
   return schedule;
 }
 
+function parseBooleanToken(
+  normalized: string,
+  trueTokens: readonly string[],
+  falseTokens: readonly string[],
+): boolean | undefined {
+  if (trueTokens.includes(normalized)) return true;
+  if (falseTokens.includes(normalized)) return false;
+  return undefined;
+}
+
+function parseTelemetryFlag(
+  raw: string | undefined,
+  defaultValue: string,
+): boolean {
+  const trimmed = raw?.trim() ?? "";
+  const normalized = (trimmed === "" ? defaultValue : trimmed).toLowerCase();
+  const parsed = parseBooleanToken(
+    normalized,
+    ["on", "1", "true", "yes"],
+    ["off", "0", "false", "no"],
+  );
+  if (parsed === undefined) {
+    throw new Error(
+      "Invalid SPROUT_TELEMETRY: must be a boolean (on/off, true/false, 1/0, yes/no)",
+    );
+  }
+  return parsed;
+}
+
+function parseTelemetryDestination(): {
+  endpoint: string;
+  auth: string;
+} {
+  const endpoint = optionalEnv("SPROUT_TELEMETRY_ENDPOINT");
+  const auth = optionalEnv("SPROUT_TELEMETRY_AUTH");
+  if (endpoint === "" && auth === "") return { endpoint: "", auth: "" };
+  if (endpoint === "" || auth === "") {
+    const missing =
+      endpoint === "" ? "SPROUT_TELEMETRY_ENDPOINT" : "SPROUT_TELEMETRY_AUTH";
+    throw new Error(
+      `SPROUT_TELEMETRY_ENDPOINT and SPROUT_TELEMETRY_AUTH must both be set (or both empty): missing ${missing}`,
+    );
+  }
+  return { endpoint, auth };
+}
+
 function requiredEnv(key: (typeof REQUIRED_ENV)[number]): string {
   const raw = process.env[key];
   if (raw === undefined || raw.trim() === "") {
@@ -186,11 +238,29 @@ function optionalEnv(
 function parseMailSecure(raw: string): boolean {
   const normalized = raw.trim().toLowerCase();
   if (normalized === "" ) return false;
-  if (["1", "true", "yes"].includes(normalized)) return true;
-  if (["0", "false", "no"].includes(normalized)) return false;
-  throw new Error(
-    "Invalid SPROUT_MAIL_SECURE: must be a boolean (true/false, 1/0, yes/no)",
+  const parsed = parseBooleanToken(
+    normalized,
+    ["1", "true", "yes"],
+    ["0", "false", "no"],
   );
+  if (parsed === undefined) {
+    throw new Error(
+      "Invalid SPROUT_MAIL_SECURE: must be a boolean (true/false, 1/0, yes/no)",
+    );
+  }
+  return parsed;
+}
+
+/** The enablement decision, computed once so off always names its reason. */
+export function resolveTelemetryState(options: {
+  flag: boolean;
+  doNotTrack: boolean;
+  endpoint: string;
+  auth: string;
+}): TelemetryState {
+  if (!options.flag) return { enabled: false, reason: "SPROUT_TELEMETRY" };
+  if (options.doNotTrack) return { enabled: false, reason: "DO_NOT_TRACK" };
+  return { enabled: true, endpoint: options.endpoint, auth: options.auth };
 }
 
 /** Mail is host-enabled: any SPROUT_MAIL_* without a host fails boot naming the host. */
@@ -400,6 +470,19 @@ export function loadConfig(): Config {
     legacyPassword: optionalEnv("SPROUT_REGISTRY_PASSWORD"),
   });
 
+  const telemetryFlag = parseTelemetryFlag(
+    process.env.SPROUT_TELEMETRY,
+    OPTIONAL_ENV_DEFAULTS.SPROUT_TELEMETRY,
+  );
+  const doNotTrack = (process.env.DO_NOT_TRACK?.trim() ?? "") === "1";
+  const telemetryDestination = parseTelemetryDestination();
+  const telemetry = resolveTelemetryState({
+    flag: telemetryFlag,
+    doNotTrack,
+    endpoint: telemetryDestination.endpoint,
+    auth: telemetryDestination.auth,
+  });
+
   return {
     postgres: parsePostgresConfig(),
     mail: parseMailConfig(),
@@ -439,6 +522,7 @@ export function loadConfig(): Config {
     ),
     traefikTls: parseTraefikTls(),
     traefikForwardAuth: parseTraefikForwardAuth(),
+    telemetry,
   };
 }
 
@@ -519,7 +603,13 @@ export function configSummary(config: Config): Record<string, string | number> {
     traefikForwardAuth: formatTraefikForwardAuthSummary(
       config.traefikForwardAuth,
     ),
+    telemetryAuth: telemetryAuthSummary(config.telemetry),
   };
+}
+
+function telemetryAuthSummary(telemetry: TelemetryState): string {
+  if (!telemetry.enabled || telemetry.auth === "") return "[empty]";
+  return "[set]";
 }
 
 function formatTraefikTlsSummary(tls: TraefikTls | undefined): string {

@@ -26,7 +26,9 @@ PR closes.
 ## Adopt in three files
 
 `.sprout.yaml`, a CI include, and the `Dockerfile` your app already ships —
-plus two CI variables from your operator. Humans:
+plus two CI variables from your operator. The published gateway image
+reports anonymous [install telemetry](docs/telemetry.md) by default
+(`SPROUT_TELEMETRY=off` stops it). Humans:
 [Getting started](docs/getting-started.md). Agents: paste the
 [Onboarding prompt](docs/onboarding-prompt.md) into your coding harness and it
 wires the repo for you. Live pitch:
@@ -43,6 +45,7 @@ wires the repo for you. Live pitch:
 - [Operator deploy](docs/operator-deploy.md) — compose stack, env, Traefik
 - [CLI reference](docs/cli-reference.md) — every command
 - [Troubleshooting](docs/troubleshooting.md) — error catalogue
+- [Telemetry](docs/telemetry.md) — anonymous install reporting, off switch
 - [Onboarding prompt](docs/onboarding-prompt.md) — paste into a coding harness
 - [`examples/adopting-repo/README.md`](examples/adopting-repo/README.md) — copy-paste starter
 - [`CONTEXT.md`](CONTEXT.md) — domain vocabulary

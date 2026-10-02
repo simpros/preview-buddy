@@ -1,4 +1,5 @@
 import type { Result } from "./result.ts";
+import { captureDeployOutcome } from "./deploy-outcome.ts";
 import {
   claimDeployIntent,
   getPreviewRow,
@@ -12,6 +13,9 @@ import {
 import {
   parsePreviewStatus,
 } from "./snapshot.ts";
+import { createPhaseCollector } from "./timing.ts";
+import type { BringUpPlan } from "./types.ts";
+import type { TelemetryDeployHook } from "../telemetry/contract.ts";
 
 const inFlightDeploys = new Map<string, { slug: string; dbName: string | null }>();
 
@@ -62,13 +66,20 @@ export async function acceptAsyncDeploy(
   });
 }
 
+export type AsyncDeployDeps = LifecycleDeps & {
+  telemetry: TelemetryDeployHook;
+};
+
 export async function runAsyncDeploy(
-  deps: LifecycleDeps,
+  deps: AsyncDeployDeps,
   input: ProvisionInput,
+  plan: BringUpPlan,
 ): Promise<void> {
   const key = previewKey(input.repo, input.prId);
+  const startedAt = Date.now();
+  const phases = createPhaseCollector();
   try {
-    await provisionPreview(deps, input);
+    await provisionPreview({ ...deps, phaseTimer: phases.timer }, input);
   } catch (err) {
     console.warn("provision:background_failed", err);
     try {
@@ -87,7 +98,16 @@ export async function runAsyncDeploy(
     } catch {
     }
   } finally {
+    const outcome = await captureDeployOutcome(deps.db, {
+      repo: input.repo,
+      prId: input.prId,
+      plan,
+      startedAt,
+      phaseMs: phases.phaseMs,
+    });
     inFlightDeploys.delete(key);
+    // exportEvent never rejects, so there is nothing to catch here.
+    if (outcome) deps.telemetry.reportDeployOutcome(outcome);
   }
 }
 

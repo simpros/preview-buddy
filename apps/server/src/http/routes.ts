@@ -7,6 +7,7 @@ import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { LifecycleDeps } from "../preview/lifecycle.ts";
 import type { PreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
+import type { TelemetryDeployHook } from "../telemetry/contract.ts";
 import {
   createDeployToken,
   createDeployTokenBody,
@@ -37,6 +38,7 @@ export type RouteDeps = {
   materialization: PreviewMaterializationCtx;
   dashboard?: DashboardConfig;
   extraGitlabHosts?: ReadonlySet<string>;
+  telemetry: TelemetryDeployHook;
 };
 
 function stubNotImplemented({
@@ -58,6 +60,7 @@ export function createRoutes(deps: RouteDeps) {
   const deployDeps = {
     ...lifecycle,
     materialization: deps.materialization,
+    telemetry: deps.telemetry,
   };
   const mailboxUrl = deps.materialization.mail?.uiUrl;
   const accessDeps = {

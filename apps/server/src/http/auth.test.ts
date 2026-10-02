@@ -6,6 +6,7 @@ import { createFakeDockerClient } from "../docker/fake.ts";
 import { repos } from "../infrastructure/db/schema.ts";
 import { createFakePreviewDb } from "../preview-db/fake.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
+import { NO_TELEMETRY } from "../telemetry/contract.ts";
 import { createRoutes } from "./routes.ts";
 import {
   bearer,
@@ -347,6 +348,7 @@ describe("ensureAdminToken", () => {
       app: bindTestPreviewApp(docker),
       dataVolumes: bindPreviewDataVolumes(docker),
       materialization: { traefikNetwork: "sprout-traefik" },
+      telemetry: NO_TELEMETRY,
     });
     const res = await app.handle(
       new Request("http://localhost/v1/admin/tokens", {

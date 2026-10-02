@@ -71,6 +71,9 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_FORWARDAUTH_ADDRESS;
   delete process.env.SPROUT_PREVIEW_AUTH_SECRET;
   delete process.env.SPROUT_PREVIEW_AUTH_ADDRESS;
+  delete process.env.SPROUT_TELEMETRY_ENDPOINT;
+  delete process.env.SPROUT_TELEMETRY_AUTH;
+  delete process.env.DO_NOT_TRACK;
 }
 
 afterEach(() => {
@@ -383,6 +386,7 @@ describe("loadConfig", () => {
       seedTimeout: 180,
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
     expect(summary.githubToken).toBe("[unset]");
     expect(summary.gitlabToken).toBe("[unset]");
@@ -424,6 +428,7 @@ describe("loadConfig", () => {
         user: "op",
         password: "pw",
       },
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
 
     expect(String(summary.previewPostgresUrl)).not.toContain("sekrit");
@@ -463,6 +468,7 @@ describe("loadConfig", () => {
       seedTimeout: 180,
       port: 7331,
       dashboard: { enabled: false, user: "", password: "" },
+      telemetry: { enabled: true, endpoint: "", auth: "" },
     });
     expect(summary.registryPullAuthHosts).toBe(0);
     expect(summary.registryPullAuthFallback).toBe("[unset]");
@@ -602,5 +608,116 @@ describe("preview auth capability", () => {
     expect(
       previewAuthNotConfiguredDetail("https://github.com/org/repo"),
     ).toContain("SPROUT_PREVIEW_AUTH_SECRET");
+  });
+});
+
+describe("telemetry config", () => {
+  test.each([
+    ["on", true],
+    ["off", false],
+    ["1", true],
+    ["0", false],
+    ["true", true],
+    ["false", false],
+    ["yes", true],
+    ["no", false],
+    ["ON", true],
+    ["", true],
+  ])("SPROUT_TELEMETRY=%p parses to %p", (raw, enabled) => {
+    setRequiredEnv();
+    if (raw === "") delete process.env.SPROUT_TELEMETRY;
+    else process.env.SPROUT_TELEMETRY = raw;
+    const config = loadConfig();
+    if (enabled) {
+      expect(config.telemetry).toEqual({
+        enabled: true,
+        endpoint: "",
+        auth: "",
+      });
+    } else {
+      expect(config.telemetry).toEqual({
+        enabled: false,
+        reason: "SPROUT_TELEMETRY",
+      });
+    }
+  });
+
+  test("defaults to on with no destination", () => {
+    setRequiredEnv();
+    const config = loadConfig();
+    expect(config.telemetry).toEqual({ enabled: true, endpoint: "", auth: "" });
+    expect(configSummary(config).telemetryAuth).toBe("[empty]");
+  });
+
+  test("DO_NOT_TRACK=1 disables and names the switch", () => {
+    setRequiredEnv();
+    process.env.DO_NOT_TRACK = "1";
+    const config = loadConfig();
+    expect(config.telemetry).toEqual({
+      enabled: false,
+      reason: "DO_NOT_TRACK",
+    });
+  });
+
+  test("SPROUT_TELEMETRY=off names its own switch", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TELEMETRY = "off";
+    const config = loadConfig();
+    expect(config.telemetry).toEqual({
+      enabled: false,
+      reason: "SPROUT_TELEMETRY",
+    });
+  });
+
+  test("both switches together report SPROUT_TELEMETRY", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TELEMETRY = "off";
+    process.env.DO_NOT_TRACK = "1";
+    expect(loadConfig().telemetry).toEqual({
+      enabled: false,
+      reason: "SPROUT_TELEMETRY",
+    });
+  });
+
+  test("invalid token fails boot with the exact error", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TELEMETRY = "sometimes";
+    expect(() => loadConfig()).toThrow(
+      "Invalid SPROUT_TELEMETRY: must be a boolean (on/off, true/false, 1/0, yes/no)",
+    );
+  });
+
+  test("endpoint without auth fails boot naming the missing one", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TELEMETRY_ENDPOINT = "https://telemetry.example.com/api/o/s/_json";
+    expect(() => loadConfig()).toThrow(
+      "SPROUT_TELEMETRY_ENDPOINT and SPROUT_TELEMETRY_AUTH must both be set (or both empty)",
+    );
+    expect(() => loadConfig()).toThrow("SPROUT_TELEMETRY_AUTH");
+  });
+
+  test("auth without endpoint fails boot naming the missing one", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TELEMETRY_AUTH = "Basic secret";
+    expect(() => loadConfig()).toThrow(
+      "SPROUT_TELEMETRY_ENDPOINT and SPROUT_TELEMETRY_AUTH must both be set (or both empty)",
+    );
+    expect(() => loadConfig()).toThrow("SPROUT_TELEMETRY_ENDPOINT");
+  });
+
+  test("destination pair resolves and never prints the credential", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TELEMETRY_ENDPOINT =
+      "https://telemetry.example.com/api/o/s/_json";
+    process.env.SPROUT_TELEMETRY_AUTH = "Basic secret";
+    const config = loadConfig();
+    expect(config.telemetry).toEqual({
+      enabled: true,
+      endpoint: "https://telemetry.example.com/api/o/s/_json",
+      auth: "Basic secret",
+    });
+    const summary = configSummary(config);
+    expect(summary.telemetryAuth).toBe("[set]");
+    expect(JSON.stringify(summary)).not.toContain("secret");
   });
 });

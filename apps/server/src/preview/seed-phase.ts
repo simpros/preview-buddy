@@ -9,11 +9,13 @@ import {
   utcIsoNow,
   type PreviewRow,
 } from "./row.ts";
-import type { BringUpPlan } from "./types.ts";
+import type { BringUpPlan, PhaseTimer } from "./types.ts";
+import { timed } from "./timing.ts";
 
 export type SeedPhaseDeps = {
   db: StateDb;
   app: Pick<PreviewAppOps, "runSeed">;
+  phaseTimer?: PhaseTimer;
 };
 
 import type { PreviewDbPlan } from "./runtime.ts";
@@ -130,7 +132,9 @@ export async function promoteAfterHealthy(
   const shouldSeed = seedWorkOutstanding(starting, seed, ephemerals.reseed);
 
   if (shouldSeed && seed) {
-    return runSeedPhase(deps, starting, { ...ephemerals, seed });
+    return timed(deps, "seed", () =>
+      runSeedPhase(deps, starting, { ...ephemerals, seed }),
+    );
   }
 
   await updatePreviewRow(
@@ -166,7 +170,8 @@ export async function resumeIncompleteSeed(
   row: PreviewRow,
   ephemerals: DeployEphemerals,
 ): Promise<Result<true>> {
-  if (!ephemerals.seed) {
+  const seed = ephemerals.seed;
+  if (!seed) {
     await markStickyPreviewFailed(deps.db, row.canonicalRepoId, row.prId, {
       error: "seed_image_required_to_resume_seeding",
       family: "seed_incomplete",
@@ -178,8 +183,7 @@ export async function resumeIncompleteSeed(
       error: "seed_image_required_to_resume_seeding",
     };
   }
-  return runSeedPhase(deps, row, {
-    ...ephemerals,
-    seed: ephemerals.seed,
-  });
+  return timed(deps, "seed", () =>
+    runSeedPhase(deps, row, { ...ephemerals, seed }),
+  );
 }

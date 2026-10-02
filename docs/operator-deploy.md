@@ -552,6 +552,8 @@ DSN from the raw password in YAML.
 | `SPROUT_DASHBOARD_USER` / `SPROUT_DASHBOARD_PASSWORD` | dashboard | HTTP basic credentials; enabling without both fails boot |
 | `SPROUT_GITHUB_TOKEN` / `SPROUT_GITLAB_TOKEN` | no | Sweep forge PATs (may be blank at boot) |
 | `SPROUT_FORGE_HOSTS` | no | Optional `host=gitlab` pairs for self-managed GitLab |
+| `SPROUT_TELEMETRY_ENDPOINT` | no | Anonymous install-telemetry destination (URL). Empty = nothing is sent; must be set together with `SPROUT_TELEMETRY_AUTH` (see [Install telemetry](#install-telemetry)) |
+| `SPROUT_TELEMETRY_AUTH` | no | Credential for the install-telemetry destination. Empty = nothing is sent |
 
 Forge kind is chosen **per repo** from the canonical URL (`github.com` /
 `gitlab.com`) or `SPROUT_FORGE_HOSTS` — not a gateway-wide forge switch.
@@ -572,6 +574,7 @@ need non-defaults):
 | `SPROUT_PORT` | `7331` |
 | `SPROUT_TTL_HOURS` | `72` |
 | `SPROUT_SWEEP_CRON` | `*/30 * * * *` |
+| `SPROUT_TELEMETRY` | `on` |
 | `SPROUT_PREVIEW_PORT_DEFAULT` | `8080` |
 | `SPROUT_SEED_TIMEOUT` | `180` |
 
@@ -589,6 +592,36 @@ use `letsencrypt-dns` only on the coexistence path).
 For SSO via Traefik forwardAuth (e.g. VoidAuth), set both
 `SPROUT_TRAEFIK_MIDDLEWARES=voidauth` and
 `SPROUT_FORWARDAUTH_ADDRESS=https://auth.example.com/api/authz/forward-auth`.
+
+## Install telemetry
+
+The published image reports anonymous installation facts and deploy
+outcomes to a maintainer-run endpoint — on by default, one variable to stop
+(`SPROUT_TELEMETRY=off`, or `DO_NOT_TRACK=1`). Full schema and off switches:
+[Telemetry](telemetry.md).
+
+- `SPROUT_TELEMETRY` is the on/off knob (`on`/`off`, `1`/`0`, `true`/`false`,
+  `yes`/`no`, case-insensitive; anything else fails boot).
+- `SPROUT_TELEMETRY_ENDPOINT` + `SPROUT_TELEMETRY_AUTH` are the destination
+  pair: both set means reporting is active, exactly one set fails boot,
+  neither set means nothing is sent.
+- A from-source build carries no destination (the `Dockerfile` `ARG`
+  defaults are empty), so it reports nothing until you set the pair. To opt
+  a source build in, pass the same two variables as build args:
+
+```bash
+docker build -t sprout:local \
+  --build-arg SPROUT_TELEMETRY_ENDPOINT="${SPROUT_TELEMETRY_ENDPOINT}" \
+  --build-arg SPROUT_TELEMETRY_AUTH="${SPROUT_TELEMETRY_AUTH}" \
+  .
+```
+
+The Coolify paste-file needs nothing: it pins the published image, so it
+inherits the image's destination env.
+
+Two channels, two purposes: `SPROUT_TELEMETRY` is the anonymous upstream
+channel to the maintainer. Pointing traces at your own backend is a
+separate opt-in feature (`SPROUT_OTLP_*`, #262) — never both in one knob.
 
 ## Postgres preview role
 

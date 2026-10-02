@@ -49,6 +49,53 @@ export type LifecycleDeps = {
   previewDb: PreviewDbRouter;
   app: PreviewAppOps;
   dataVolumes: PreviewDataVolumes;
+  /**
+   * Per-deploy phase stopwatch. Absent on the synchronous path, which
+   * reports nothing; the async path installs a collector before bringing
+   * the preview up.
+   */
+  phaseTimer?: PhaseTimer;
+};
+
+/** Bring-up phases with a telemetry interest, nothing more. */
+export type PreviewPhase = "db" | "app" | "seed";
+
+export const PREVIEW_PHASES: readonly PreviewPhase[] = ["db", "app", "seed"];
+
+export type PreviewPhaseMs = { [K in PreviewPhase]?: number };
+
+/**
+ * Closed failure vocabularies for install telemetry. Writers store plain
+ * strings, so the export boundary validates against these sets and maps
+ * anything outside them to "unknown" instead of leaking free text.
+ */
+export const PREVIEW_FAILURE_CODES = [
+  "preview_app_pull_failed",
+  "preview_seed_pull_failed",
+  "preview_service_pull_failed",
+  "preview_db_create_failed",
+  "preview_db_drop_failed",
+  "preview_app_deploy_failed",
+  "health_timeout",
+  "preview_service_deploy_failed",
+  "services_required_after_companion_failure",
+  "seed_failed",
+  "seed_image_required_to_resume_seeding",
+] as const;
+
+export type PreviewFailureCode =
+  (typeof PREVIEW_FAILURE_CODES)[number];
+
+export const PREVIEW_FAILURE_FAMILIES = [
+  "seed_incomplete",
+  "post_healthy",
+] as const;
+
+export type PreviewFailureFamily =
+  (typeof PREVIEW_FAILURE_FAMILIES)[number];
+
+export type PhaseTimer = {
+  record(phase: PreviewPhase, ms: number): void;
 };
 
 export type ProvisionInput = {
