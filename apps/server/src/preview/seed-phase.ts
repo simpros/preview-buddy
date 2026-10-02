@@ -9,18 +9,15 @@ import {
   utcIsoNow,
   type PreviewRow,
 } from "./row.ts";
-import type { Context } from "@opentelemetry/api";
 import type { BringUpPlan, PhaseTimer } from "./types.ts";
 import { timed } from "./timing.ts";
+import type { PreviewDbPlan } from "./runtime.ts";
 
 export type SeedPhaseDeps = {
   db: StateDb;
   app: Pick<PreviewAppOps, "runSeed">;
   phaseTimer?: PhaseTimer;
-  traceContext?: Context;
 };
-
-import type { PreviewDbPlan } from "./runtime.ts";
 
 export type DeployEphemerals = {
   seed?: SeedImageSpec;
@@ -134,8 +131,11 @@ export async function promoteAfterHealthy(
   const shouldSeed = seedWorkOutstanding(starting, seed, ephemerals.reseed);
 
   if (shouldSeed && seed) {
-    return timed(deps, "seed", () =>
-      runSeedPhase(deps, starting, { ...ephemerals, seed }),
+    return timed(
+      deps,
+      "seed",
+      () => runSeedPhase(deps, starting, { ...ephemerals, seed }),
+      (result) => (!result.ok ? result.error : undefined),
     );
   }
 
@@ -185,7 +185,10 @@ export async function resumeIncompleteSeed(
       error: "seed_image_required_to_resume_seeding",
     };
   }
-  return timed(deps, "seed", () =>
-    runSeedPhase(deps, row, { ...ephemerals, seed }),
+  return timed(
+    deps,
+    "seed",
+    () => runSeedPhase(deps, row, { ...ephemerals, seed }),
+    (result) => (!result.ok ? result.error : undefined),
   );
 }

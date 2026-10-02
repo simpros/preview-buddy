@@ -3,6 +3,7 @@ import type {
   TraefikTls,
 } from "./app-deployment/labels.ts";
 import type { TelemetryState } from "./telemetry/destination.ts";
+import { formatOtlpDestination } from "./telemetry/destination.ts";
 import { DEFAULT_MAIL_FROM_DOMAIN } from "@sprout/preview-env";
 import { GITHUB_HOSTS } from "./forge/kind.ts";
 import {
@@ -227,13 +228,21 @@ function parseTelemetryDestination(): {
   return { endpoint, auth };
 }
 
-export function parseOtlpHeaders(raw: string): Record<string, string> {
+/** Split a comma-separated env list, trimming entries and dropping empties. */
+function splitListEntries(raw: string): string[] {
   const trimmed = raw.trim();
-  if (trimmed === "") return {};
-  const out: Record<string, string> = {};
+  if (trimmed === "") return [];
+  const out: string[] = [];
   for (const part of trimmed.split(",")) {
     const entry = part.trim();
-    if (entry === "") continue;
+    if (entry !== "") out.push(entry);
+  }
+  return out;
+}
+
+export function parseOtlpHeaders(raw: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const entry of splitListEntries(raw)) {
     const sep = entry.indexOf("=");
     if (sep <= 0) {
       throw new Error(
@@ -255,7 +264,14 @@ export function parseOtlpHeaders(raw: string): Record<string, string> {
 function parseOtlpConfig(): OtlpConfig {
   const endpoint = optionalEnv("SPROUT_OTLP_ENDPOINT");
   const headersRaw = optionalEnv("SPROUT_OTLP_HEADERS");
-  if (endpoint === "") return { endpoint: "", headers: {} };
+  if (endpoint === "") {
+    if (headersRaw !== "") {
+      throw new Error(
+        "SPROUT_OTLP_HEADERS is set but SPROUT_OTLP_ENDPOINT is empty: set both or neither",
+      );
+    }
+    return { endpoint: "", headers: {} };
+  }
   let url: URL;
   try {
     url = new URL(endpoint);
@@ -439,12 +455,8 @@ function parseDashboardConfig(): DashboardConfig {
 }
 
 export function parseExtraGitlabHosts(raw: string): ReadonlySet<string> {
-  const trimmed = raw.trim();
-  if (trimmed === "") return new Set();
   const out = new Set<string>();
-  for (const part of trimmed.split(",")) {
-    const entry = part.trim();
-    if (entry === "") continue;
+  for (const entry of splitListEntries(raw)) {
     const sep = entry.includes("=") ? "=" : entry.includes(":") ? ":" : null;
     if (!sep) {
       throw new Error(
@@ -664,17 +676,6 @@ export function configSummary(config: Config): Record<string, string | number> {
     traces: formatOtlpDestination(config.otlp.endpoint),
     otlpHeaders: otlpHeadersSummary(config.otlp),
   };
-}
-
-export function formatOtlpDestination(endpoint: string): string {
-  if (endpoint === "") return "off";
-  try {
-    const url = new URL(endpoint);
-    const path = url.pathname === "/" ? "" : url.pathname;
-    return `${url.host}${path}`;
-  } catch {
-    return endpoint;
-  }
 }
 
 function otlpHeadersSummary(otlp: OtlpConfig): string {

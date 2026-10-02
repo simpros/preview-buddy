@@ -12,6 +12,7 @@ import type { PreviewAuthConfig } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { PreviewDataVolumes } from "./data-volumes.ts";
+import type { PreviewDbPlan } from "./runtime.ts";
 
 export type PreviewStatus =
   | "provisioning"
@@ -35,16 +36,12 @@ export type DisplayPreviewStatus =
   | "removing"
   | "removed";
 
-import type { PreviewDbPlan } from "./runtime.ts";
-
 export type TeardownDeps = {
   db: StateDb;
   previewDb: PreviewDbRouter;
   app: Pick<PreviewAppOps, "remove">;
   dataVolumes: PreviewDataVolumes;
 };
-
-import type { Context } from "@opentelemetry/api";
 
 export type LifecycleDeps = {
   db: StateDb;
@@ -57,12 +54,6 @@ export type LifecycleDeps = {
    * the preview up.
    */
   phaseTimer?: PhaseTimer;
-  /**
-   * Explicit parent context for phase spans. The lock queue runs waiters
-   * off a chained promise, so AsyncLocalStorage no longer carries the
-   * deploy span there — without this the phase spans would orphan.
-   */
-  traceContext?: Context;
 };
 
 /** Bring-up phases with a telemetry interest, nothing more. */
