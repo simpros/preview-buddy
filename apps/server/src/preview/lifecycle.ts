@@ -195,7 +195,10 @@ async function writeProvisioningIntent(
       ...authColumnsFor(previewAuthMode(input.auth), stored),
       ...clearLastError,
       // New generation: TTL means age of this intent, not birth of the row key.
+      // A live row never carries a tombstone reason: re-provisioning a
+      // removed row must not advertise the previous expiry.
       createdAt: now,
+      expiryReason: null,
       updatedAt: now,
     },
     "preview_row_missing_on_intent_write",
@@ -226,6 +229,9 @@ async function patchAccept(
       lastError: null,
       lastErrorDetail: null,
       seedLog: null,
+      // Accepting a deploy clears any tombstone reason from a previous
+      // removal; closeRunning clears it again at completion.
+      expiryReason: null,
       ...(fields.remint ? { createdAt: now } : {}),
       updatedAt: now,
     },
@@ -603,6 +609,9 @@ async function removePreviewUnlocked(
     return { ok: true, value: false };
   }
   if (existing.createdAt !== input.expectedCreatedAt) {
+    return { ok: true, value: false };
+  }
+  if ((existing.lastActivityAt ?? null) !== input.expectedLastActivityAt) {
     return { ok: true, value: false };
   }
 

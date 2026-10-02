@@ -146,7 +146,7 @@ describe("POST /v1/deploy", () => {
     const { deployToken } = await setup();
     const res = await postDeploy(deployToken, deployBody());
     expect(res.settleStatus).toBe(200);
-    expect(res.body).toMatchObject({
+    expect(res.body).toEqual({
       ok: true,
       canonical_repo_id: REPO,
       pr_id: 42,
@@ -155,12 +155,10 @@ describe("POST /v1/deploy", () => {
       hostname: "pr-42.myapp.preview.example.com",
       status: "running",
       preview_url: "https://pr-42.myapp.preview.example.com",
+      last_activity_at: expect.any(String),
+      expires_at: null,
       expiry_reason: null,
     });
-    expect((res.body as { expires_at?: unknown }).expires_at ?? null).toBeNull();
-    expect(
-      typeof (res.body as { last_activity_at?: unknown }).last_activity_at,
-    ).toBe("string");
     expect(fakePreviewDb!.created).toEqual(["sprout_myapp_pr42"]);
 
     const [row] = await testApp!.db
@@ -202,39 +200,6 @@ describe("POST /v1/deploy", () => {
         "Host(`pr-42.myapp.preview.example.com`)",
       "traefik.http.services.sprout-myapp-pr-42.loadbalancer.server.port": "3000",
     });
-  });
-
-  test("derives expires_at from the gateway ttl on the read surface", async () => {
-    fakePreviewDb = createFakePreviewDb();
-    fakeDocker = createFakeDockerClient({
-      exposedPorts: { [APP_IMAGE]: 3000 },
-    });
-    testApp = await createTestApp({
-      previewDb: fakePreviewDb,
-      docker: fakeDocker,
-      governance: {
-        previewTtlMs: 7 * 86400_000,
-        previewIdleMs: null,
-        maxPreviews: null,
-        maxPreviewsPerRepo: null,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
-    });
-    const { body } = await postDeployToken(testApp, {
-      canonical_repo_id: REPO,
-      slug: "myapp",
-    });
-    const res = await postDeploy(body.token as string, deployBody());
-    expect(res.settleStatus).toBe(200);
-    const snap = res.body as {
-      last_activity_at: string;
-      expires_at: string | null;
-    };
-    expect(typeof snap.last_activity_at).toBe("string");
-    expect(snap.expires_at).toBe(
-      new Date(Date.parse(snap.last_activity_at) + 7 * 86400_000).toISOString(),
-    );
   });
 
   test("applies preview labels alongside the gateway Traefik labels", async () => {

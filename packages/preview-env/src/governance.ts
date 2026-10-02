@@ -174,15 +174,49 @@ export function computeExpiresAtMs(
   return Math.min(...deadlines);
 }
 
+/**
+ * One place decides the expiry base, the earlier bound, and which bound won.
+ * The base falls back to creation when no successful deploy has refreshed
+ * activity yet, so the read surface and the sweep plan from the same source.
+ */
+export function resolvePreviewExpiry(input: {
+  lastActivityMs: number | null;
+  createdAtMs: number | null;
+  ttlMs: number | null;
+  idleMs: number | null;
+}): { expiresAtMs: number | null; bound: "ttl" | "idle" | null } {
+  const base = input.lastActivityMs ?? input.createdAtMs;
+  if (base === null) return { expiresAtMs: null, bound: null };
+  const ttlDeadline = input.ttlMs !== null ? base + input.ttlMs : null;
+  const idleDeadline = input.idleMs !== null ? base + input.idleMs : null;
+  const expiresAtMs = computeExpiresAtMs(
+    base,
+    input.ttlMs,
+    input.idleMs,
+  );
+  if (expiresAtMs === null) return { expiresAtMs: null, bound: null };
+  const bound =
+    ttlDeadline !== null &&
+    (idleDeadline === null || ttlDeadline <= idleDeadline)
+      ? ("ttl" as const)
+      : ("idle" as const);
+  return { expiresAtMs, bound };
+}
+
+/**
+ * Pure arithmetic: projected connections for exactly `previews` live
+ * previews. Candidates add themselves (+1) at the admission call site; the
+ * sweep log passes the current total as-is.
+ */
 export function connectionProjection(input: {
-  activePreviews: number;
+  previews: number;
   perPreview: number | null;
   ceiling: number | null;
 }): { projected: number | null; over: boolean } {
   if (input.perPreview === null || input.ceiling === null) {
     return { projected: null, over: false };
   }
-  const projected = (input.activePreviews + 1) * input.perPreview;
+  const projected = input.previews * input.perPreview;
   return { projected, over: projected > input.ceiling };
 }
 
@@ -193,8 +227,8 @@ export type GovernanceStatus = {
 
 /**
  * One pass over live previews for the cap checks. Connection budget is not
- * part of the status: both callers project it from the same
- * `connectionProjection` input so the +1 convention lives in one place.
+ * part of the status: both callers project it from `connectionProjection`
+ * with an explicit count, so there is no hidden +1 convention.
  */
 export function governanceStatus(
   previews: readonly { canonicalRepoId: string }[],

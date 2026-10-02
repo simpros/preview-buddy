@@ -140,6 +140,10 @@ export type RemovePreviewInput = {
   prId: number;
   expectedDbName: string | null;
   expectedCreatedAt: string;
+  /** Staleness guard on the expiry signal: a refresh advances last activity
+   * without changing createdAt, so a plan built before the refresh must not
+   * drop. Compared exactly like expectedCreatedAt. */
+  expectedLastActivityAt: string | null;
   expiryReason?: PreviewExpiryReason;
 };
 

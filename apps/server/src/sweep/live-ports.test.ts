@@ -70,6 +70,7 @@ describe("createLiveSweepPorts", () => {
       containerId: "ctr-10",
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -123,6 +124,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -164,6 +166,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "not-a-timestamp",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -219,6 +222,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-02 12:00:00",
+      lastActivityAt: null,
       updatedAt: "2026-09-02 12:00:00",
     });
 
@@ -274,6 +278,7 @@ describe("createLiveSweepPorts", () => {
       containerId: "ctr-10",
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -327,6 +332,7 @@ describe("createLiveSweepPorts", () => {
       containerId: "ctr-10",
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -362,6 +368,7 @@ describe("createLiveSweepPorts", () => {
         slug: "widgets",
         dbName: "sprout_widgets_pr10",
         createdAt: "2026-09-02T12:00:00.000Z",
+        lastActivityAt: null,
       },
     ]);
     expect(droppedDbs).toEqual(["sprout_widgets_pr10"]);
@@ -389,6 +396,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-03T11:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T11:00:00.000Z",
     });
 
@@ -414,6 +422,7 @@ describe("createLiveSweepPorts", () => {
       slug: "old",
       dbName: "sprout_old_pr42",
       createdAt: "2026-08-01T12:00:00.000Z",
+      lastActivityAt: null,
     });
     expect(removed).toBe(false);
     expect(droppedDbs).toEqual([]);
@@ -440,6 +449,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-03T11:55:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T11:55:00.000Z",
     });
 
@@ -465,6 +475,7 @@ describe("createLiveSweepPorts", () => {
       slug: "widgets",
       dbName: "sprout_widgets_pr42",
       createdAt: "2026-08-01T12:00:00.000Z",
+      lastActivityAt: null,
     });
     expect(removed).toBe(false);
     expect(droppedDbs).toEqual([]);
@@ -490,6 +501,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "running",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-02T12:00:00.000Z",
     });
 
@@ -521,6 +533,7 @@ describe("createLiveSweepPorts", () => {
       slug: "widgets",
       dbName: "sprout_widgets_pr42",
       createdAt: "2026-09-02T12:00:00.000Z",
+      lastActivityAt: null,
     });
     expect(removed).toBe(false);
     expect(forgeCalls).toBe(1);
@@ -544,6 +557,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "provisioning",
       createdAt: "2026-09-03T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T12:00:00.000Z",
     });
 
@@ -589,6 +603,7 @@ describe("createLiveSweepPorts", () => {
       containerId: null,
       status: "provisioning",
       createdAt: "2026-09-03T12:00:00.000Z",
+      lastActivityAt: null,
       updatedAt: "2026-09-03T12:00:00.000Z",
     });
 

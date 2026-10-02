@@ -139,7 +139,7 @@ describe("POST /v1/deploy health polling", () => {
     const { deployToken } = await setup();
     const res = await postDeploy(deployToken, deployBody());
     expect(res.settleStatus).toBe(200);
-    expect(res.body).toMatchObject({
+    expect(res.body).toEqual({
       ok: true,
       canonical_repo_id: REPO,
       pr_id: 42,
@@ -148,6 +148,8 @@ describe("POST /v1/deploy health polling", () => {
       hostname: "pr-42.myapp.preview.example.com",
       status: "running",
       preview_url: "https://pr-42.myapp.preview.example.com",
+      last_activity_at: expect.any(String),
+      expires_at: null,
       expiry_reason: null,
     });
 

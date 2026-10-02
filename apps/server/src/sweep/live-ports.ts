@@ -49,6 +49,7 @@ async function removeControlPlane(
     prId: deletion.prId,
     expectedDbName: deletion.dbName,
     expectedCreatedAt: deletion.createdAt,
+    expectedLastActivityAt: deletion.lastActivityAt,
     expiryReason: deletion.reason,
   };
   const result = useTryLock
@@ -80,6 +81,7 @@ export function createLiveSweepPorts(deps: LiveSweepDeps): SweepPorts {
           dbName: row.dbName,
           createdAt: row.createdAt,
           createdAtMs,
+          lastActivityAt: row.lastActivityAt ?? null,
           status: row.status,
           lastActivityMs: parseUnambiguousUtcMs(row.lastActivityAt ?? ""),
           ttlMs: row.ttlMs ?? null,

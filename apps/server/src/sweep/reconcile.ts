@@ -1,19 +1,11 @@
 import type { DataVolumeRef, GovernanceConfig } from "@sprout/preview-env";
 import {
-  computeExpiresAtMs,
   connectionProjection,
   governanceStatus,
+  resolvePreviewExpiry,
 } from "@sprout/preview-env";
 import { isForgeApiError } from "../forge/types.ts";
 import type { PreviewExpiryReason } from "../preview/types.ts";
-
-export type SweepReason =
-  | "sweep:pr-not-open"
-  | "sweep:ttl-expired"
-  | "sweep:idle-expired"
-  | "sweep:orphan-db"
-  | "sweep:orphan-container"
-  | "sweep:orphan-data-volume";
 
 export type PreviewRef = { slug: string; prId: number };
 
@@ -26,6 +18,7 @@ export type SweepPreview = {
   dbName: string | null;
   createdAt: string;
   createdAtMs: number | null;
+  lastActivityAt: string | null;
   status: string;
   lastActivityMs?: number | null;
   ttlMs?: number | null;
@@ -40,6 +33,7 @@ export type SweepDeletion =
       slug: string;
       dbName: string | null;
       createdAt: string;
+      lastActivityAt: string | null;
     }
   | { reason: "sweep:orphan-db"; slug: string; prId: number; dbName: string }
   | {
@@ -201,6 +195,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
         slug: preview.slug,
         dbName: preview.dbName,
         createdAt: preview.createdAt,
+        lastActivityAt: preview.lastActivityAt,
       });
     } else if (preview.createdAtMs !== null && preview.createdAtMs < cutoff) {
       expiryDeletions.push({
@@ -210,6 +205,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
         slug: preview.slug,
         dbName: preview.dbName,
         createdAt: preview.createdAt,
+        lastActivityAt: preview.lastActivityAt,
       });
     } else {
       remainingPreviews.push(preview);
@@ -265,6 +261,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
       slug: preview.slug,
       dbName: preview.dbName,
       createdAt: preview.createdAt,
+      lastActivityAt: preview.lastActivityAt,
     });
   }
 
@@ -277,37 +274,24 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
   return { forgeRepoFailures, deletions };
 }
 
-function activityBaseMs(preview: SweepPreview): number | null {
-  if ((preview.lastActivityMs ?? null) !== null)
-    return preview.lastActivityMs ?? null;
-  return preview.createdAtMs;
-}
-
 /**
- * Governance expiry derived from the last activity plus the stored
- * per-preview durations — the same source the read surface derives
- * `expires_at` from, so a stale deadline can never outlive a refresh.
- * The cheap activity signal is the last successful deploy (including
- * reseed/reset); see docs/previews.md. Returns the reason, or null to keep.
+ * Governance expiry from the shared preview-env policy: one place decides
+ * the base, the earlier bound, and which bound won. Returns the reason, or
+ * null to keep. The cheap activity signal is the last successful deploy
+ * (including reseed/reset); see docs/previews.md.
  */
 export function planGovernanceExpiry(
   preview: SweepPreview,
   nowMs: number,
 ): "sweep:ttl-expired" | "sweep:idle-expired" | null {
-  const base = activityBaseMs(preview);
-  if (base === null) return null;
-  const expiry = computeExpiresAtMs(
-    base,
-    preview.ttlMs ?? null,
-    preview.idleMs ?? null,
-  );
-  if (expiry === null || nowMs < expiry) return null;
-  const ttlDeadline = preview.ttlMs != null ? base + preview.ttlMs : null;
-  const idleDeadline = preview.idleMs != null ? base + preview.idleMs : null;
-  return ttlDeadline !== null &&
-    (idleDeadline === null || ttlDeadline <= idleDeadline)
-    ? "sweep:ttl-expired"
-    : "sweep:idle-expired";
+  const { expiresAtMs, bound } = resolvePreviewExpiry({
+    lastActivityMs: preview.lastActivityMs ?? null,
+    createdAtMs: preview.createdAtMs,
+    ttlMs: preview.ttlMs ?? null,
+    idleMs: preview.idleMs ?? null,
+  });
+  if (expiresAtMs === null || nowMs < expiresAtMs) return null;
+  return bound === "ttl" ? "sweep:ttl-expired" : "sweep:idle-expired";
 }
 
 function logOverCap(
@@ -336,10 +320,9 @@ function logOverCap(
   const perPreview = gov.previewMaxDbConnections;
   const ceiling = gov.postgresMaxConnections;
   if (perPreview === null || ceiling === null) return;
-  // Current load through the same projection admission uses: active is
-  // total - 1 so the +1 inside counts the existing previews, not a new one.
+  // Current load as-is: no candidate, so no +1 — admission adds it.
   const { projected, over } = connectionProjection({
-    activePreviews: status.total - 1,
+    previews: status.total,
     perPreview,
     ceiling,
   });

@@ -1,4 +1,4 @@
-import { computeExpiresAtMs, deriveMailFromName } from "@sprout/preview-env";
+import { resolvePreviewExpiry, deriveMailFromName } from "@sprout/preview-env";
 import type { Result } from "./result.ts";
 import type { PreviewRow } from "./row.ts";
 import type {
@@ -28,23 +28,30 @@ export function parsePreviewStatus(status: string): Result<PreviewStatus> {
 }
 
 /**
- * Read-surface expiry: derived from the last activity plus the stored
- * per-preview durations, the same source the sweep plans from. Tombstones
- * report null, matching the pre-derivation display.
+ * Read-surface expiry: derived from the same base and bounds the sweep plans
+ * from, so the displayed deadline and the deletion decision cannot diverge.
+ * Tombstones report null, matching the pre-derivation display.
  */
 export function expiresAtForRow(
-  row: Pick<PreviewRow, "status" | "lastActivityAt" | "ttlMs" | "idleMs">,
+  row: Pick<
+    PreviewRow,
+    "status" | "lastActivityAt" | "createdAt" | "ttlMs" | "idleMs"
+  >,
 ): string | null {
   if (row.status === "removed") return null;
-  const baseMs =
-    row.lastActivityAt == null ? NaN : Date.parse(row.lastActivityAt);
-  if (!Number.isFinite(baseMs)) return null;
-  const expiresMs = computeExpiresAtMs(
-    baseMs,
-    row.ttlMs ?? null,
-    row.idleMs ?? null,
-  );
-  return expiresMs === null ? null : new Date(expiresMs).toISOString();
+  const lastActivityMs =
+    row.lastActivityAt == null ? null : Date.parse(row.lastActivityAt);
+  const createdAtMs = Date.parse(row.createdAt);
+  const { expiresAtMs } = resolvePreviewExpiry({
+    lastActivityMs:
+      lastActivityMs !== null && Number.isFinite(lastActivityMs)
+        ? lastActivityMs
+        : null,
+    createdAtMs: Number.isFinite(createdAtMs) ? createdAtMs : null,
+    ttlMs: row.ttlMs ?? null,
+    idleMs: row.idleMs ?? null,
+  });
+  return expiresAtMs === null ? null : new Date(expiresAtMs).toISOString();
 }
 
 export function previewSnapshotFromRow(row: PreviewRow): PreviewSnapshot {

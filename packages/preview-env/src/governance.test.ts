@@ -7,6 +7,7 @@ import {
   parseGatewayDurationMs,
   parsePreviewGovernanceField,
   resolveGovernanceMs,
+  resolvePreviewExpiry,
 } from "./governance.ts";
 
 describe("preview governance durations", () => {
@@ -78,15 +79,15 @@ describe("preview governance durations", () => {
     expect(computeExpiresAtMs(base, null, null)).toBeNull();
   });
 
-  test("connection projection refuses beyond the ceiling", () => {
+  test("connection projection counts exactly the previews given", () => {
     expect(
-      connectionProjection({ activePreviews: 7, perPreview: 12, ceiling: 100 }),
+      connectionProjection({ previews: 8, perPreview: 12, ceiling: 100 }),
     ).toEqual({ projected: 96, over: false });
     expect(
-      connectionProjection({ activePreviews: 8, perPreview: 12, ceiling: 100 }),
+      connectionProjection({ previews: 9, perPreview: 12, ceiling: 100 }),
     ).toEqual({ projected: 108, over: true });
     expect(
-      connectionProjection({ activePreviews: 8, perPreview: null, ceiling: 100 }),
+      connectionProjection({ previews: 9, perPreview: null, ceiling: 100 }),
     ).toEqual({ projected: null, over: false });
   });
 
@@ -99,5 +100,49 @@ describe("preview governance durations", () => {
     const status = governanceStatus(previews);
     expect(status.total).toBe(3);
     expect(status.byRepo.get("a")).toBe(2);
+  });
+
+  test("expiry resolves the earlier bound and names the winner", () => {
+    const base = 1_000_000;
+    expect(
+      resolvePreviewExpiry({
+        lastActivityMs: base,
+        createdAtMs: base,
+        ttlMs: 7 * 86400_000,
+        idleMs: null,
+      }),
+    ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
+    expect(
+      resolvePreviewExpiry({
+        lastActivityMs: base,
+        createdAtMs: base,
+        ttlMs: 7 * 86400_000,
+        idleMs: 2 * 3600_000,
+      }),
+    ).toEqual({ expiresAtMs: base + 2 * 3600_000, bound: "idle" });
+    expect(
+      resolvePreviewExpiry({
+        lastActivityMs: null,
+        createdAtMs: base,
+        ttlMs: 7 * 86400_000,
+        idleMs: null,
+      }),
+    ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
+    expect(
+      resolvePreviewExpiry({
+        lastActivityMs: null,
+        createdAtMs: null,
+        ttlMs: 7 * 86400_000,
+        idleMs: null,
+      }),
+    ).toEqual({ expiresAtMs: null, bound: null });
+    expect(
+      resolvePreviewExpiry({
+        lastActivityMs: base,
+        createdAtMs: base,
+        ttlMs: null,
+        idleMs: null,
+      }),
+    ).toEqual({ expiresAtMs: null, bound: null });
   });
 });

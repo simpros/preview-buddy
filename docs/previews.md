@@ -44,9 +44,10 @@ including reseed and reset. There is no per-preview access-log pipeline in
 this release and no edge traffic accounting — a quiet preview that receives
 HTTP traffic but no deploy still expires. The gateway's sweep
 (`SPROUT_SWEEP_CRON`, in-process `Bun.cron`) removes expired previews
-through the same path `teardown` uses (stop container, drop database, clear
-`seeded_at` so the next deploy re-runs the seed), holding the per-preview
-lock so a preview mid-deploy is never expired. The expiry reason
+through the same path `teardown` uses (stop container, drop database; the
+seed watermark is kept on the tombstone and reset when the next deploy
+writes its provisioning intent), holding the per-preview lock so a preview
+mid-deploy is never expired. The expiry reason
 (`sweep:ttl-expired` / `sweep:idle-expired`) is stored on the row and
 `GET /v1/previews` plus the single-preview read return `expires_at`,
 `last_activity_at`, and the reason; the CI note carries an `- Expires:` line.

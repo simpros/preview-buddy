@@ -72,8 +72,9 @@ export async function checkDeployAdmission(
     const perPreview = gov.previewMaxDbConnections;
     const ceiling = gov.postgresMaxConnections;
     if (perPreview !== null && ceiling !== null) {
+      // The candidate is the +1: admission projects with it included.
       const budget = connectionProjection({
-        activePreviews: status.total,
+        previews: status.total + 1,
         perPreview,
         ceiling,
       });
