@@ -59,9 +59,10 @@ export function resolveEffectiveGovernanceMs(
  * One place decides the expiry base, the earlier bound, and which bound won.
  * The base falls back to creation when no successful deploy has refreshed
  * activity yet, so the read surface and the sweep plan from the same source.
- * The legacy creation-age bound applies only when both governance bounds are
- * null (rows that never received governance columns): once a preview carries
- * an explicit ttl/idle, that policy wins over the legacy default.
+ * The legacy creation-age bound applies only to rows that never completed
+ * a governed deploy (lastActivityMs null): closeRunning writes activity
+ * together with the effective ttl/idle, so null bounds past that point
+ * mean explicit "off" and yield no deadline.
  */
 export function resolvePreviewExpiry(input: {
   lastActivityMs: number | null;
@@ -83,7 +84,11 @@ export function resolvePreviewExpiry(input: {
     }
     return { expiresAtMs: idleDeadline, bound: "idle" };
   }
-  if (input.legacyTtlMs !== null && input.createdAtMs !== null) {
+  if (
+    input.lastActivityMs === null &&
+    input.legacyTtlMs !== null &&
+    input.createdAtMs !== null
+  ) {
     return {
       expiresAtMs: input.createdAtMs + input.legacyTtlMs,
       bound: "ttl",
@@ -131,10 +136,22 @@ export function connectionProjection(input: {
 }
 
 export type GovernanceViolation =
-  | { kind: "per-repo-cap"; repo: string; cap: number; count: number }
-  | { kind: "total-cap"; cap: number; count: number }
+  | {
+      kind: "per-repo-cap";
+      code: "preview_limit_reached";
+      repo: string;
+      cap: number;
+      count: number;
+    }
+  | {
+      kind: "total-cap";
+      code: "preview_limit_reached";
+      cap: number;
+      count: number;
+    }
   | {
       kind: "connection-budget";
+      code: "preview_connection_budget_exceeded";
       projected: number;
       ceiling: number;
       perPreview: number;
@@ -173,8 +190,8 @@ export function violationMessage(violation: GovernanceViolation): string {
  * not-yet-inserted candidate: admission passes it so the newcomer counts
  * against the caps (`count + 1 > cap`, i.e. reject at the cap), while the
  * sweep passes null to report only rows already over (`count > cap`).
- * Presentation lives in `violationMessage`: one switch, no second copy of
- * the wording in either caller.
+ * Presentation lives in `violationMessage` and the 429 wire code on the
+ * violation itself, so callers emit without re-switching on `kind`.
  */
 export function evaluateGovernance(
   gov: GovernanceConfig,
@@ -191,6 +208,7 @@ export function evaluateGovernance(
       if (count + incoming > perRepo) {
         violations.push({
           kind: "per-repo-cap",
+          code: "preview_limit_reached",
           repo: pending.repo,
           cap: perRepo,
           count,
@@ -199,7 +217,13 @@ export function evaluateGovernance(
     } else {
       for (const [repo, count] of status.byRepo) {
         if (count > perRepo) {
-          violations.push({ kind: "per-repo-cap", repo, cap: perRepo, count });
+          violations.push({
+            kind: "per-repo-cap",
+            code: "preview_limit_reached",
+            repo,
+            cap: perRepo,
+            count,
+          });
         }
       }
     }
@@ -207,7 +231,12 @@ export function evaluateGovernance(
 
   const total = gov.maxPreviews;
   if (total !== null && status.total + incoming > total) {
-    violations.push({ kind: "total-cap", cap: total, count: status.total });
+    violations.push({
+      kind: "total-cap",
+      code: "preview_limit_reached",
+      cap: total,
+      count: status.total,
+    });
   }
 
   const perPreview = gov.previewMaxDbConnections;
@@ -221,6 +250,7 @@ export function evaluateGovernance(
     if (budget !== null && budget.over) {
       violations.push({
         kind: "connection-budget",
+        code: "preview_connection_budget_exceeded",
         projected: budget.projected,
         ceiling,
         perPreview,

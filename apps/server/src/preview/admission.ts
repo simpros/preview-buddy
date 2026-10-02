@@ -49,18 +49,10 @@ export async function checkDeployAdmission(
   if (isNew) {
     const violation = evaluateGovernance(gov, status, { repo: input.repo })[0];
     if (violation !== undefined) {
-      if (violation.kind === "connection-budget") {
-        return {
-          ok: false,
-          status: 429,
-          error: "preview_connection_budget_exceeded",
-          detail: violationMessage(violation),
-        };
-      }
       return {
         ok: false,
         status: 429,
-        error: "preview_limit_reached",
+        error: violation.code,
         detail: violationMessage(violation),
       };
     }

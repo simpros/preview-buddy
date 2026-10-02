@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, setSystemTime, test } from "bun:test";
 import { createForgeClient } from "../forge/client.ts";
 import { forgeApiError } from "../forge/types.ts";
+import { governanceConfig } from "../preview/governance-fixtures.ts";
 import {
   runSweepPass,
   type CatalogDbRef,
@@ -61,14 +62,7 @@ function memoryPorts(seed: {
       return true;
     },
     legacyTtlMs: 72 * 3600_000,
-    governance: {
-      previewTtlMs: null,
-      previewIdleMs: null,
-      maxPreviews: null,
-      maxPreviewsPerRepo: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    },
+    governance: governanceConfig(),
     log: (message, deletion) => {
       logs.push(message);
       seed.log?.(message, deletion);

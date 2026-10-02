@@ -2,18 +2,14 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createTestDb, type TestDb } from "../http/test-helpers.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { checkDeployAdmission } from "./admission.ts";
-import type { GovernanceConfig } from "@sprout/preview-env";
+import { governanceConfig } from "./governance-fixtures.ts";
 
 const REPO = "https://github.com/acme/widgets";
 
-const overBudget: GovernanceConfig = {
-  previewTtlMs: null,
-  previewIdleMs: null,
-  maxPreviews: null,
-  maxPreviewsPerRepo: null,
+const overBudget = governanceConfig({
   previewMaxDbConnections: 12,
   postgresMaxConnections: 20,
-};
+});
 
 describe("checkDeployAdmission connection budget", () => {
   let testDb: TestDb | undefined;
@@ -93,14 +89,7 @@ describe("checkDeployAdmission caps", () => {
     const result = await checkDeployAdmission(
       testDb!.db,
       { repo: REPO, prId: 2 },
-      {
-        previewTtlMs: null,
-        previewIdleMs: null,
-        maxPreviews: null,
-        maxPreviewsPerRepo: 1,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
+      governanceConfig({ maxPreviewsPerRepo: 1 }),
       undefined,
     );
     expect(result).toEqual({
@@ -116,14 +105,7 @@ describe("checkDeployAdmission caps", () => {
     const result = await checkDeployAdmission(
       testDb!.db,
       { repo: REPO, prId: 2 },
-      {
-        previewTtlMs: null,
-        previewIdleMs: null,
-        maxPreviews: 1,
-        maxPreviewsPerRepo: null,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
+      governanceConfig({ maxPreviews: 1 }),
       undefined,
     );
     expect(result).toEqual({
@@ -139,14 +121,7 @@ describe("checkDeployAdmission caps", () => {
     const result = await checkDeployAdmission(
       testDb!.db,
       { repo: REPO, prId: 1 },
-      {
-        previewTtlMs: null,
-        previewIdleMs: null,
-        maxPreviews: 1,
-        maxPreviewsPerRepo: 1,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
+      governanceConfig({ maxPreviews: 1, maxPreviewsPerRepo: 1 }),
       undefined,
     );
     expect(result).toEqual({

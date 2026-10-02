@@ -6,6 +6,7 @@ import {
 import { previews } from "../infrastructure/db/schema.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
+import { governanceConfig } from "../preview/governance-fixtures.ts";
 import { NO_TELEMETRY } from "../telemetry/contract.ts";
 import { createRoutes } from "./routes.ts";
 import {
@@ -391,14 +392,7 @@ describe("GET /dashboard (flag on)", () => {
       materialization: { traefikNetwork: "sprout-traefik" },
       dashboard: { ...ENABLED },
       telemetry: NO_TELEMETRY,
-      governance: {
-        previewTtlMs: null,
-        previewIdleMs: null,
-        maxPreviews: null,
-        maxPreviewsPerRepo: null,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
+      governance: governanceConfig(),
       legacyTtlMs: 72 * 3600_000,
     });
     const res = await probe.handle(

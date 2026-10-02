@@ -8,17 +8,10 @@ import { previews, repos } from "../infrastructure/db/schema.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import { createLiveSweepPorts } from "./live-ports.ts";
-import type { GovernanceConfig } from "@sprout/preview-env";
+import { offGovernanceConfig } from "../preview/governance-fixtures.ts";
 import { runSweepPass } from "./reconcile.ts";
 
-const offGovernance: GovernanceConfig = {
-  previewTtlMs: null,
-  previewIdleMs: null,
-  maxPreviews: null,
-  maxPreviewsPerRepo: null,
-  previewMaxDbConnections: null,
-  postgresMaxConnections: null,
-};
+const offGovernance = offGovernanceConfig();
 
 function stubPreviewDb(
   partial: Partial<PreviewDbRouter> &

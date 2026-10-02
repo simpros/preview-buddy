@@ -55,7 +55,9 @@ mid-deploy is never expired. The expiry reason
 Manifest keys override the gateway defaults (`SPROUT_PREVIEW_TTL`,
 `SPROUT_PREVIEW_IDLE_TEARDOWN`); `off` at the effective level disables that
 bound. With nothing configured the gateway is unbounded apart from PR-close
-teardown and logs a loud boot warning.
+teardown and logs a loud boot warning. The legacy creation-age bound
+(`SPROUT_TTL_HOURS`, default 72h) only collects rows that never completed
+a deploy; a running preview with both bounds off has no deadline.
 
 ## Preview database roles (`db.roles`)
 

@@ -1,4 +1,5 @@
 import { describe, expect, setSystemTime, test, afterEach } from "bun:test";
+import { governanceConfig } from "../preview/governance-fixtures.ts";
 import {
   planGovernanceExpiry,
   runSweepPass,
@@ -58,6 +59,9 @@ describe("governance expiry", () => {
       ttlMs: null,
       idleMs: null,
     });
+    // Governed-off rows carry activity with null bounds, so even a live
+    // legacy default must not collect them.
+    expect(planGovernanceExpiry(p, base + 30 * 86400_000, 72 * 3600_000)).toBeNull();
     expect(planGovernanceExpiry(p, base + 30 * 86400_000, null)).toBeNull();
   });
 
@@ -112,14 +116,7 @@ describe("governance expiry", () => {
         return true;
       },
       legacyTtlMs: 72 * 365 * 3600_000,
-      governance: {
-        previewTtlMs: null,
-        previewIdleMs: null,
-        maxPreviews: null,
-        maxPreviewsPerRepo: null,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
+      governance: governanceConfig(),
     });
     expect(deletions).toEqual([
       expect.objectContaining({ reason: "sweep:ttl-expired", prId: 5 }),
@@ -139,14 +136,10 @@ describe("governance expiry", () => {
       listOpenPrIds: async () => [5, 6],
       drop: async () => true,
       legacyTtlMs: 72 * 365 * 3600_000,
-      governance: {
-        previewTtlMs: null,
-        previewIdleMs: null,
+      governance: governanceConfig({
         maxPreviews: 1,
         maxPreviewsPerRepo: 1,
-        previewMaxDbConnections: null,
-        postgresMaxConnections: null,
-      },
+      }),
       log: (m) => {
         logs.push(m);
       },

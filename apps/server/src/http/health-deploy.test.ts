@@ -149,10 +149,12 @@ describe("POST /v1/deploy health polling", () => {
       status: "running",
       preview_url: "https://pr-42.myapp.preview.example.com",
       last_activity_at: expect.any(String),
-      expires_at: expect.any(String),
+      expires_at: null,
       expiry_reason: null,
     });
-    // Unified derivation: boundless rows show created_at + legacy ttlHours.
+    // A governed deploy with both bounds off records activity with null
+    // bounds, so a running preview is unbounded (the legacy creation-age
+    // bound only collects rows that never completed a deploy).
     const snap = res.body as {
       expires_at: string | null;
     };
@@ -164,9 +166,7 @@ describe("POST /v1/deploy health polling", () => {
         and(eq(previews.canonicalRepoId, REPO), eq(previews.prId, 42)),
       )
       .limit(1);
-    expect(snap.expires_at).toBe(
-      new Date(Date.parse(row!.createdAt) + 72 * 3600_000).toISOString(),
-    );
+    expect(snap.expires_at).toBeNull();
     expect(row?.status).toBe("running");
     expect(healthHits[0]).toBe(`http://${PLAN_FIRST_IP}:3000/health`);
   });

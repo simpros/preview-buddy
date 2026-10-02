@@ -591,7 +591,9 @@ value fails gateway boot. The first sweep pass lands on the next boundary —
 never at boot.
 
 Unbounded by default: with TTL/idle/caps all `off` the gateway keeps every
-preview until PR close and logs a loud boot warning. The self-serve compose
+running preview until PR close and logs a loud boot warning. Rows that never
+complete a deploy are still collected by the legacy creation-age bound
+(`SPROUT_TTL_HOURS`). The self-serve compose
 stack sets `SPROUT_PREVIEW_TTL=7d` so a new operator is safe without
 configuring anything; an existing deployment upgrades with no new required
 env and identical behaviour apart from that warning.

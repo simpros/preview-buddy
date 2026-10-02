@@ -70,9 +70,7 @@ export function createRoutes(deps: RouteDeps) {
     materialization: deps.materialization,
     telemetry: deps.telemetry,
     governance: deps.governance,
-    legacyTtlMs: deps.legacyTtlMs,
   };
-  const legacyTtlMs = deployDeps.legacyTtlMs;
   const mailboxUrl = deps.materialization.mail?.uiUrl;
   const accessDeps = {
     db: deps.db,
@@ -113,9 +111,13 @@ export function createRoutes(deps: RouteDeps) {
           })
           .delete("/tokens/:id", revokeToken(deps.db)),
       )
-      .get("/previews", listPreviews(deps.db, mailboxUrl, legacyTtlMs), {
-        beforeHandle: requireAdmin,
-      })
+      .get(
+        "/previews",
+        listPreviews(deps.db, mailboxUrl, deps.legacyTtlMs),
+        {
+          beforeHandle: requireAdmin,
+        },
+      )
       .get("/previews/access", getPreviewAccess(accessDeps), {
         query: accessQuery,
       })
@@ -134,7 +136,7 @@ export function createRoutes(deps: RouteDeps) {
         body: dropBody,
       })
       .post("/deploy", deploy(deployDeps), { body: deployBody })
-      .get("/preview", getPreview(lifecycle, mailboxUrl, legacyTtlMs), {
+      .get("/preview", getPreview(lifecycle, mailboxUrl), {
         query: previewQuery,
       })
       .post("/teardown", teardown(lifecycle), { body: teardownBody })

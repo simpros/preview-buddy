@@ -104,18 +104,18 @@ describe("GET /v1/previews", () => {
         status: "running",
         created_at: expect.any(String),
         last_activity_at: expect.any(String),
-        expires_at: expect.any(String),
+        expires_at: null,
         expiry_reason: null,
       },
     ]);
-    // Unified derivation: boundless rows show created_at + legacy ttlHours.
+    // A governed deploy with both bounds off records activity with null
+    // bounds, so a running preview is unbounded (the legacy creation-age
+    // bound only collects rows that never completed a deploy).
     const listed = body.previews[0] as {
       created_at: string;
       expires_at: string | null;
     };
-    expect(listed.expires_at).toBe(
-      new Date(Date.parse(listed.created_at) + 72 * 3600_000).toISOString(),
-    );
+    expect(listed.expires_at).toBeNull();
   });
 });
 

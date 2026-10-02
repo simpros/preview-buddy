@@ -11,18 +11,12 @@ import {
   resolvePreviewExpiry,
   violationMessage,
 } from "./governance.ts";
+import { governanceConfig } from "./governance-fixtures.ts";
 
 const REPO_A = "https://github.com/acme/a";
 const REPO_B = "https://github.com/acme/b";
 
-const off: GovernanceConfig = {
-  previewTtlMs: null,
-  previewIdleMs: null,
-  maxPreviews: null,
-  maxPreviewsPerRepo: null,
-  previewMaxDbConnections: null,
-  postgresMaxConnections: null,
-};
+const off: GovernanceConfig = governanceConfig();
 
 describe("server governance policy", () => {
   test("status counts once for caps", () => {
@@ -51,7 +45,12 @@ describe("server governance policy", () => {
     const gov: GovernanceConfig = { ...off, maxPreviews: 1 };
     const status = governanceStatus([{ canonicalRepoId: REPO_A }]);
     expect(evaluateGovernance(gov, status, { repo: REPO_B })).toEqual([
-      { kind: "total-cap", cap: 1, count: 1 },
+      {
+        kind: "total-cap",
+        code: "preview_limit_reached",
+        cap: 1,
+        count: 1,
+      },
     ]);
     expect(evaluateGovernance(gov, status, null)).toEqual([]);
   });
@@ -83,6 +82,7 @@ describe("server governance policy", () => {
     expect(evaluateGovernance(gov, status, { repo: REPO_B })).toEqual([
       {
         kind: "connection-budget",
+        code: "preview_connection_budget_exceeded",
         projected: 24,
         ceiling: 20,
         perPreview: 12,
@@ -95,17 +95,24 @@ describe("server governance policy", () => {
     expect(
       violationMessage({
         kind: "per-repo-cap",
+        code: "preview_limit_reached",
         repo: REPO_A,
         cap: 1,
         count: 1,
       }),
     ).toBe("SPROUT_MAX_PREVIEWS_PER_REPO limit reached (limit 1, current 1)");
-    expect(violationMessage({ kind: "total-cap", cap: 1, count: 1 })).toBe(
-      "SPROUT_MAX_PREVIEWS limit reached (limit 1, current 1)",
-    );
+    expect(
+      violationMessage({
+        kind: "total-cap",
+        code: "preview_limit_reached",
+        cap: 1,
+        count: 1,
+      }),
+    ).toBe("SPROUT_MAX_PREVIEWS limit reached (limit 1, current 1)");
     expect(
       violationMessage({
         kind: "connection-budget",
+        code: "preview_connection_budget_exceeded",
         projected: 24,
         ceiling: 20,
         perPreview: 12,
@@ -234,6 +241,18 @@ describe("server governance policy", () => {
         legacyTtlMs,
       }),
     ).toEqual({ expiresAtMs: base + 7 * 86400_000, bound: "ttl" });
+    // A governed deploy with both bounds off stays unbounded: activity was
+    // recorded together with the null bounds, so the legacy default no
+    // longer applies.
+    expect(
+      resolvePreviewExpiry({
+        lastActivityMs: base,
+        createdAtMs: base,
+        ttlMs: null,
+        idleMs: null,
+        legacyTtlMs,
+      }),
+    ).toEqual({ expiresAtMs: null, bound: null });
     // Unparseable creation still yields no deadline.
     expect(
       resolvePreviewExpiry({

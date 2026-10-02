@@ -21,6 +21,10 @@ import {
   TEST_REPO as REPO,
   type TestApp,
 } from "./test-helpers.ts";
+import {
+  governanceConfig,
+} from "../preview/governance-fixtures.ts";
+import type { GovernanceConfig } from "@sprout/preview-env";
 
 let testApp: TestApp | undefined;
 let fakePreviewDb: FakePreviewDb | undefined;
@@ -33,14 +37,7 @@ afterEach(async () => {
   fakeDocker = undefined;
 });
 
-async function setupGovernance(governance: {
-  previewTtlMs: number | null;
-  previewIdleMs: number | null;
-  maxPreviews: number | null;
-  maxPreviewsPerRepo: number | null;
-  previewMaxDbConnections: number | null;
-  postgresMaxConnections: number | null;
-}) {
+async function setupGovernance(governance: GovernanceConfig) {
   fakePreviewDb = createFakePreviewDb();
   fakeDocker = createFakeDockerClient({
     exposedPorts: { [APP_IMAGE]: 3000 },
@@ -77,14 +74,7 @@ async function row() {
 
 describe("preview governance lifecycle", () => {
   test("derives expires_at from the gateway ttl on the read surface", async () => {
-    const { deployToken } = await setupGovernance({
-      previewTtlMs: 7 * 86400_000,
-      previewIdleMs: null,
-      maxPreviews: null,
-      maxPreviewsPerRepo: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const { deployToken } = await setupGovernance(governanceConfig({ previewTtlMs: 7 * 86400_000 }));
     const res = await postDeployAndSettle(testApp!, deployToken, deployBody());
     expect(res.settleStatus).toBe(200);
     const snap = res.body as {
@@ -98,14 +88,7 @@ describe("preview governance lifecycle", () => {
   });
 
   test("a sweep plan built before a refresh is stale", async () => {
-    const { deployToken } = await setupGovernance({
-      previewTtlMs: 7 * 86400_000,
-      previewIdleMs: null,
-      maxPreviews: null,
-      maxPreviewsPerRepo: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const { deployToken } = await setupGovernance(governanceConfig({ previewTtlMs: 7 * 86400_000 }));
     const first = await postDeployAndSettle(testApp!, deployToken, deployBody());
     expect(first.settleStatus).toBe(200);
     const before = await row();
@@ -135,14 +118,7 @@ describe("preview governance lifecycle", () => {
   });
 
   test("re-provisioning a removed row clears the tombstone reason", async () => {
-    const { deployToken } = await setupGovernance({
-      previewTtlMs: 7 * 86400_000,
-      previewIdleMs: null,
-      maxPreviews: null,
-      maxPreviewsPerRepo: null,
-      previewMaxDbConnections: null,
-      postgresMaxConnections: null,
-    });
+    const { deployToken } = await setupGovernance(governanceConfig({ previewTtlMs: 7 * 86400_000 }));
     const first = await postDeployAndSettle(testApp!, deployToken, deployBody());
     expect(first.settleStatus).toBe(200);
     const live = await row();

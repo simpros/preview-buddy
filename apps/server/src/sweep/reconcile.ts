@@ -272,7 +272,7 @@ export async function runSweepPass(ports: SweepPorts): Promise<SweepPassResult> 
  * the base, the earlier bound, and which bound won. Returns the reason, or
  * null to keep. The cheap activity signal is the last successful deploy
  * (including reseed/reset); see docs/previews.md. The legacy creation-age
- * bound only collects rows that never received governance columns.
+ * bound only collects rows that never completed a governed deploy.
  */
 export function planGovernanceExpiry(
   preview: SweepPreview,

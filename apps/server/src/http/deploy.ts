@@ -709,7 +709,6 @@ export function deploy(
 export function getPreview(
   deps: LifecycleDeps,
   mailboxUrl: string | undefined,
-  legacyTtlMs: number | null,
 ) {
   return async ({
     query,
@@ -727,7 +726,11 @@ export function getPreview(
       query.pr_id,
     );
     if (!result.ok) return mapResult(result, set);
-    return presentPreviewSnapshot(result.value, mailboxUrl, legacyTtlMs);
+    return presentPreviewSnapshot(
+      result.value,
+      mailboxUrl,
+      deps.legacyTtlMs,
+    );
   };
 }
 
