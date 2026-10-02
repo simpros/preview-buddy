@@ -10,7 +10,7 @@ import { connectState } from "./infrastructure/db/client.ts";
 import { createPostgresPreviewDb } from "./preview-db/postgres.ts";
 import { createRoutingPreviewDb } from "./preview-db/routing.ts";
 import { createSqlitePreviewDb } from "./preview-db/sqlite.ts";
-import type { PreviewMaterializationCtx } from "./preview/runtime.ts";
+import { buildMaterializationCtx } from "./preview/runtime.ts";
 import { bindPreviewDataVolumes } from "./preview/data-volumes.ts";
 import { runMigrations } from "./scripts/migrate.ts";
 import { startGatewaySweep } from "./sweep/start.ts";
@@ -46,31 +46,7 @@ const previewDb = createRoutingPreviewDb({
 // The single materialization input every deploy resolves its plan from.
 // Postgres presence lives only here; the deploy gate reads ctx.postgres.
 // Mail presence lives only here too; it never provisions, only injects.
-const pg = config.postgres;
-const mail = config.mail;
-const materialization: PreviewMaterializationCtx = {
-  traefikNetwork: config.traefikNetwork,
-  ...(pg
-    ? {
-        postgres: {
-          pg: {
-            host: pg.host,
-            port: pg.port,
-            user: pg.user,
-            password: pg.password,
-          },
-          network: pg.network,
-        },
-      }
-    : {}),
-  ...(mail
-    ? { mail }
-    : {}),
-  ...(config.traefikTls ? { traefikTls: config.traefikTls } : {}),
-  ...(config.traefikForwardAuth
-    ? { traefikForwardAuth: config.traefikForwardAuth }
-    : {}),
-};
+const materialization = buildMaterializationCtx(config);
 
 const app = bindPreviewOps({
   docker,

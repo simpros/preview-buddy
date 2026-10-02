@@ -24,7 +24,7 @@ import { bindPreviewDataVolumes } from "../preview/data-volumes.ts";
 import type { PreviewMaterializationCtx } from "../preview/runtime.ts";
 import { runMigrations } from "../scripts/migrate.ts";
 import { createRoutes } from "./routes.ts";
-import type { MailConfig, PostgresConfig } from "../config.ts";
+import type { MailConfig, PostgresConfig, PreviewAuthConfig } from "../config.ts";
 
 export type TestDb = {
   db: StateDb;
@@ -97,6 +97,7 @@ export async function createTestApp(
         healthClock?: HealthClock;
         postgres?: PostgresConfig;
         mail?: MailConfig;
+        previewAuth?: PreviewAuthConfig;
       }
     | string = {},
 ): Promise<TestApp> {
@@ -111,6 +112,7 @@ export async function createTestApp(
   // `postgres: undefined` opts into a sqlite-only gateway with no pg block.
   const pg = "postgres" in opts ? opts.postgres : defaultTestPostgres;
   const mail = "mail" in opts ? opts.mail : undefined;
+  const previewAuth = "previewAuth" in opts ? opts.previewAuth : undefined;
   // The Traefik policy lives only on the materialization context: the
   // deploy route validates adopter labels against it and forwards it
   // per-deploy into the container inputs, so ops take no policy of their own.
@@ -137,6 +139,7 @@ export async function createTestApp(
         }
       : {}),
     ...(mail ? { mail } : {}),
+    ...(previewAuth ? { previewAuth } : {}),
     ...(traefikTls ? { traefikTls } : {}),
     ...(traefikForwardAuth ? { traefikForwardAuth } : {}),
   };

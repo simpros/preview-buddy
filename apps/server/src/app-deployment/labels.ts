@@ -10,6 +10,17 @@ export type TraefikForwardAuth = {
   address: string;
 };
 
+export type TraefikBasicAuth = {
+  middleware: string;
+  /** htpasswd entry `user:hash` (hash never logged). */
+  users: string;
+};
+
+export type TraefikPreviewForwardAuth = {
+  middleware: string;
+  address: string;
+};
+
 const FORWARDAUTH_RESPONSE_HEADERS =
   "Remote-User,Remote-Email,Remote-Groups";
 
@@ -29,8 +40,19 @@ export function traefikLabels(input: {
   pathPrefix?: string;
   tls?: TraefikTls;
   forwardAuth?: TraefikForwardAuth;
+  basicAuth?: TraefikBasicAuth;
+  previewForwardAuth?: TraefikPreviewForwardAuth;
 }): Record<string, string> {
-  const { routerName, hostname, port, pathPrefix, tls, forwardAuth } = input;
+  const {
+    routerName,
+    hostname,
+    port,
+    pathPrefix,
+    tls,
+    forwardAuth,
+    basicAuth,
+    previewForwardAuth,
+  } = input;
   const labels: Record<string, string> = {
     "traefik.enable": "true",
     [`traefik.http.routers.${routerName}.rule`]: traefikRouterRule({
@@ -49,9 +71,17 @@ export function traefikLabels(input: {
         tls.certResolver;
     }
   }
+  if (forwardAuth || basicAuth || previewForwardAuth) {
+    const chain = [
+      forwardAuth?.middleware,
+      basicAuth?.middleware,
+      previewForwardAuth?.middleware,
+    ].filter((name): name is string => name !== undefined);
+    labels[`traefik.http.routers.${routerName}.middlewares`] =
+      chain.join(",");
+  }
   if (forwardAuth) {
     const { middleware, address } = forwardAuth;
-    labels[`traefik.http.routers.${routerName}.middlewares`] = middleware;
     labels[`traefik.http.middlewares.${middleware}.forwardauth.address`] =
       address;
     labels[
@@ -60,6 +90,20 @@ export function traefikLabels(input: {
     labels[
       `traefik.http.middlewares.${middleware}.forwardauth.authResponseHeaders`
     ] = FORWARDAUTH_RESPONSE_HEADERS;
+  }
+  if (basicAuth) {
+    const { middleware, users } = basicAuth;
+    labels[`traefik.http.middlewares.${middleware}.basicauth.users`] = users;
+    labels[`traefik.http.middlewares.${middleware}.basicauth.removeheader`] =
+      "true";
+  }
+  if (previewForwardAuth) {
+    const { middleware, address } = previewForwardAuth;
+    labels[`traefik.http.middlewares.${middleware}.forwardauth.address`] =
+      address;
+    labels[
+      `traefik.http.middlewares.${middleware}.forwardauth.trustForwardHeader`
+    ] = "true";
   }
   return labels;
 }
@@ -73,6 +117,8 @@ export function traefikLabelKeys(input: {
   routerName: string;
   tls?: TraefikTls;
   forwardAuth?: TraefikForwardAuth;
+  basicAuth?: TraefikBasicAuth;
+  previewForwardAuth?: TraefikPreviewForwardAuth;
 }): string[] {
   return Object.keys(
     traefikLabels({
@@ -81,6 +127,8 @@ export function traefikLabelKeys(input: {
       port: 1,
       tls: input.tls,
       forwardAuth: input.forwardAuth,
+      basicAuth: input.basicAuth,
+      previewForwardAuth: input.previewForwardAuth,
     }),
   );
 }

@@ -1,4 +1,5 @@
 import {
+  authSpecIssueMessage,
   dbRolesIssueMessage,
   dbSpecIssueMessage,
   isServicePort,
@@ -8,6 +9,7 @@ import {
   parseDbSpec,
   parseLabelMap,
   parseMailSpec,
+  parsePreviewAuthSpec,
   parsePreviewEnvForProvider,
   parsePreviewVolumes,
   parseServiceEnvMap,
@@ -20,6 +22,7 @@ import {
   type DbSpec,
   type HealthIssue,
   type MailSpec,
+  type PreviewAuthSpec,
   type PreviewEnvMap,
   type PreviewLabels,
   type ServiceFields,
@@ -33,6 +36,7 @@ export const SERVICE_NAME_RE = /^[a-z][a-z0-9]*$/;
 export type { PreviewEnvMap };
 export type { DbSpec };
 export type { MailSpec };
+export type { PreviewAuthSpec };
 export type { PreviewLabels };
 
 export type SproutHealth = {
@@ -76,6 +80,7 @@ export type SproutYaml = {
     services?: SproutYamlService[];
     labels?: PreviewLabels;
     volumes?: string[];
+    auth?: PreviewAuthSpec;
   };
   db?: DbSpec;
   mail?: MailSpec;
@@ -85,7 +90,7 @@ export type SproutYaml = {
 };
 
 const TOP_KEYS = new Set(["slug", "preview", "health", "build", "seed", "db", "mail"]);
-const PREVIEW_KEYS = new Set(["hostname", "env", "app_env", "services", "labels", "volumes"]);
+const PREVIEW_KEYS = new Set(["hostname", "env", "app_env", "services", "labels", "volumes", "auth"]);
 const HEALTH_KEYS = new Set(["path", "interval", "timeout", "expect"]);
 const SERVICE_KEYS = new Set(["name", "image", "hostname", "path", "port", "env", "labels"]);
 const DOCKERFILE_KEYS = new Set(["dockerfile"]);
@@ -184,6 +189,14 @@ function parseMailBlock(raw: unknown): Result<MailSpec | undefined> {
   const parsed = parseMailSpec(raw);
   if (!parsed.ok) {
     return { ok: false, error: mailSpecIssueMessage(parsed.issue) };
+  }
+  return { ok: true, value: parsed.value };
+}
+
+function parseAuthBlock(raw: unknown): Result<PreviewAuthSpec | undefined> {
+  const parsed = parsePreviewAuthSpec(raw);
+  if (!parsed.ok) {
+    return { ok: false, error: authSpecIssueMessage(parsed.issue) };
   }
   return { ok: true, value: parsed.value };
 }
@@ -531,6 +544,9 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
   const labels = parseLabels(parsed.preview.labels, "preview.labels");
   if (!labels.ok) return labels;
 
+  const auth = parseAuthBlock(parsed.preview.auth);
+  if (!auth.ok) return auth;
+
   const normalizedDb = normalizeDbSpec(db.value);
   const volumes = parsePreviewVolumesField(
     parsed.preview.volumes,
@@ -560,6 +576,7 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
   if (appEnv.value) value.preview.app_env = appEnv.value;
   if (services.value) value.preview.services = services.value;
   if (labels.value) value.preview.labels = labels.value;
+  if (auth.value) value.preview.auth = auth.value;
   if (volumes.value.length > 0) value.preview.volumes = volumes.value;
   if (db.value) value.db = db.value;
   if (mail.value) value.mail = mail.value;

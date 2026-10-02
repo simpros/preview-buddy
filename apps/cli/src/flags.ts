@@ -11,11 +11,13 @@ type FlagBag = {
   service: string[];
   yes: boolean;
   reseed: boolean;
+  revoke: boolean;
   clearServices: boolean;
   repo?: string;
   slug?: string;
   scope?: string;
   tail?: string;
+  expires?: string;
   dotenvFile?: string;
   rest: string[];
 };
@@ -86,11 +88,13 @@ const FLAG_DEFS = [
   { flag: "--service", field: "service", kind: "repeat" },
   { flag: "--yes", field: "yes", kind: "boolean" },
   { flag: "--reseed", field: "reseed", kind: "boolean" },
+  { flag: "--revoke", field: "revoke", kind: "boolean" },
   { flag: "--clear-services", field: "clearServices", kind: "boolean" },
   { flag: "--repo", field: "repo", kind: "string" },
   { flag: "--slug", field: "slug", kind: "string" },
   { flag: "--scope", field: "scope", kind: "string" },
   { flag: "--tail", field: "tail", kind: "string" },
+  { flag: "--expires", field: "expires", kind: "string" },
   { flag: "--dotenv-file", field: "dotenvFile", kind: "string" },
 ] as const satisfies readonly ArgvFlagDef[];
 
@@ -109,6 +113,7 @@ export function parseFlags(
     service: [],
     yes: false,
     reseed: false,
+    revoke: false,
     clearServices: false,
     rest: [],
   };

@@ -15,6 +15,13 @@ import {
 import { deploy, deployBody, getPreview, previewQuery, teardown, teardownBody } from "./deploy.ts";
 import { doctor, drop, dropBody, listPreviews } from "./introspection.ts";
 import {
+  accessQuery,
+  getPreviewAccess,
+  revokeBody,
+  revokePreviewAccess,
+  verifyPreviewAccess,
+} from "./preview-access.ts";
+import {
   getPreviewLogs,
   previewLogsParams,
   previewLogsQuery,
@@ -49,8 +56,15 @@ export function createRoutes(deps: RouteDeps) {
     materialization: deps.materialization,
   };
   const mailboxUrl = deps.materialization.mail?.uiUrl;
+  const accessDeps = {
+    db: deps.db,
+    ...(deps.materialization.previewAuth
+      ? { previewAuth: deps.materialization.previewAuth }
+      : {}),
+  };
   return new Elysia()
     .get("/healthz", () => ({ ok: true }))
+    .get("/v1/internal/preview-auth", verifyPreviewAccess(accessDeps))
     .group("/v1", (v1) =>
       v1
         .use(authPlugin(deps.db))
@@ -66,6 +80,12 @@ export function createRoutes(deps: RouteDeps) {
         )
         .get("/previews", listPreviews(deps.db, mailboxUrl), {
           beforeHandle: requireAdmin,
+        })
+        .get("/previews/access", getPreviewAccess(accessDeps), {
+          query: accessQuery,
+        })
+        .post("/previews/access/revoke", revokePreviewAccess(accessDeps), {
+          body: revokeBody,
         })
         .get("/previews/:id/logs", getPreviewLogs(lifecycle), {
           params: previewLogsParams,

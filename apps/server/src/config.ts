@@ -30,6 +30,11 @@ export const MAIL_ENV_KEYS = [
   "SPROUT_MAIL_FROM_DOMAIN",
 ] as const;
 
+export const PREVIEW_AUTH_ENV_KEYS = [
+  "SPROUT_PREVIEW_AUTH_SECRET",
+  "SPROUT_PREVIEW_AUTH_ADDRESS",
+] as const;
+
 export const OPTIONAL_ENV_DEFAULTS = {
   SPROUT_PG_PORT: 5432,
   SPROUT_MAIL_PORT: 1025,
@@ -57,6 +62,7 @@ export const GATEWAY_ENV_DOC_KEYS: readonly string[] = [
   ...REQUIRED_ENV,
   ...POSTGRES_REQUIRED_ENV,
   ...MAIL_ENV_KEYS,
+  ...PREVIEW_AUTH_ENV_KEYS,
   ...Object.keys(OPTIONAL_ENV_DEFAULTS),
   ...OPTIONAL_STRING_ENV,
   "SPROUT_ADMIN_TOKEN",
@@ -84,11 +90,19 @@ export type MailConfig = {
   fromDomain: string;
 };
 
+export type PreviewAuthConfig = {
+  secret: string;
+  /** In-network forwardAuth address Traefik calls, e.g. http://gateway:7331/v1/internal/preview-auth. */
+  address: string;
+};
+
 export type Config = {
   /** Absent on sqlite-only gateways; all-or-nothing (partial fails boot). */
   postgres?: PostgresConfig;
   /** Absent when no SPROUT_MAIL_* is set; host enables, rest default. */
   mail?: MailConfig;
+  /** Absent unless the preview-auth group is set; all-or-nothing (partial fails boot). */
+  previewAuth?: PreviewAuthConfig;
   traefikNetwork: string;
   registryPullAuth: RegistryPullAuth;
   githubToken: string;
@@ -145,7 +159,8 @@ function optionalEnv(
   key:
     | (typeof OPTIONAL_STRING_ENV)[number]
     | (typeof POSTGRES_REQUIRED_ENV)[number]
-    | (typeof MAIL_ENV_KEYS)[number],
+    | (typeof MAIL_ENV_KEYS)[number]
+    | (typeof PREVIEW_AUTH_ENV_KEYS)[number],
 ): string {
   return process.env[key]?.trim() ?? "";
 }
@@ -194,6 +209,22 @@ function parseMailConfig(): MailConfig | undefined {
     ...(uiUrl === "" ? {} : { uiUrl }),
     fromDomain: fromDomainRaw === "" ? DEFAULT_MAIL_FROM_DOMAIN : fromDomainRaw,
   };
+}
+
+/** Preview link-auth is all-or-nothing: partial sets fail boot instead of limping. */
+function parsePreviewAuthConfig(): PreviewAuthConfig | undefined {
+  const secret = optionalEnv("SPROUT_PREVIEW_AUTH_SECRET");
+  const address = optionalEnv("SPROUT_PREVIEW_AUTH_ADDRESS");
+  if (secret === "" && address === "") return undefined;
+  const missing: string[] = [];
+  if (secret === "") missing.push("SPROUT_PREVIEW_AUTH_SECRET");
+  if (address === "") missing.push("SPROUT_PREVIEW_AUTH_ADDRESS");
+  if (missing.length > 0) {
+    throw new Error(
+      `Incomplete preview auth configuration: missing ${missing.join(", ")}`,
+    );
+  }
+  return { secret, address };
 }
 
 function parseTraefikTls(): TraefikTls | undefined {
@@ -313,6 +344,7 @@ export function loadConfig(): Config {
   return {
     postgres: parsePostgresConfig(),
     mail: parseMailConfig(),
+    previewAuth: parsePreviewAuthConfig(),
     traefikNetwork: requiredEnv("SPROUT_TRAEFIK_NETWORK"),
     registryPullAuth,
     githubToken: optionalEnv("SPROUT_GITHUB_TOKEN"),
@@ -380,9 +412,17 @@ export function mailNotConfiguredDetail(repo: string): string {
   );
 }
 
+export function previewAuthNotConfiguredDetail(repo: string): string {
+  return (
+    `repo ${repo} declares preview.auth link but the gateway has no preview auth configured: ` +
+    `missing SPROUT_PREVIEW_AUTH_SECRET`
+  );
+}
+
 export function configSummary(config: Config): Record<string, string | number> {
   const pg = config.postgres;
   const mail = config.mail;
+  const previewAuth = config.previewAuth;
   return {
     previewPostgresUrl: pg ? redactUrl(pg.url) : "[unset]",
     previewPgHost: pg ? pg.host : "[unset]",
@@ -398,6 +438,8 @@ export function configSummary(config: Config): Record<string, string | number> {
     mailNetwork: mail?.network ?? "[unset]",
     mailUiUrl: mail?.uiUrl ?? "[unset]",
     mailFromDomain: mail ? mail.fromDomain : "[unset]",
+    previewAuthSecret: previewAuth ? "[set]" : "[unset]",
+    previewAuthAddress: previewAuth ? previewAuth.address : "[unset]",
     registryPullAuthHosts: config.registryPullAuth.byHost.size,
     registryPullAuthFallback: config.registryPullAuth.fallback
       ? "[set]"

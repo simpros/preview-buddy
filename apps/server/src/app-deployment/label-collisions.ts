@@ -11,6 +11,7 @@ import {
   appRouting,
   gatewayLabelKeys,
   serviceRouting,
+  type PreviewAccessLabels,
   type TraefikPolicy,
 } from "./workload-labels.ts";
 
@@ -27,11 +28,12 @@ export function resolveLabelCollisions(input: {
   labels: PreviewLabels | undefined;
   services: PreviewServiceSpec[] | undefined;
   policy: TraefikPolicy;
+  access?: PreviewAccessLabels;
 }): { ok: true } | { ok: false; error: string; detail: string } {
   const appHit = reservedKeyCollision(
     gatewayLabelKeys(
       previewContainerName(input.slug, input.prId),
-      appRouting(input.hostname, input.policy),
+      appRouting(input.hostname, input.policy, input.access),
     ),
     input.labels,
   );

@@ -229,3 +229,73 @@ describe("reservedKeyCollision", () => {
     expect(reservedKeyCollision(Object.keys(gateway), undefined)).toBeNull();
   });
 });
+
+describe("preview access gates", () => {
+  test("basic emits an htpasswd middleware without touching the base keys", () => {
+    const base = traefikLabels({
+      routerName: "sprout-myapp-pr-42",
+      hostname: "pr-42.myapp.preview.example.com",
+      port: 3000,
+    });
+    const gated = traefikLabels({
+      routerName: "sprout-myapp-pr-42",
+      hostname: "pr-42.myapp.preview.example.com",
+      port: 3000,
+      basicAuth: {
+        middleware: "sprout-myapp-pr-42-auth",
+        users: "sprout:$2y$hash",
+      },
+    });
+    for (const [key, value] of Object.entries(base)) {
+      if (key.endsWith(".middlewares")) continue;
+      expect(gated[key]).toBe(value);
+    }
+    expect(gated["traefik.http.routers.sprout-myapp-pr-42.middlewares"]).toBe(
+      "sprout-myapp-pr-42-auth",
+    );
+    expect(
+      gated[
+        "traefik.http.middlewares.sprout-myapp-pr-42-auth.basicauth.users"
+      ],
+    ).toBe("sprout:$2y$hash");
+  });
+
+  test("link emits a forwardAuth with no identity headers for the app", () => {
+    const gated = traefikLabels({
+      routerName: "sprout-myapp-pr-42",
+      hostname: "pr-42.myapp.preview.example.com",
+      port: 3000,
+      previewForwardAuth: {
+        middleware: "sprout-myapp-pr-42-auth",
+        address: "http://gateway:7331/v1/internal/preview-auth",
+      },
+    });
+    expect(
+      gated[
+        "traefik.http.middlewares.sprout-myapp-pr-42-auth.forwardauth.address"
+      ],
+    ).toBe("http://gateway:7331/v1/internal/preview-auth");
+    expect(
+      Object.keys(gated).some((key) => key.includes("authResponseHeaders")),
+    ).toBe(false);
+  });
+
+  test("global SSO and preview gate chain on one router", () => {
+    const gated = traefikLabels({
+      routerName: "sprout-myapp-pr-42",
+      hostname: "pr-42.myapp.preview.example.com",
+      port: 3000,
+      forwardAuth: {
+        middleware: "voidauth",
+        address: "https://auth.example.com/api/authz/forward-auth",
+      },
+      basicAuth: {
+        middleware: "sprout-myapp-pr-42-auth",
+        users: "sprout:$2y$hash",
+      },
+    });
+    expect(gated["traefik.http.routers.sprout-myapp-pr-42.middlewares"]).toBe(
+      "voidauth,sprout-myapp-pr-42-auth",
+    );
+  });
+});

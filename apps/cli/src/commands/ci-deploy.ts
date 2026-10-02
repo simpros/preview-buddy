@@ -44,6 +44,7 @@ export type CiDeployPolicy = {
     deps: CliDeps,
     identity: CiIdentity,
     settled: DeploySettled & { reset?: boolean },
+    extra?: { client: ApiClient; yaml: SproutYaml },
   ) => Promise<Result<void>>;
 };
 
@@ -177,7 +178,10 @@ export async function runCiDeploy(
   const write = ctx.deps.writeTextFile ?? defaultWriteTextFile;
   warnForgeNote(
     ctx.deps.io,
-    await policy.publishNote(ctx.deps, identity, settled.value),
+    await policy.publishNote(ctx.deps, identity, settled.value, {
+      client: ctx.client,
+      yaml: yaml.value,
+    }),
   );
   try {
     await write(dotenvPath, `PREVIEW_URL=${settled.value.previewUrl}\n`);

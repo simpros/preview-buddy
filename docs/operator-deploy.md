@@ -250,6 +250,20 @@ Coolify-managed Traefik already watches the Docker socket; sprout
 preview containers appear alongside Coolify apps as long as they share the
 Traefik network.
 
+### Per-preview access gate (`preview.auth`)
+
+Adopters opt in per repo with `preview.auth: basic | link` (see
+[Previews](previews.md#preview-access)). `basic` needs nothing from the
+operator. `link` needs both `SPROUT_PREVIEW_AUTH_SECRET` (HMAC root for
+shareable tokens) and `SPROUT_PREVIEW_AUTH_ADDRESS` (the gateway's
+in-network forwardAuth URL, e.g.
+`http://gateway:7331/v1/internal/preview-auth`) — set together or both
+empty; a partial set fails gateway boot naming the missing key. The
+address must be Traefik-reachable without leaving the Docker network:
+that is the whole point (an external auth service has no Cloudflare-free
+path to the preview edge, and Cloudflare rewrites `X-Forwarded-Host`, so
+an external gate authorised everything). Never point it at a public URL.
+
 ### Wildcard preview certificate (DNS-01)
 
 Per-preview Let's Encrypt certs hit the **50 certificates / registered domain /
@@ -496,6 +510,8 @@ DSN from the raw password in YAML.
 | `SPROUT_TRAEFIK_CERTRESOLVER` | no | Optional certresolver name when entrypoints set |
 | `SPROUT_TRAEFIK_MIDDLEWARES` | no | Single forwardAuth middleware name (no commas) |
 | `SPROUT_FORWARDAUTH_ADDRESS` | no | Traefik-reachable forwardAuth URL (required with middleware name) |
+| `SPROUT_PREVIEW_AUTH_SECRET` | no | HMAC root for `preview.auth: link` tokens (required with address) |
+| `SPROUT_PREVIEW_AUTH_ADDRESS` | no | Gateway in-network forwardAuth URL, e.g. `http://gateway:7331/v1/internal/preview-auth` (required with secret) |
 | `SPROUT_GITHUB_TOKEN` / `SPROUT_GITLAB_TOKEN` | no | Sweep forge PATs (may be blank at boot) |
 | `SPROUT_FORGE_HOSTS` | no | Optional `host=gitlab` pairs for self-managed GitLab |
 

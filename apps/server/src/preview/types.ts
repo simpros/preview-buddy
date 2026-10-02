@@ -1,4 +1,4 @@
-import type { HealthSpec, PreviewLabels } from "@sprout/preview-env";
+import type { HealthSpec, PreviewAuthSpec, PreviewLabels } from "@sprout/preview-env";
 import type {
   PreviewAppOps,
   PreviewServiceSpec,
@@ -8,6 +8,7 @@ import type {
   TraefikTls,
 } from "../app-deployment/labels.ts";
 import type { SeedImageSpec } from "../app-deployment/seed.ts";
+import type { PreviewAuthConfig } from "../config.ts";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import type { PreviewDbRouter } from "../preview-db/routing.ts";
 import type { PreviewDataVolumes } from "./data-volumes.ts";
@@ -65,6 +66,8 @@ export type ProvisionInput = {
   reseed?: boolean;
   traefikTls?: TraefikTls;
   traefikForwardAuth?: TraefikForwardAuth;
+  auth?: PreviewAuthSpec;
+  previewAuth?: PreviewAuthConfig;
 };
 
 export type TeardownInput = {

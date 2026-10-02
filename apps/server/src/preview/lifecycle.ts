@@ -1,9 +1,11 @@
 import { and, eq, ne } from "drizzle-orm";
+import { previewAuthMode } from "@sprout/preview-env";
 import type { StateDb } from "../infrastructure/db/client.ts";
 import { previews } from "../infrastructure/db/schema.ts";
 import { completeBringUp, pullImagesOutsideLock } from "./bring-up.ts";
 import { withDbNameLock, withPreviewLock } from "./locks.ts";
 import { markPreviewFailed } from "./mark-failed.ts";
+import { desiredPreviewAuthState } from "./auth.ts";
 import {
   updatePreviewRow,
   utcIsoNow,
@@ -131,10 +133,39 @@ async function persistPullFailure(
     );
 }
 
+type StoredAuth = {
+  authMode: string | null;
+  authSecret: string | null;
+  authBasicUser: string | null;
+  authBasicPassword: string | null;
+};
+
+function authColumnsFor(
+  mode: ReturnType<typeof previewAuthMode>,
+  stored: StoredAuth | null,
+) {
+  const auth = desiredPreviewAuthState({
+    mode,
+    stored: stored ?? {
+      authMode: null,
+      authSecret: null,
+      authBasicUser: null,
+      authBasicPassword: null,
+    },
+  });
+  return {
+    authMode: auth.mode,
+    authSecret: auth.secret,
+    authBasicUser: auth.basicUser,
+    authBasicPassword: auth.basicPassword,
+  };
+}
+
 async function writeProvisioningIntent(
   deps: LifecycleDeps,
   input: ProvisionInput,
   dbName: string | null,
+  stored: StoredAuth | null,
 ): Promise<PreviewRow> {
   const now = utcIsoNow();
   return updatePreviewRow(
@@ -151,6 +182,7 @@ async function writeProvisioningIntent(
       seededAt: null,
       seededSeedImage: null,
       mailFrom: input.plan.mailFrom ?? null,
+      ...authColumnsFor(previewAuthMode(input.auth), stored),
       ...clearLastError,
       // New generation: TTL means age of this intent, not birth of the row key.
       createdAt: now,
@@ -180,6 +212,7 @@ async function patchAccept(
       bringUpPlan: fields.plan,
       ...(fields.hostname != null ? { hostname: fields.hostname } : {}),
       mailFrom: input.plan.mailFrom ?? null,
+      ...authColumnsFor(previewAuthMode(input.auth), row),
       lastError: null,
       lastErrorDetail: null,
       seedLog: null,
@@ -261,6 +294,7 @@ export async function claimDeployIntent(
   const row = await getPreviewRow(deps.db, input.repo, input.prId);
 
   if (!row) {
+    const auth = authColumnsFor(previewAuthMode(input.auth), null);
     const [inserted] = await deps.db
       .insert(previews)
       .values({
@@ -273,6 +307,10 @@ export async function claimDeployIntent(
         status: "provisioning",
         bringUpPlan: "full_replace",
         mailFrom: input.plan.mailFrom ?? null,
+        authMode: auth.authMode,
+        authSecret: auth.authSecret,
+        authBasicUser: auth.authBasicUser,
+        authBasicPassword: auth.authBasicPassword,
       })
       .returning();
     if (!inserted) {
@@ -294,7 +332,7 @@ export async function claimDeployIntent(
     needsBackendRemint(row, input.plan.provider)
   ) {
     const intentDbName = requestedDbName ?? row.dbName;
-    const intent = await writeProvisioningIntent(deps, input, intentDbName);
+    const intent = await writeProvisioningIntent(deps, input, intentDbName, row);
     return { ok: true, value: intent };
   }
 
@@ -310,6 +348,7 @@ export async function claimDeployIntent(
         deps,
         input,
         requestedDbName,
+        row,
       );
       return { ok: true, value: intent };
     }
@@ -323,6 +362,7 @@ export async function claimDeployIntent(
         deps,
         input,
         requestedDbName,
+        row,
       );
       return { ok: true, value: intent };
     }

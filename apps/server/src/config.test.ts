@@ -10,6 +10,7 @@ import {
   POSTGRES_REQUIRED_ENV,
   postgresNotConfiguredDetail,
   parseExtraGitlabHosts,
+  previewAuthNotConfiguredDetail,
   REQUIRED_ENV,
 } from "./config.ts";
 
@@ -63,6 +64,8 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_TRAEFIK_CERTRESOLVER;
   delete process.env.SPROUT_TRAEFIK_MIDDLEWARES;
   delete process.env.SPROUT_FORWARDAUTH_ADDRESS;
+  delete process.env.SPROUT_PREVIEW_AUTH_SECRET;
+  delete process.env.SPROUT_PREVIEW_AUTH_ADDRESS;
 }
 
 afterEach(() => {
@@ -540,5 +543,48 @@ describe("loadConfig", () => {
     process.env.SPROUT_MAIL_PORT = "1025";
     process.env.SPROUT_MAIL_SECURE = "maybe";
     expect(() => loadConfig()).toThrow("Invalid SPROUT_MAIL_SECURE");
+  });
+});
+
+describe("preview auth capability", () => {
+  test("absent group leaves link unavailable", () => {
+    clearGatewayEnv();
+    process.env.SPROUT_TRAEFIK_NETWORK = "traefik";
+    const config = loadConfig();
+    expect(config.previewAuth).toBeUndefined();
+  });
+
+  test("full group loads secret and in-network address", () => {
+    clearGatewayEnv();
+    process.env.SPROUT_TRAEFIK_NETWORK = "traefik";
+    process.env.SPROUT_PREVIEW_AUTH_SECRET = "sekrit";
+    process.env.SPROUT_PREVIEW_AUTH_ADDRESS =
+      "http://gateway:7331/v1/internal/preview-auth";
+    const config = loadConfig();
+    expect(config.previewAuth).toEqual({
+      secret: "sekrit",
+      address: "http://gateway:7331/v1/internal/preview-auth",
+    });
+  });
+
+  test("partial group fails boot naming the missing key", () => {
+    clearGatewayEnv();
+    process.env.SPROUT_TRAEFIK_NETWORK = "traefik";
+    process.env.SPROUT_PREVIEW_AUTH_SECRET = "sekrit";
+    expect(() => loadConfig()).toThrow(
+      "Incomplete preview auth configuration: missing SPROUT_PREVIEW_AUTH_ADDRESS",
+    );
+    delete process.env.SPROUT_PREVIEW_AUTH_SECRET;
+    process.env.SPROUT_PREVIEW_AUTH_ADDRESS =
+      "http://gateway:7331/v1/internal/preview-auth";
+    expect(() => loadConfig()).toThrow(
+      "Incomplete preview auth configuration: missing SPROUT_PREVIEW_AUTH_SECRET",
+    );
+  });
+
+  test("link on an unconfigured gateway names the missing key", () => {
+    expect(
+      previewAuthNotConfiguredDetail("https://github.com/org/repo"),
+    ).toContain("SPROUT_PREVIEW_AUTH_SECRET");
   });
 });

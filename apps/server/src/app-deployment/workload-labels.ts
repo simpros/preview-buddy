@@ -2,7 +2,9 @@ import type { PreviewLabels, PreviewServiceSpec } from "@sprout/preview-env";
 import {
   traefikLabelKeys,
   traefikLabels,
+  type TraefikBasicAuth,
   type TraefikForwardAuth,
+  type TraefikPreviewForwardAuth,
   type TraefikTls,
 } from "./labels.ts";
 
@@ -11,6 +13,12 @@ export type TraefikPolicy = {
   traefikForwardAuth?: TraefikForwardAuth;
 };
 
+/** Per-preview gate attached to the app router only; services are never double-gated. */
+export type PreviewAccessLabels =
+  | { mode: "none" }
+  | { mode: "basic"; basicAuth: TraefikBasicAuth }
+  | { mode: "link"; previewForwardAuth: TraefikPreviewForwardAuth };
+
 export type PreviewWorkloadRouting =
   | {
       kind: "routed";
@@ -18,6 +26,8 @@ export type PreviewWorkloadRouting =
       pathPrefix?: string;
       tls?: TraefikTls;
       forwardAuth?: TraefikForwardAuth;
+      basicAuth?: TraefikBasicAuth;
+      previewForwardAuth?: TraefikPreviewForwardAuth;
     }
   | { kind: "internal" };
 
@@ -31,12 +41,17 @@ export type PreviewWorkloadRouting =
 export function appRouting(
   hostname: string,
   policy: TraefikPolicy,
+  access?: PreviewAccessLabels,
 ): PreviewWorkloadRouting {
   return {
     kind: "routed",
     hostname,
     tls: policy.traefikTls,
     forwardAuth: policy.traefikForwardAuth,
+    ...(access?.mode === "basic" ? { basicAuth: access.basicAuth } : {}),
+    ...(access?.mode === "link"
+      ? { previewForwardAuth: access.previewForwardAuth }
+      : {}),
   };
 }
 
@@ -70,6 +85,8 @@ export function gatewayLabels(
     pathPrefix: routing.pathPrefix,
     tls: routing.tls,
     forwardAuth: routing.forwardAuth,
+    basicAuth: routing.basicAuth,
+    previewForwardAuth: routing.previewForwardAuth,
   });
 }
 
@@ -86,5 +103,7 @@ export function gatewayLabelKeys(
     routerName: name,
     tls: routing.tls,
     forwardAuth: routing.forwardAuth,
+    basicAuth: routing.basicAuth,
+    previewForwardAuth: routing.previewForwardAuth,
   });
 }
