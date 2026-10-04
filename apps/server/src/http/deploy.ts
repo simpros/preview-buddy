@@ -549,10 +549,7 @@ export function resolveWildcardHostnameGate(input: {
       return {
         ok: false,
         error: "invalid_wildcard_hostname",
-        detail:
-          err instanceof Error
-            ? err.message
-            : `Cannot derive wildcard TLS suffix from hostname ${JSON.stringify(name)}`,
+        detail: (err as Error).message,
       };
     }
   }
