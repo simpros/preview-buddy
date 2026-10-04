@@ -4,6 +4,7 @@ import {
   configSummary,
   governanceUnboundedWarning,
   loadConfig,
+  traefikWildcardWarning,
 } from "./config.ts";
 import { createDockerEngineClient } from "./docker/engine.ts";
 import { startServer } from "./http/app.ts";
@@ -22,6 +23,8 @@ const config = loadConfig();
 console.log("sprout starting", configSummary(config));
 const unbounded = governanceUnboundedWarning(config);
 if (unbounded) console.warn(unbounded);
+const wildcardWarning = traefikWildcardWarning(config);
+if (wildcardWarning) console.warn(wildcardWarning);
 
 const traces = createTraces(config);
 

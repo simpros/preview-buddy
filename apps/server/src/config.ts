@@ -58,6 +58,7 @@ export const OPTIONAL_STRING_ENV = [
   "SPROUT_FORGE_HOSTS",
   "SPROUT_TRAEFIK_ENTRYPOINTS",
   "SPROUT_TRAEFIK_CERTRESOLVER",
+  "SPROUT_TRAEFIK_WILDCARD_TLS",
   "SPROUT_TRAEFIK_MIDDLEWARES",
   "SPROUT_FORWARDAUTH_ADDRESS",
   "SPROUT_TELEMETRY_ENDPOINT",
@@ -267,23 +268,43 @@ function parseBooleanToken(
   return undefined;
 }
 
+const BOOLEAN_TRUE_TOKENS = ["on", "1", "true", "yes"];
+const BOOLEAN_FALSE_TOKENS = ["off", "0", "false", "no"];
+
+function parseBooleanEnv(
+  raw: string | undefined,
+  options: {
+    trueTokens: readonly string[];
+    falseTokens: readonly string[];
+    /** Substituted when raw is blank; a blank default means false. */
+    defaultRaw?: string;
+    error: string;
+  },
+): boolean {
+  const trimmed = raw?.trim() ?? "";
+  const effective =
+    trimmed === "" ? (options.defaultRaw?.trim() ?? "") : trimmed;
+  if (effective === "") return false;
+  const parsed = parseBooleanToken(
+    effective.toLowerCase(),
+    options.trueTokens,
+    options.falseTokens,
+  );
+  if (parsed === undefined) throw new Error(options.error);
+  return parsed;
+}
+
 function parseTelemetryFlag(
   raw: string | undefined,
   defaultValue: string,
 ): boolean {
-  const trimmed = raw?.trim() ?? "";
-  const normalized = (trimmed === "" ? defaultValue : trimmed).toLowerCase();
-  const parsed = parseBooleanToken(
-    normalized,
-    ["on", "1", "true", "yes"],
-    ["off", "0", "false", "no"],
-  );
-  if (parsed === undefined) {
-    throw new Error(
+  return parseBooleanEnv(raw, {
+    trueTokens: BOOLEAN_TRUE_TOKENS,
+    falseTokens: BOOLEAN_FALSE_TOKENS,
+    defaultRaw: defaultValue,
+    error:
       "Invalid SPROUT_TELEMETRY: must be a boolean (on/off, true/false, 1/0, yes/no)",
-    );
-  }
-  return parsed;
+  });
 }
 
 function parseTelemetryDestination(): {
@@ -383,19 +404,12 @@ function optionalEnv(
 }
 
 function parseMailSecure(raw: string): boolean {
-  const normalized = raw.trim().toLowerCase();
-  if (normalized === "" ) return false;
-  const parsed = parseBooleanToken(
-    normalized,
-    ["1", "true", "yes"],
-    ["0", "false", "no"],
-  );
-  if (parsed === undefined) {
-    throw new Error(
+  return parseBooleanEnv(raw, {
+    trueTokens: ["1", "true", "yes"],
+    falseTokens: ["0", "false", "no"],
+    error:
       "Invalid SPROUT_MAIL_SECURE: must be a boolean (true/false, 1/0, yes/no)",
-    );
-  }
-  return parsed;
+  });
 }
 
 /** The enablement decision, computed once so off always names its reason. */
@@ -462,12 +476,37 @@ function parsePreviewAuthConfig(): PreviewAuthConfig | undefined {
   return { secret, address };
 }
 
+function parseTraefikWildcardTls(): boolean {
+  return parseBooleanEnv(process.env.SPROUT_TRAEFIK_WILDCARD_TLS, {
+    trueTokens: BOOLEAN_TRUE_TOKENS,
+    falseTokens: BOOLEAN_FALSE_TOKENS,
+    error:
+      "Invalid SPROUT_TRAEFIK_WILDCARD_TLS: must be a boolean (true/false, 1/0, yes/no, on/off)",
+  });
+}
+
 function parseTraefikTls(): TraefikTls | undefined {
   const entrypoints = optionalEnv("SPROUT_TRAEFIK_ENTRYPOINTS");
-  if (entrypoints === "") return undefined;
+  const wildcard = parseTraefikWildcardTls();
+  if (entrypoints === "") {
+    if (wildcard) {
+      throw new Error(
+        "Incomplete Traefik wildcard TLS configuration: missing SPROUT_TRAEFIK_ENTRYPOINTS (wildcard TLS needs HTTPS routers)",
+      );
+    }
+    return undefined;
+  }
   const certResolver = optionalEnv("SPROUT_TRAEFIK_CERTRESOLVER");
-  return certResolver === ""
-    ? { entrypoints }
+  if (wildcard && certResolver === "") {
+    throw new Error(
+      "Incomplete Traefik wildcard TLS configuration: missing SPROUT_TRAEFIK_CERTRESOLVER (wildcard certificates require DNS-01, never HTTP-01)",
+    );
+  }
+  if (certResolver === "") {
+    return { entrypoints };
+  }
+  return wildcard
+    ? { entrypoints, certResolver, wildcard: true }
     : { entrypoints, certResolver };
 }
 
@@ -489,13 +528,12 @@ function parseTraefikForwardAuth(): TraefikForwardAuth | undefined {
 }
 
 function parseDashboardEnabled(raw: string | undefined): boolean {
-  const normalized = raw?.trim().toLowerCase() ?? "";
-  if (normalized === "") return false;
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  throw new Error(
-    "Invalid SPROUT_DASHBOARD_ENABLED: must be a boolean (true/false, 1/0, yes/no)",
-  );
+  return parseBooleanEnv(raw, {
+    trueTokens: BOOLEAN_TRUE_TOKENS,
+    falseTokens: BOOLEAN_FALSE_TOKENS,
+    error:
+      "Invalid SPROUT_DASHBOARD_ENABLED: must be a boolean (true/false, 1/0, yes/no)",
+  });
 }
 
 /** Opt-in read-only preview list. Enabled demands basic-auth credentials. */
@@ -813,8 +851,22 @@ function telemetryAuthSummary(telemetry: TelemetryState): string {
 
 function formatTraefikTlsSummary(tls: TraefikTls | undefined): string {
   if (!tls) return "[unset]";
-  if (tls.certResolver === undefined) return tls.entrypoints;
-  return `${tls.entrypoints} (certresolver=${tls.certResolver})`;
+  const base =
+    tls.certResolver === undefined
+      ? tls.entrypoints
+      : `${tls.entrypoints} (certresolver=${tls.certResolver})`;
+  if (tls.wildcard !== true) return base;
+  return `${tls.entrypoints} (certresolver=${tls.certResolver}, wildcard)`;
+}
+
+/** Wildcard mode needs a DNS-01 resolver, which sprout cannot observe. */
+export function traefikWildcardWarning(config: Config): string | null {
+  if (config.traefikTls?.wildcard !== true) return null;
+  return (
+    "preview wildcard TLS is on (SPROUT_TRAEFIK_WILDCARD_TLS): " +
+    "SPROUT_TRAEFIK_CERTRESOLVER must be a DNS-01 resolver — " +
+    'see docs/operator-deploy.md § "Wildcard preview certificate (DNS-01)"'
+  );
 }
 
 function formatTraefikForwardAuthSummary(
