@@ -3,6 +3,8 @@ import type { PreviewLabels } from "@sprout/preview-env";
 export type TraefikTls = {
   entrypoints: string;
   certResolver?: string;
+  /** Opt-in wildcard mode: routers declare tls.domains for their suffix. */
+  wildcard?: boolean;
 };
 
 export type TraefikForwardAuth = {
@@ -20,6 +22,29 @@ export type TraefikPreviewForwardAuth = {
   middleware: string;
   address: string;
 };
+
+/**
+ * Suffix a wildcard covers: the hostname with its first label removed.
+ * A wildcard covers exactly one label, so `pr-42.a.previews.example.com`
+ * needs `*.a.previews.example.com`, not `*.previews.example.com`.
+ * The suffix needs at least two labels to be a usable domain set.
+ */
+export function wildcardSuffix(hostname: string): string {
+  const labels = hostname.split(".");
+  const suffix = labels.slice(1).join(".");
+  if (labels.length < 3 || suffix.split(".").length < 2) {
+    throw new Error(
+      `Cannot derive wildcard TLS suffix from hostname ${JSON.stringify(hostname)}: need at least three labels (got ${labels.length})`,
+    );
+  }
+  return suffix;
+}
+
+/** Domain set matching the wildcard-bootstrap shape: wildcard main + apex SAN. */
+export function wildcardDomains(hostname: string): { main: string; sans: string } {
+  const suffix = wildcardSuffix(hostname);
+  return { main: `*.${suffix}`, sans: suffix };
+}
 
 const FORWARDAUTH_RESPONSE_HEADERS =
   "Remote-User,Remote-Email,Remote-Groups";
@@ -69,6 +94,13 @@ export function traefikLabels(input: {
     if (tls.certResolver !== undefined) {
       labels[`traefik.http.routers.${routerName}.tls.certresolver`] =
         tls.certResolver;
+    }
+    if (tls.wildcard === true) {
+      const domains = wildcardDomains(hostname);
+      labels[`traefik.http.routers.${routerName}.tls.domains[0].main`] =
+        domains.main;
+      labels[`traefik.http.routers.${routerName}.tls.domains[0].sans`] =
+        domains.sans;
     }
   }
   if (forwardAuth || basicAuth || previewForwardAuth) {
@@ -123,7 +155,7 @@ export function traefikLabelKeys(input: {
   return Object.keys(
     traefikLabels({
       routerName: input.routerName,
-      hostname: "localhost",
+      hostname: "placeholder.example.com",
       port: 1,
       tls: input.tls,
       forwardAuth: input.forwardAuth,

@@ -72,6 +72,7 @@ function clearGatewayEnv(): void {
   delete process.env.SPROUT_DASHBOARD_PASSWORD;
   delete process.env.SPROUT_TRAEFIK_ENTRYPOINTS;
   delete process.env.SPROUT_TRAEFIK_CERTRESOLVER;
+  delete process.env.SPROUT_TRAEFIK_WILDCARD_TLS;
   delete process.env.SPROUT_TRAEFIK_MIDDLEWARES;
   delete process.env.SPROUT_FORWARDAUTH_ADDRESS;
   delete process.env.SPROUT_PREVIEW_AUTH_SECRET;
@@ -205,6 +206,58 @@ describe("loadConfig", () => {
     process.env.SPROUT_TRAEFIK_ENTRYPOINTS = "https";
     const config = loadConfig();
     expect(config.traefikTls).toEqual({ entrypoints: "https" });
+  });
+
+  test("wildcard flag on without certresolver fails boot naming the key", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TRAEFIK_ENTRYPOINTS = "https";
+    process.env.SPROUT_TRAEFIK_WILDCARD_TLS = "true";
+    expect(() => loadConfig()).toThrow("SPROUT_TRAEFIK_CERTRESOLVER");
+  });
+
+  test("wildcard flag on with certresolver loads and widens the summary", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TRAEFIK_ENTRYPOINTS = "https";
+    process.env.SPROUT_TRAEFIK_CERTRESOLVER = "letsencrypt";
+    process.env.SPROUT_TRAEFIK_WILDCARD_TLS = "true";
+    const config = loadConfig();
+    expect(config.traefikTls).toEqual({
+      entrypoints: "https",
+      certResolver: "letsencrypt",
+      wildcard: true,
+    });
+    expect(configSummary(config).traefikTls).toBe(
+      "https (certresolver=letsencrypt, wildcard)",
+    );
+  });
+
+  test("wildcard flag off keeps the existing summary line", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TRAEFIK_ENTRYPOINTS = "https";
+    process.env.SPROUT_TRAEFIK_CERTRESOLVER = "letsencrypt";
+    const config = loadConfig();
+    expect(config.traefikTls).toEqual({
+      entrypoints: "https",
+      certResolver: "letsencrypt",
+    });
+    expect(configSummary(config).traefikTls).toBe(
+      "https (certresolver=letsencrypt)",
+    );
+  });
+
+  test("wildcard flag rejects non-boolean values", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TRAEFIK_ENTRYPOINTS = "https";
+    process.env.SPROUT_TRAEFIK_CERTRESOLVER = "letsencrypt";
+    process.env.SPROUT_TRAEFIK_WILDCARD_TLS = "sometimes";
+    expect(() => loadConfig()).toThrow("SPROUT_TRAEFIK_WILDCARD_TLS");
+  });
+
+  test("wildcard flag without entrypoints fails boot naming entrypoints", () => {
+    setRequiredEnv();
+    process.env.SPROUT_TRAEFIK_CERTRESOLVER = "letsencrypt";
+    process.env.SPROUT_TRAEFIK_WILDCARD_TLS = "true";
+    expect(() => loadConfig()).toThrow("SPROUT_TRAEFIK_ENTRYPOINTS");
   });
 
   test("loads Traefik forwardAuth policy when both middleware name and address are set", () => {

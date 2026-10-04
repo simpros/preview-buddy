@@ -68,4 +68,26 @@ describe("workload-labels", () => {
     );
     expect(gatewayLabelKeys("r", { kind: "internal" })).toEqual([]);
   });
+
+  test("wildcard policy reserves the tls.domains keys on the emission", () => {
+    const wildcardPolicy = {
+      traefikTls: {
+        entrypoints: "websecure",
+        certResolver: "myresolver",
+        wildcard: true,
+      },
+    };
+    const routing = appRouting("pr-42.a.previews.example.com", wildcardPolicy);
+    const name = previewContainerName("myapp", 42);
+    const keys = gatewayLabelKeys(name, routing).sort();
+    expect(
+      keys.filter((key) => key.includes("tls.domains")),
+    ).toEqual([
+      `traefik.http.routers.${name}.tls.domains[0].main`,
+      `traefik.http.routers.${name}.tls.domains[0].sans`,
+    ]);
+    expect(keys).toEqual(
+      Object.keys(gatewayLabels(name, routing, 3000)).sort(),
+    );
+  });
 });

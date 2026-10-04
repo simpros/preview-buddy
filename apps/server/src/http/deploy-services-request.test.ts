@@ -3,6 +3,7 @@ import { resolveLabelCollisions } from "../app-deployment/label-collisions.ts";
 import {
   resolvePreviewLabelsRequest,
   resolveServicesRequest,
+  resolveWildcardHostnameGate,
 } from "./deploy.ts";
 
 describe("resolveServicesRequest", () => {
@@ -312,5 +313,96 @@ describe("resolveLabelCollisions", () => {
         policy,
       }),
     ).toEqual({ ok: true });
+  });
+
+  test("wildcard policy reserves the tls.domains keys", () => {
+    const wildcardPolicy = {
+      traefikTls: {
+        entrypoints: "websecure",
+        certResolver: "myresolver",
+        wildcard: true,
+      },
+    };
+    const router = "sprout-myapp-pr-42";
+    expect(
+      resolveLabelCollisions({
+        slug: "myapp",
+        prId: 42,
+        hostname,
+        labels: {
+          [`traefik.http.routers.${router}.tls.domains[0].main`]:
+            "*.evil.example.com",
+        },
+        services: undefined,
+        policy: wildcardPolicy,
+      }),
+    ).toEqual({
+      ok: false,
+      error: "reserved_preview_label",
+      detail: `preview.labels.traefik.http.routers.${router}.tls.domains[0].main collides with a gateway label`,
+    });
+    expect(
+      resolveLabelCollisions({
+        slug: "myapp",
+        prId: 42,
+        hostname,
+        labels: {
+          [`traefik.http.routers.${router}.tls.domains[0].main`]:
+            "*.evil.example.com",
+        },
+        services: undefined,
+        policy,
+      }),
+    ).toEqual({ ok: true });
+  });
+});
+
+describe("resolveWildcardHostnameGate", () => {
+  test("off passes everything", () => {
+    expect(
+      resolveWildcardHostnameGate({
+        hostname: "localhost",
+        services: [{ name: "api", image: "img:1", hostname: "x" }],
+        wildcard: false,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("on passes multi-label app and service hostnames", () => {
+    expect(
+      resolveWildcardHostnameGate({
+        hostname: "pr-42.a.previews.example.com",
+        services: [
+          { name: "api", image: "img:1", hostname: "api-pr-42.a.previews.example.com" },
+        ],
+        wildcard: true,
+      }),
+    ).toEqual({ ok: true });
+  });
+
+  test("on fails a short app hostname with a named error", () => {
+    const result = resolveWildcardHostnameGate({
+      hostname: "example.com",
+      services: undefined,
+      wildcard: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("invalid_wildcard_hostname");
+      expect(result.detail).toContain("example.com");
+    }
+  });
+
+  test("on fails a short service hostname with a named error", () => {
+    const result = resolveWildcardHostnameGate({
+      hostname: "pr-42.a.previews.example.com",
+      services: [{ name: "api", image: "img:1", hostname: "localhost" }],
+      wildcard: true,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("invalid_wildcard_hostname");
+      expect(result.detail).toContain("localhost");
+    }
   });
 });

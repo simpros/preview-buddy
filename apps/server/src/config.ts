@@ -58,6 +58,7 @@ export const OPTIONAL_STRING_ENV = [
   "SPROUT_FORGE_HOSTS",
   "SPROUT_TRAEFIK_ENTRYPOINTS",
   "SPROUT_TRAEFIK_CERTRESOLVER",
+  "SPROUT_TRAEFIK_WILDCARD_TLS",
   "SPROUT_TRAEFIK_MIDDLEWARES",
   "SPROUT_FORWARDAUTH_ADDRESS",
   "SPROUT_TELEMETRY_ENDPOINT",
@@ -462,12 +463,45 @@ function parsePreviewAuthConfig(): PreviewAuthConfig | undefined {
   return { secret, address };
 }
 
+function parseTraefikWildcardTls(): boolean {
+  const raw = process.env.SPROUT_TRAEFIK_WILDCARD_TLS?.trim() ?? "";
+  if (raw === "") return false;
+  const normalized = raw.toLowerCase();
+  const parsed = parseBooleanToken(
+    normalized,
+    ["on", "1", "true", "yes"],
+    ["off", "0", "false", "no"],
+  );
+  if (parsed === undefined) {
+    throw new Error(
+      "Invalid SPROUT_TRAEFIK_WILDCARD_TLS: must be a boolean (true/false, 1/0, yes/no, on/off)",
+    );
+  }
+  return parsed;
+}
+
 function parseTraefikTls(): TraefikTls | undefined {
   const entrypoints = optionalEnv("SPROUT_TRAEFIK_ENTRYPOINTS");
-  if (entrypoints === "") return undefined;
+  const wildcard = parseTraefikWildcardTls();
+  if (entrypoints === "") {
+    if (wildcard) {
+      throw new Error(
+        "Incomplete Traefik wildcard TLS configuration: missing SPROUT_TRAEFIK_ENTRYPOINTS (wildcard TLS needs HTTPS routers)",
+      );
+    }
+    return undefined;
+  }
   const certResolver = optionalEnv("SPROUT_TRAEFIK_CERTRESOLVER");
-  return certResolver === ""
-    ? { entrypoints }
+  if (wildcard && certResolver === "") {
+    throw new Error(
+      "Incomplete Traefik wildcard TLS configuration: missing SPROUT_TRAEFIK_CERTRESOLVER (wildcard certificates require DNS-01, never HTTP-01)",
+    );
+  }
+  if (certResolver === "") {
+    return wildcard ? { entrypoints, wildcard: true } : { entrypoints };
+  }
+  return wildcard
+    ? { entrypoints, certResolver, wildcard: true }
     : { entrypoints, certResolver };
 }
 
@@ -813,8 +847,24 @@ function telemetryAuthSummary(telemetry: TelemetryState): string {
 
 function formatTraefikTlsSummary(tls: TraefikTls | undefined): string {
   if (!tls) return "[unset]";
-  if (tls.certResolver === undefined) return tls.entrypoints;
-  return `${tls.entrypoints} (certresolver=${tls.certResolver})`;
+  const base =
+    tls.certResolver === undefined
+      ? tls.entrypoints
+      : `${tls.entrypoints} (certresolver=${tls.certResolver})`;
+  if (tls.wildcard !== true) return base;
+  return tls.certResolver === undefined
+    ? `${tls.entrypoints} (wildcard)`
+    : `${tls.entrypoints} (certresolver=${tls.certResolver}, wildcard)`;
+}
+
+/** Wildcard mode needs a DNS-01 resolver, which sprout cannot observe. */
+export function traefikWildcardWarning(config: Config): string | null {
+  if (config.traefikTls?.wildcard !== true) return null;
+  return (
+    "preview wildcard TLS is on (SPROUT_TRAEFIK_WILDCARD_TLS): " +
+    "SPROUT_TRAEFIK_CERTRESOLVER must be a DNS-01 resolver — " +
+    'see docs/operator-deploy.md § "Wildcard preview certificate (DNS-01)"'
+  );
 }
 
 function formatTraefikForwardAuthSummary(

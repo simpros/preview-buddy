@@ -290,6 +290,35 @@ should log a store hit / `No ACME certificate generation required` for the
 preview FQDN — not a new LE order. Wrong resolver name → per-host orders
 resume (the rate-limit failure mode).
 
+#### Opt-in wildcard mode (gateway-declared domains)
+
+Off by default. Set `SPROUT_TRAEFIK_WILDCARD_TLS=true` and the gateway's
+preview routers additionally declare
+`tls.domains[0].main=*.<suffix>` + `tls.domains[0].sans=<suffix>`, where
+`<suffix>` is the workload's hostname with its first label removed
+(`pr-42.a.previews.example.com` → `a.previews.example.com`). The requested
+set equals the bootstrap compose's shape (wildcard main + apex SAN), so a
+hand-bootstrapped wildcard is reused instead of duplicated, and companion
+services under the same suffix emit the same set (Traefik deduplicates by
+domain set — one order serves all of them).
+
+Prerequisites:
+
+- `SPROUT_TRAEFIK_CERTRESOLVER` must be set (boot fails without it), and
+  that resolver must use **DNS-01** — a wildcard can only be validated over
+  DNS-01, never over HTTP-01. Pointing this mode at an HTTP-01 resolver
+  leaves routers asking for a certificate the resolver can never issue
+  (boot logs a warning naming this section because the challenge type is
+  outside sprout's view).
+- A wildcard covers exactly **one** label: a preview host two levels below
+  the zone (`pr-42.a.previews.example.com`) needs
+  `*.a.previews.example.com`, not `*.previews.example.com` — one wildcard
+  per adopter suffix, ordered once per suffix on first deploy.
+- Hostnames too short to derive a suffix (fewer than two remaining labels)
+  fail the deploy instead of emitting a broken wildcard.
+
+With the flag off, emitted labels are byte-identical to today.
+
 Ready-to-apply fragments (placeholders only):
 [`deploy/traefik/README.md`](../deploy/traefik/README.md).
 
@@ -560,7 +589,8 @@ the DSN from the raw password in YAML.
 | `SPROUT_REGISTRY_AUTHS_JSON` | no | Per-host pull map `{"ghcr.io":{"username":"u","password":"p"},…}` |
 | `SPROUT_REGISTRY_USER` / `SPROUT_REGISTRY_PASSWORD` | no | Legacy single-registry fallback when image host is not in the map |
 | `SPROUT_TRAEFIK_ENTRYPOINTS` | no | Non-empty → HTTPS router labels; empty → HTTP-only |
-| `SPROUT_TRAEFIK_CERTRESOLVER` | no | Optional certresolver name when entrypoints set |
+| `SPROUT_TRAEFIK_CERTRESOLVER` | no | Optional certresolver name when entrypoints set (required with `SPROUT_TRAEFIK_WILDCARD_TLS=true`) |
+| `SPROUT_TRAEFIK_WILDCARD_TLS` | no | `true` → preview routers declare `tls.domains` wildcard+apex for their suffix (DNS-01 resolver required); default `false` (labels unchanged) |
 | `SPROUT_TRAEFIK_MIDDLEWARES` | no | Single forwardAuth middleware name (no commas) |
 | `SPROUT_FORWARDAUTH_ADDRESS` | no | Traefik-reachable forwardAuth URL (required with middleware name) |
 | `SPROUT_PREVIEW_AUTH_SECRET` | no | HMAC root for `preview.auth: link` tokens (required with address) |

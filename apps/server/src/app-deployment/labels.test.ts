@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   mergePreviewLabels,
   reservedKeyCollision,
+  traefikLabelKeys,
   traefikLabels,
+  wildcardDomains,
+  wildcardSuffix,
 } from "./labels.ts";
 
 describe("traefikLabels", () => {
@@ -109,6 +112,68 @@ describe("traefikLabels", () => {
     ).toBe(
       "Host(`pr-42.myapp.preview.example.com`) && PathPrefix(`/admin`)",
     );
+  });
+
+  test("mode off emits no tls.domains key", () => {
+    const tls = { entrypoints: "https", certResolver: "letsencrypt" };
+    const labels = traefikLabels({
+      routerName: "sprout-app-pr-1",
+      hostname: "pr-1.a.previews.example.com",
+      port: 8080,
+      tls,
+    });
+    expect(
+      Object.keys(labels).filter((key) => key.includes("tls.domains")),
+    ).toEqual([]);
+    expect(
+      traefikLabelKeys({ routerName: "sprout-app-pr-1", tls }).sort(),
+    ).toEqual(Object.keys(labels).sort());
+  });
+
+  test("mode on emits main/sans for the suffix", () => {
+    const labels = traefikLabels({
+      routerName: "sprout-app-pr-42",
+      hostname: "pr-42.a.previews.example.com",
+      port: 8080,
+      tls: {
+        entrypoints: "https",
+        certResolver: "letsencrypt",
+        wildcard: true,
+      },
+    });
+    expect(
+      labels["traefik.http.routers.sprout-app-pr-42.tls.domains[0].main"],
+    ).toBe("*.a.previews.example.com");
+    expect(
+      labels["traefik.http.routers.sprout-app-pr-42.tls.domains[0].sans"],
+    ).toBe("a.previews.example.com");
+  });
+
+  test("suffix derivation matches the bootstrap shape", () => {
+    expect(wildcardSuffix("pr-42.a.previews.example.com")).toBe(
+      "a.previews.example.com",
+    );
+    expect(wildcardDomains("pr-42.a.previews.example.com")).toEqual({
+      main: "*.a.previews.example.com",
+      sans: "a.previews.example.com",
+    });
+  });
+
+  test("short hostname throws instead of emitting a broken wildcard", () => {
+    for (const hostname of ["localhost", "example.com"]) {
+      expect(() =>
+        traefikLabels({
+          routerName: "sprout-app-pr-1",
+          hostname,
+          port: 8080,
+          tls: {
+            entrypoints: "https",
+            certResolver: "letsencrypt",
+            wildcard: true,
+          },
+        }),
+      ).toThrow(hostname);
+    }
   });
 });
 

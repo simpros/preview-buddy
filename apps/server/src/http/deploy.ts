@@ -37,6 +37,7 @@ import {
 import { t } from "elysia";
 import type { AuthContext } from "../auth/middleware.ts";
 import type { SeedImageSpec } from "../app-deployment/seed.ts";
+import { wildcardSuffix } from "../app-deployment/labels.ts";
 import { resolveLabelCollisions } from "../app-deployment/label-collisions.ts";
 import { previewAccessForKeys } from "../app-deployment/preview-auth.ts";
 import {
@@ -526,6 +527,38 @@ export type PreviewQuery = {
   pr_id: string;
 };
 
+/** Wildcard mode needs a derivable suffix per routed hostname. */
+export function resolveWildcardHostnameGate(input: {
+  hostname: string;
+  services: PreviewServiceSpec[] | undefined;
+  wildcard: boolean;
+}):
+  | { ok: true }
+  | { ok: false; error: string; detail: string } {
+  if (!input.wildcard) return { ok: true };
+  const hostnames = [
+    input.hostname,
+    ...(input.services ?? [])
+      .map((service) => service.hostname)
+      .filter((name): name is string => name !== undefined),
+  ];
+  for (const name of hostnames) {
+    try {
+      wildcardSuffix(name);
+    } catch (err) {
+      return {
+        ok: false,
+        error: "invalid_wildcard_hostname",
+        detail:
+          err instanceof Error
+            ? err.message
+            : `Cannot derive wildcard TLS suffix from hostname ${JSON.stringify(name)}`,
+      };
+    }
+  }
+  return { ok: true };
+}
+
 /** Single 422 mapper for the request resolvers below. */
 function unprocessable(
   set: { status?: number | string },
@@ -592,6 +625,14 @@ export function deploy(
     const services = resolveServicesRequest(body);
     if (!services.ok) {
       return unprocessable(set, services);
+    }
+    const wildcardGate = resolveWildcardHostnameGate({
+      hostname,
+      services: services.value,
+      wildcard: deps.materialization.traefikTls?.wildcard === true,
+    });
+    if (!wildcardGate.ok) {
+      return unprocessable(set, wildcardGate);
     }
     const labels = resolvePreviewLabelsRequest(body);
     if (!labels.ok) {
