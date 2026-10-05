@@ -18,6 +18,7 @@ import {
   parsePreviewVolumes,
   parseServiceEnvMap,
   previewAuthMode,
+  previewEnvIssueMessage,
   previewVolumeIssueMessage,
   requiresDatabase,
   resolveDbRoles,
@@ -238,7 +239,7 @@ function resolveDeploySpecs(
         ok: false,
         status: 422,
         error: "invalid_env_for_provider",
-        detail: `preview.env.${connectionEnv.issue.key} requires db.provider ${connectionEnv.issue.home}`,
+        detail: previewEnvIssueMessage("preview.env", connectionEnv.issue),
       };
     }
     if (connectionEnv.issue.code === "empty_env_target") {

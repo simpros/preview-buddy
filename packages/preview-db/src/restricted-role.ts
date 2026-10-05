@@ -14,6 +14,10 @@ export function companionRoleName(dbName: string): string | null {
   return role;
 }
 
+export function companionRoleLimitMessage(dbName: string): string {
+  return `companion role name exceeds Postgres identifier limit (${PG_IDENT_MAX}): ${dbName}${COMPANION_ROLE_SUFFIX}`;
+}
+
 export function deriveRestrictedPassword(
   ownerPassword: string,
   dbName: string,
@@ -30,9 +34,7 @@ export async function ensureRestrictedRole(
   assertSafeRole(opts.dbName);
   const role = companionRoleName(opts.dbName);
   if (role === null) {
-    throw new Error(
-      `companion role name exceeds Postgres identifier limit (${PG_IDENT_MAX}): ${opts.dbName}${COMPANION_ROLE_SUFFIX}`,
-    );
+    throw new Error(companionRoleLimitMessage(opts.dbName));
   }
   assertSafeRole(role);
   const password = deriveRestrictedPassword(opts.ownerPassword, opts.dbName);

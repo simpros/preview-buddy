@@ -4,6 +4,7 @@ import { ensureDatabase } from "./catalog.ts";
 import { assertSafeRole, ensureLoginRole } from "./ensure-role.ts";
 import { dockerAvailable, startTempPostgres } from "./postgres-it.ts";
 import {
+  companionRoleLimitMessage,
   companionRoleName,
   COMPANION_ROLE_SUFFIX,
   deriveRestrictedPassword,
@@ -11,6 +12,7 @@ import {
   ensureRestrictedRole,
   PG_IDENT_MAX,
 } from "./restricted-role.ts";
+import { previewDbName } from "./preview-names.ts";
 
 const hasDocker = await dockerAvailable();
 
@@ -19,6 +21,16 @@ describe("companionRoleName / deriveRestrictedPassword", () => {
     expect(companionRoleName("sprout_myapp_pr42")).toBe(
       "sprout_myapp_pr42_app",
     );
+  });
+
+  test("limit message names the db and the identifier budget", () => {
+    expect(companionRoleLimitMessage("sprout_myapp_pr1")).toBe(
+      `companion role name exceeds Postgres identifier limit (${PG_IDENT_MAX}): sprout_myapp_pr1${COMPANION_ROLE_SUFFIX}`,
+    );
+  });
+
+  test("previewDbName builds the canonical database name", () => {
+    expect(previewDbName("widgets", 42)).toBe("sprout_widgets_pr42");
   });
 
   test("returns null for companion names longer than Postgres NAMEDATALEN", () => {

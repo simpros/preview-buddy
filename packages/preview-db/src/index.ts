@@ -8,12 +8,14 @@ export {
 } from "./ensure-role.ts";
 export {
   COMPANION_ROLE_SUFFIX,
+  companionRoleLimitMessage,
   companionRoleName,
   deriveRestrictedPassword,
   dropRestrictedRole,
   ensureRestrictedRole,
   PG_IDENT_MAX,
 } from "./restricted-role.ts";
+export { previewDbName } from "./preview-names.ts";
 export {
   isWorktreeInputError,
 } from "./errors.ts";

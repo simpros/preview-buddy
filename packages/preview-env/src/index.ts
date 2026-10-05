@@ -1,9 +1,9 @@
 import type { DbProvider } from "./db.ts";
 import { envProviderMismatch, parsePreviewEnvMap } from "./env-keys.ts";
 import type {
-  CanonicalEnvKey,
   PreviewEnvIssue,
   PreviewEnvMap,
+  PreviewEnvProviderIssue,
 } from "./env-keys.ts";
 
 export {
@@ -14,7 +14,11 @@ export {
   type PreviewAuthSpec,
 } from "./auth.ts";
 
-export { OWNER_ENV_KEYS, PREVIEW_ENV_KEYS } from "./env-keys.ts";
+export {
+  OWNER_ENV_KEYS,
+  PREVIEW_ENV_KEYS,
+  previewEnvIssueMessage,
+} from "./env-keys.ts";
 
 export type {
   CanonicalEnvKey,
@@ -24,19 +28,13 @@ export type {
   PreviewEnvMap,
 } from "./env-keys.ts";
 
-type EnvProviderIssue = {
-  code: "env_requires_provider";
-  key: CanonicalEnvKey;
-  home: DbProvider;
-};
-
 /** Parse plus provider-scope check: the single entry both CLI and server call. */
 export function parsePreviewEnvForProvider(
   raw: Record<string, unknown> | undefined,
   provider: DbProvider,
 ):
   | { ok: true; value: PreviewEnvMap | undefined }
-  | { ok: false; issue: PreviewEnvIssue | EnvProviderIssue } {
+  | { ok: false; issue: PreviewEnvIssue | PreviewEnvProviderIssue } {
   const parsed = parsePreviewEnvMap(raw);
   if (!parsed.ok) return parsed;
   const mismatch = envProviderMismatch(parsed.value, provider);
@@ -58,6 +56,7 @@ export {
 
 export {
   DEFAULT_HEALTH,
+  healthIssueMessage,
   resolveHealthSpec,
   type HealthIssue,
   type HealthRequest,
@@ -84,6 +83,7 @@ export {
   dataVolumeName,
   parseDataVolumeName,
   parseSqliteVolumeName,
+  previewContainerName,
   sqliteVolumeName,
   type DataVolumeRef,
 } from "./naming.ts";
@@ -108,7 +108,6 @@ export {
 export {
   parsePreviewVolumes,
   previewVolumeIssueMessage,
-  type PreviewVolumeIssue,
 } from "./volumes.ts";
 
 export {

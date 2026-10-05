@@ -11,7 +11,10 @@ import {
 import {
   OWNER_ENV_KEYS,
   PREVIEW_ENV_KEYS,
+  healthIssueMessage,
   parsePreviewEnvForProvider,
+  previewContainerName,
+  previewEnvIssueMessage,
 } from "./index.ts";
 
 describe("env key partitions", () => {
@@ -209,5 +212,57 @@ describe("parsePreviewEnvForProvider", () => {
         issue: { code: "unknown_env_key", key: "REDIS_URL" },
       },
     );
+  });
+});
+
+describe("previewEnvIssueMessage", () => {
+  test("covers every issue code under one path", () => {
+    expect(previewEnvIssueMessage("preview.env", { code: "unknown_env_key", key: "REDIS_URL" })).toBe(
+      "unknown key: preview.env.REDIS_URL",
+    );
+    expect(previewEnvIssueMessage("preview.env", { code: "empty_env_target", key: "PGHOST" })).toBe(
+      "preview.env.PGHOST is required",
+    );
+    expect(previewEnvIssueMessage("preview.env", { code: "invalid_env_target", key: "PGHOST" })).toBe(
+      "preview.env.PGHOST is invalid",
+    );
+    expect(
+      previewEnvIssueMessage("preview.env", {
+        code: "env_target_collision",
+        key: "PGPORT",
+        target: "DATABASE_HOST",
+        priorKey: "PGHOST",
+      }),
+    ).toBe("preview.env: target collision: DATABASE_HOST");
+    expect(
+      previewEnvIssueMessage("preview.env", {
+        code: "env_requires_provider",
+        key: "PGHOST",
+        home: "postgres",
+      }),
+    ).toBe("preview.env.PGHOST requires db.provider postgres");
+  });
+});
+
+describe("healthIssueMessage", () => {
+  test("names each health field", () => {
+    expect(healthIssueMessage({ code: "invalid_health_path" })).toBe(
+      "health.path must start with /",
+    );
+    expect(healthIssueMessage({ code: "invalid_health_interval" })).toContain(
+      "health.interval",
+    );
+    expect(healthIssueMessage({ code: "invalid_health_timeout" })).toContain(
+      "health.timeout",
+    );
+    expect(healthIssueMessage({ code: "invalid_health_expect" })).toContain(
+      "health.expect",
+    );
+  });
+});
+
+describe("previewContainerName", () => {
+  test("builds the canonical app container name", () => {
+    expect(previewContainerName("widgets", 7)).toBe("sprout-widgets-pr-7");
   });
 });

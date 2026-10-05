@@ -87,6 +87,30 @@ export type PreviewEnvIssue =
       priorKey: string;
     };
 
+export type PreviewEnvProviderIssue = {
+  code: "env_requires_provider";
+  key: CanonicalEnvKey;
+  home: DbProvider;
+};
+
+export function previewEnvIssueMessage(
+  path: string,
+  issue: PreviewEnvIssue | PreviewEnvProviderIssue,
+): string {
+  switch (issue.code) {
+    case "unknown_env_key":
+      return `unknown key: ${path}.${issue.key}`;
+    case "empty_env_target":
+      return `${path}.${issue.key} is required`;
+    case "invalid_env_target":
+      return `${path}.${issue.key} is invalid`;
+    case "env_target_collision":
+      return `${path}: target collision: ${issue.target}`;
+    case "env_requires_provider":
+      return `${path}.${issue.key} requires db.provider ${issue.home}`;
+  }
+}
+
 export function parsePreviewEnvMap(
   raw: Record<string, unknown> | undefined,
 ):

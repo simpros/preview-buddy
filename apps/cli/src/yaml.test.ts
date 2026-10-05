@@ -768,11 +768,11 @@ preview:
     });
     expect(base("  path: /health\n  interval: 2x\n  timeout: 120s\n  expect: 200\n")).toEqual({
       ok: false,
-      error: "health.interval is invalid (expected Ns, e.g. 2s)",
+      error: "health.interval is invalid (expected e.g. 2s, 30m, 2h, 7d)",
     });
     expect(base("  path: /health\n  interval: 2s\n  timeout: 0s\n  expect: 200\n")).toEqual({
       ok: false,
-      error: "health.timeout is invalid (expected Ns, e.g. 2s)",
+      error: "health.timeout is invalid (expected e.g. 2s, 30m, 2h, 7d)",
     });
     expect(base("  path: /health\n  interval: 2s\n  timeout: 120s\n  expect: 99\n")).toEqual({
       ok: false,

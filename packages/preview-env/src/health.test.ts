@@ -1,23 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  DEFAULT_HEALTH,
-  parseDurationMs,
-  resolveHealthSpec,
-} from "./health.ts";
-
-describe("parseDurationMs", () => {
-  test("parses second durations", () => {
-    expect(parseDurationMs("2s")).toBe(2000);
-    expect(parseDurationMs("120s")).toBe(120_000);
-  });
-
-  test("rejects non-second forms and non-positive", () => {
-    expect(parseDurationMs("2")).toBeNull();
-    expect(parseDurationMs("2ms")).toBeNull();
-    expect(parseDurationMs("")).toBeNull();
-    expect(parseDurationMs("0s")).toBeNull();
-  });
-});
+import { DEFAULT_HEALTH, resolveHealthSpec } from "./health.ts";
 
 describe("resolveHealthSpec", () => {
   test("defaults when omitted", () => {
@@ -42,6 +24,25 @@ describe("resolveHealthSpec", () => {
         intervalMs: 1000,
         timeoutMs: 30_000,
         expectStatus: 204,
+      },
+    });
+  });
+
+  test("accepts the shared duration grammar beyond seconds", () => {
+    expect(
+      resolveHealthSpec({
+        path: "/health",
+        interval: "30m",
+        timeout: "2h",
+        expect: 200,
+      }),
+    ).toEqual({
+      ok: true,
+      value: {
+        path: "/health",
+        intervalMs: 30 * 60_000,
+        timeoutMs: 2 * 3_600_000,
+        expectStatus: 200,
       },
     });
   });

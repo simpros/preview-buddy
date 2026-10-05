@@ -1,11 +1,13 @@
-import { dataVolumeName, sqliteVolumeName } from "@sprout/preview-env";
+import {
+  dataVolumeName,
+  previewContainerName,
+  sqliteVolumeName,
+} from "@sprout/preview-env";
 import { run } from "./exec.ts";
 
-export { dataVolumeName, sqliteVolumeName };
+export { dataVolumeName, previewContainerName, sqliteVolumeName };
 
-export function previewAppContainerName(slug: string, prId: number): string {
-  return `sprout-${slug}-pr-${prId}`;
-}
+export const previewAppContainerName = previewContainerName;
 
 async function dockerText(args: string[]): Promise<string> {
   const { stdout } = await run(["docker", ...args]);

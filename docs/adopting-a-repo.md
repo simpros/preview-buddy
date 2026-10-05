@@ -47,7 +47,7 @@ value grammar, merge order) are the contract. Seeding order lives in
 | `db.path` | no | `/data` | Container directory the SQLite volume mounts at (`sqlite` only). |
 | `db.file` | no | `preview.db` | SQLite file name inside `db.path` (`sqlite` only). |
 | `health.path` | when seeding | `/health` | HTTP path the gateway polls on the Postgres-network container IP. |
-| `health.interval` | when seeding | `2s` | Poll interval (`Ns` form; malformed durations fail at manifest parse). |
+| `health.interval` | when seeding | `2s` | Poll interval (duration like `2s`, `30m`, `2h`, `7d`; malformed durations fail at manifest parse). |
 | `health.timeout` | when seeding | `120s` | How long the gateway polls before `health_timeout`. Never starts the seed. |
 | `health.expect` | when seeding | `200` | Expected status (100–599). Gates the after-healthy seed hook. |
 | `build.dockerfile` | no | `Dockerfile` | App Dockerfile for `sprout ci preview`. An empty `build: {}` takes the default. |
