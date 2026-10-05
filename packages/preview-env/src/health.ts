@@ -1,3 +1,5 @@
+import { parseDurationMs } from "./governance.ts";
+
 export type HealthSpec = {
   path: string;
   intervalMs: number;
@@ -25,12 +27,17 @@ export type HealthIssue =
   | { code: "invalid_health_expect" }
   | { code: "invalid_health_path" };
 
-export function parseDurationMs(raw: string): number | null {
-  const match = /^(\d+)s$/.exec(raw.trim());
-  if (!match) return null;
-  const seconds = Number(match[1]);
-  if (seconds <= 0) return null;
-  return seconds * 1000;
+export function healthIssueMessage(issue: HealthIssue): string {
+  switch (issue.code) {
+    case "invalid_health_path":
+      return "health.path must start with /";
+    case "invalid_health_interval":
+      return "health.interval is invalid (expected e.g. 2s, 30m, 2h, 7d)";
+    case "invalid_health_timeout":
+      return "health.timeout is invalid (expected e.g. 2s, 30m, 2h, 7d)";
+    case "invalid_health_expect":
+      return "health.expect must be a number between 100 and 599";
+  }
 }
 
 export function resolveHealthSpec(

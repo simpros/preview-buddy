@@ -37,7 +37,7 @@ wires the repo. Live pitch:
 ## Docs
 
 - **[Public docs](https://simpros.github.io/sprout/docs/index.html)** — guides and reference
-  ([source](docs/site/index.html) · [llms.txt](llms.txt))
+  ([source](docs/) · [llms.txt](llms.txt))
 - [Getting started](docs/getting-started.md) — first preview in one sitting
 - [Adopting a repo](docs/adopting-a-repo.md) — write `.sprout.yaml`, migrate at startup
 - [CI integration](docs/ci-integration.md) — GitHub / GitLab wiring, reset

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import type { PreviewVolumeIssue } from "./index.ts";
 import {
   parsePreviewVolumes,
   previewVolumeIssueMessage,
+  type PreviewVolumeIssue,
 } from "./volumes.ts";
 
 describe("parsePreviewVolumes", () => {

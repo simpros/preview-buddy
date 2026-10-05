@@ -1,4 +1,5 @@
 import { createApiClient } from "@sprout/api-client";
+import { previewDbName } from "@sprout/preview-db";
 import { describe, expect, test } from "bun:test";
 import {
   COMPOSE_E2E_ENV_PATH,
@@ -103,7 +104,7 @@ describe.skipIf(!enabled)("preview lifecycle", () => {
       expect(env.has("PGUSER")).toBe(false);
       expect(env.has("PGPASSWORD")).toBe(false);
 
-      const dbName = `sprout_${e2eConfig.slug}_pr${prId}`;
+      const dbName = previewDbName(e2eConfig.slug, prId);
       expect(await companionRoleExists(dbName)).toBe(true);
     } finally {
       const torn = await client.v1.teardown.post({
@@ -146,7 +147,7 @@ describe.skipIf(!enabled)("preview lifecycle", () => {
       expect(env.has("PGAPPUSER")).toBe(false);
       expect(env.has("PGAPPPASSWORD")).toBe(false);
 
-      const dbName = `sprout_${e2eConfig.slug}_pr${prId}`;
+      const dbName = previewDbName(e2eConfig.slug, prId);
       expect(await companionRoleExists(dbName)).toBe(false);
     } finally {
       const torn = await client.v1.teardown.post({

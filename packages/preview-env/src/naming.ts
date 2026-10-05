@@ -1,3 +1,9 @@
+/** App container per preview: the single name both the gateway and the
+ * acceptance harness address. */
+export function previewContainerName(slug: string, prId: number): string {
+  return `sprout-${slug}-pr-${prId}`;
+}
+
 /** -sqlite suffix stays outside the container and Postgres catalogs. */
 export function sqliteVolumeName(slug: string, prId: number): string {
   return `sprout-${slug}-pr-${prId}-sqlite`;

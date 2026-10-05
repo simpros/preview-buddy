@@ -3,6 +3,7 @@ import {
   dbRolesIssueMessage,
   dbSpecIssueMessage,
   governanceIssueMessage,
+  healthIssueMessage,
   isServicePort,
   labelIssueMessage,
   mailSpecIssueMessage,
@@ -15,6 +16,7 @@ import {
   parsePreviewGovernanceField,
   parsePreviewVolumes,
   parseServiceEnvMap,
+  previewEnvIssueMessage,
   previewVolumeIssueMessage,
   requiresDatabase,
   resolveDbRoles,
@@ -106,19 +108,6 @@ function unknownKey(path: string): Result<never> {
   return { ok: false, error: `unknown key: ${path}` };
 }
 
-function healthIssueMessage(issue: HealthIssue): string {
-  switch (issue.code) {
-    case "invalid_health_path":
-      return "health.path must start with /";
-    case "invalid_health_interval":
-      return "health.interval is invalid (expected Ns, e.g. 2s)";
-    case "invalid_health_timeout":
-      return "health.timeout is invalid (expected Ns, e.g. 2s)";
-    case "invalid_health_expect":
-      return "health.expect must be a number between 100 and 599";
-  }
-}
-
 function parseHostnameField(
   raw: string,
   label: string,
@@ -152,25 +141,7 @@ function parsePreviewEnv(
 
   const parsed = parsePreviewEnvForProvider(raw, provider);
   if (!parsed.ok) {
-    const { issue } = parsed;
-    switch (issue.code) {
-      case "unknown_env_key":
-        return unknownKey(`preview.env.${issue.key}`);
-      case "empty_env_target":
-        return { ok: false, error: `preview.env.${issue.key} is required` };
-      case "invalid_env_target":
-        return { ok: false, error: `preview.env.${issue.key} is invalid` };
-      case "env_target_collision":
-        return {
-          ok: false,
-          error: `preview.env: target collision: ${issue.target}`,
-        };
-      case "env_requires_provider":
-        return {
-          ok: false,
-          error: `preview.env.${issue.key} requires db.provider ${issue.home}`,
-        };
-    }
+    return { ok: false, error: previewEnvIssueMessage("preview.env", parsed.issue) };
   }
   return { ok: true, value: parsed.value };
 }
@@ -635,7 +606,8 @@ export function parseSproutYaml(raw: string): Result<SproutYaml> {
       expect: parsed.health.expect,
     });
     if (!resolved.ok) {
-      return { ok: false, error: healthIssueMessage(resolved.issue) };
+      const issue: HealthIssue = resolved.issue;
+      return { ok: false, error: healthIssueMessage(issue) };
     }
     value.health = {
       path: resolved.value.path,
